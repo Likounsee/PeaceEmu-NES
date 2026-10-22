@@ -19,7 +19,7 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 ## Implémentation actuelle
 
-- **CPU :** sous-ensemble élargi des instructions officielles : chargements/stores, ADC/SBC, AND/ORA/EOR, comparaisons, BIT, shifts/rotates, incréments/décréments, branchements, pile, JSR/RTS et BRK. Les opcodes manquants renvoient une erreur explicite. Ce n'est pas encore un CPU complet ni cycle-exact.
+- **CPU :** sous-ensemble élargi des instructions officielles : chargements/stores, ADC/SBC, AND/ORA/EOR, comparaisons, BIT, shifts/rotates, incréments/décréments, branchements, JMP indirect avec comportement de page 6502, pile, JSR/RTS et BRK. Les opcodes manquants renvoient une erreur explicite. Ce n'est pas encore un CPU complet ni cycle-exact.
 - **Bus :** 2 Kio de RAM interne avec miroirs dans l'espace CPU et latch open-bus minimal. Les registres PPU/APU et manettes ne sont pas encore routés.
 - **Cartouche :** parsing iNES legacy, validation des tailles, mirroring, PRG-ROM NROM (mapper 0), CHR-ROM ou CHR-RAM. NES 2.0 et les autres mappers ne sont pas pris en charge.
 - **Machine :** `NesMachine` charge une image iNES/NROM, initialise le CPU depuis le vecteur de reset et expose le pas d'instruction ainsi que les lectures/écritures CPU.
@@ -47,9 +47,9 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 ## Avancement
 
-**Avancement global estimé : 19 %.** Le CPU prend en charge davantage d'opcodes, la machine minimale charge une cartouche NROM et exécute des instructions après reset, et une suite de 20 tests couvre les composants de base. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
+**Avancement global estimé : 19 %.** Le CPU prend en charge davantage d'opcodes, la machine minimale charge une cartouche NROM et exécute des instructions après reset, et une suite de 21 tests couvre les composants de base. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
 
-Dernière CI confirmée verte : [run 39810911201](https://github.com/Likounsee/PeaceEmu-NES/actions/runs/39810911201) — 20 tests réussis, formatage et Clippy réussis.
+Dernière CI confirmée verte : [run 39811116103](https://github.com/Likounsee/PeaceEmu-NES/actions/runs/39811116103) — 21 tests réussis, formatage et Clippy réussis.
 
 | Domaine | État |
 |---|---|
