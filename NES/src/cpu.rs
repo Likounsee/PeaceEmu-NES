@@ -1,9 +1,9 @@
 //! Initial Ricoh 2A03 CPU instruction interpreter.
 //!
-//! Implements a broad, tested subset of official Ricoh 2A03/6502 instructions.
-//! Unsupported opcodes are errors, not silent NOPs. IRQ/NMI entry and nominal
-//! instruction cycles are modeled; bus-cycle-exact execution and remaining opcodes
-//! are not complete.
+//! Implements a broad subset of official Ricoh 2A03/6502 instructions plus common
+//! unofficial NOP encodings used by commercial software. Other unsupported opcodes
+//! return errors rather than silently acting as NOPs. Interrupt entry and nominal
+//! instruction cycles are modeled; bus-cycle-exact execution remains incomplete.
 
 use crate::bus::CpuBus;
 use core::fmt;
@@ -134,7 +134,23 @@ impl Cpu {
         }
         let opcode = self.fetch(bus);
         let cycles = match opcode {
-            0xEA => 2,
+            // Common stable unofficial NOPs. Addressed forms perform the read, and
+            // absolute-X forms charge the page-cross penalty used by the 2A03.
+            0xEA | 0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => 2,
+            0x80 | 0x82 | 0x89 | 0xC2 | 0xE2 => { self.fetch(bus); 2 }
+            0x04 | 0x44 | 0x64 => { let a = self.fetch(bus) as u16; let _ = bus.read(a); 3 }
+            0x14 | 0x34 | 0x54 | 0x74 | 0xD4 | 0xF4 => {
+                let a = self.fetch(bus).wrapping_add(self.state.x) as u16;
+                let _ = bus.read(a);
+                4
+            }
+            0x0C => { let a = self.fetch_word(bus); let _ = bus.read(a); 4 }
+            0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC => {
+                let base = self.fetch_word(bus);
+                let address = base.wrapping_add(self.state.x as u16);
+                let _ = bus.read(address);
+                4 + u8::from(base & 0xFF00 != address & 0xFF00)
+            }
             0xA9 => { let v = self.fetch(bus); self.state.a = v; self.set_nz(v); 2 }
             0xA5 => { let a = self.fetch(bus) as u16; let v = bus.read(a); self.state.a = v; self.set_nz(v); 3 }
             0xAD => { let a = self.fetch_word(bus); let v = bus.read(a); self.state.a = v; self.set_nz(v); 4 }
@@ -817,6 +833,44 @@ mod tests {
         cpu.set_pc(0x0700);
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 4);
         assert_eq!(cpu.state().pc, 0x06FE);
+    }
+
+    #[test]
+    fn unofficial_nop_encodings_consume_operands_without_changing_registers_or_flags() {
+        let program = [
+            0xA9, 0x55,       // LDA #$55
+            0xA2, 0x01,       // LDX #1
+            0xA0, 0x80,       // LDY #$80
+            0x04, 0x20,       // NOP zero page
+            0x14, 0x20,       // NOP zero page,X
+            0x80, 0xEA,       // NOP immediate (operand itself is an opcode byte)
+            0x0C, 0x00, 0x02, // NOP absolute
+            0x1A,             // NOP implied
+        ];
+        let (mut cpu, mut bus) = setup(&program);
+        bus.write(0x0020, 0xAA);
+        bus.write(0x0021, 0xBB);
+        bus.write(0x0200, 0xCC);
+        for _ in 0..3 { cpu.step(&mut bus).unwrap(); }
+        let before = cpu.state();
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 3);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 4);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 4);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
+        assert_eq!(cpu.state().a, before.a);
+        assert_eq!(cpu.state().x, before.x);
+        assert_eq!(cpu.state().y, before.y);
+        assert_eq!(cpu.state().status, before.status);
+    }
+
+    #[test]
+    fn unofficial_absolute_x_nop_charges_page_cross_cycle() {
+        let (mut cpu, mut bus) = setup(&[0xA2, 0x01, 0x1C, 0xFF, 0x02]);
+        bus.write(0x0300, 0x42);
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(cpu.state().pc, 0x0605);
     }
 
 }
