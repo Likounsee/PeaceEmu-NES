@@ -319,7 +319,17 @@ mod tests {
     }
 
     #[test]
-    fn five_step_mode_does_not_raise_frame_irq() {
+    fn frame_irq_status_read_acknowledges_irq_without_disabling_future_events() {
+        let mut apu = Apu::new();
+        apu.tick_cpu_cycles(14_915);
+        assert_ne!(apu.read(0x4015) & 0x40, 0);
+        assert!(!apu.frame_irq_pending());
+        apu.tick_cpu_cycles(14_915);
+        assert!(apu.frame_irq_pending());
+    }
+
+    #[test]
+        fn five_step_mode_does_not_raise_frame_irq() {
         let mut apu = Apu::new();
         apu.write(0x4017, 0x80);
         apu.tick_cpu_cycles(18_641);
