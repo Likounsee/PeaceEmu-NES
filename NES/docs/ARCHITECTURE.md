@@ -52,6 +52,10 @@ Les deux ports de manette série sont implémentés au niveau du bus, avec huit 
 
 Coordonne CPU, PPU, APU, cartouche et contrôleurs. Le modèle de timing doit être explicite, déterministe et testable.
 
+## Réutilisation de références existantes
+
+La stratégie de portage, les projets étudiés, les licences et les contraintes de compatibilité sont consignés dans [REFERENCE_IMPLEMENTATIONS.md](REFERENCE_IMPLEMENTATIONS.md). TetaNES est la référence principale examinée pour les comportements CPU/PPU/APU, mais sa version actuelle exige Rust 1.88 alors que ce module cible Rust 1.78 : ne pas ajouter sa version actuelle comme dépendance directe sans décision explicite sur le MSRV. RustyNES est sous GPL-3.0 ; aucun code provenant de ce projet ne doit être repris sans décision de licence explicite. Les algorithmes portés doivent être adaptés à nos structures et couverts par nos propres tests.
+
 ## Règles d'implémentation
 
 - Le cœur et ses composants ne dépendent pas de l'interface graphique.
