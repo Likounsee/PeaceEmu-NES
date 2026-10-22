@@ -345,21 +345,12 @@ mod tests {
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Nrom::parse(&image).unwrap();
-        // Enable background and the leftmost eight pixels.
-        ppu.cpu_write_register(1, 0x0A, Some(&mut cartridge));
-        // Tile zero: first pixel is color 1 (bit 7 of low pattern plane).
-        ppu.cpu_write_register(6, 0x00, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 0x00, Some(&mut cartridge));
-        ppu.cpu_write_register(7, 0x80, Some(&mut cartridge));
-        // Universal background color and palette color 1.
-        ppu.cpu_write_register(6, 0x3F, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 0x00, Some(&mut cartridge));
-        ppu.cpu_write_register(7, 0x0F, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 0x3F, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 0x01, Some(&mut cartridge));
-        ppu.cpu_write_register(7, 0x21, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 0x20, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 0x00, Some(&mut cartridge));
+        // Build known video memory directly; register-latch behavior is tested separately.
+        ppu.mask = 0x0A;
+        ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x3F00, 0x0F, Some(&mut cartridge));
+        ppu.mem_write(0x3F01, 0x21, Some(&mut cartridge));
+        ppu.mem_write(0x2000, 0x00, Some(&mut cartridge));
         ppu.render_background(Some(&cartridge));
         assert_eq!(ppu.framebuffer()[0], 0x21);
         assert_eq!(ppu.framebuffer()[1], 0x0F);
@@ -373,28 +364,14 @@ mod tests {
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Nrom::parse(&image).unwrap();
-        // Background tile zero has an opaque pixel at (0,0).
-        ppu.cpu_write_register(1, 0x1E, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 0, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 0, Some(&mut cartridge));
-        ppu.cpu_write_register(7, 0x80, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 0x3F, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 1, Some(&mut cartridge));
-        ppu.cpu_write_register(7, 0x22, Some(&mut cartridge));
-        // Sprite tile 1: opaque pixel at its top-left; palette 0, OAM Y=255 => row 0.
-        ppu.cpu_write_register(6, 0x10, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 0, Some(&mut cartridge));
-        ppu.cpu_write_register(7, 0x80, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 0x3F, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 0x11, Some(&mut cartridge));
-        ppu.cpu_write_register(7, 0x30, Some(&mut cartridge));
-        ppu.cpu_write_register(3, 0, Some(&mut cartridge));
-        ppu.cpu_write_register(4, 255, Some(&mut cartridge));
-        ppu.cpu_write_register(4, 1, Some(&mut cartridge));
-        ppu.cpu_write_register(4, 0, Some(&mut cartridge));
-        ppu.cpu_write_register(4, 0, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 0x20, Some(&mut cartridge));
-        ppu.cpu_write_register(6, 0, Some(&mut cartridge));
+        // Build the pattern/palette fixture directly; OAM Y=255 wraps to row zero.
+        ppu.mask = 0x1E;
+        ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x3F01, 0x22, Some(&mut cartridge));
+        ppu.mem_write(0x3F11, 0x30, Some(&mut cartridge));
+        ppu.oam[0..4].copy_from_slice(&[255, 1, 0, 0]);
+        ppu.mem_write(0x2000, 0x00, Some(&mut cartridge));
         ppu.render_frame(Some(&cartridge));
         assert_ne!(ppu.status & 0x40, 0);
         assert_eq!(ppu.framebuffer()[0], 0x30);
