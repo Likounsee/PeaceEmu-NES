@@ -1,12 +1,12 @@
-//! NES picture processing unit register and memory model (rendering is not yet implemented).
+//! NES picture processing unit registers, video memory, timing, and snapshot renderer.
 
 use crate::cartridge::{Mirroring, Nrom};
 
 /// Minimal PPU register and memory state.
 ///
-/// Implements CPU-visible register semantics, pattern/nametable/palette access,
-/// OAM storage, vblank status, and the NTSC scanline/dot counter. Pixel rendering
-/// and sprite evaluation remain future work.
+/// Implements CPU-visible registers, pattern/nametable/palette access, OAM storage,
+/// vblank/NMI state, NTSC scanline/dot counting, and frame-based background/sprite rendering.
+/// Rendering is an approximation, not a dot-accurate PPU pipeline.
 #[derive(Debug, Clone)]
 pub struct Ppu {
     ctrl: u8,
