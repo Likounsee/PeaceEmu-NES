@@ -471,7 +471,7 @@ mod tests {
         assert_eq!(Ppu::nametable_index(0x2800, Mirroring::Horizontal), 0x400);
         assert_eq!(Ppu::nametable_index(0x2C00, Mirroring::Horizontal), 0x400);
         assert_eq!(Ppu::nametable_index(0x2C00, Mirroring::FourScreen), 0xC00);
-        assert_eq!(Ppu::nametable_index(0x3EFF, Mirroring::FourScreen), 0xFFF);
+        assert_eq!(Ppu::nametable_index(0x3EFF, Mirroring::FourScreen), 0xEFF);
     }
 
     #[test]
