@@ -6,7 +6,7 @@
 
 Développer un cœur NES réel, indépendant de l'interface graphique, intégrable à l'application principale [PeaceEmu](https://github.com/Likounsee/PeaceEmu). L'interface, la bibliothèque de jeux, les fenêtres et l'orchestration des sessions existent déjà dans le dépôt principal : ce dépôt ne doit pas recréer ces fonctionnalités.
 
-**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES/NROM, un sous-ensemble élargi du CPU, un modèle de registres APU et séquenceur de frame initial et le rendu snapshot de la PPU disposent de code et de tests. Le module n'est pas encore jouable et n'est pas encore branché au contrat hôte.
+**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES/NROM, un sous-ensemble élargi du CPU, un modèle de registres APU, compteurs de longueur et séquenceur de frame initial et le rendu snapshot de la PPU disposent de code et de tests. Le module n'est pas encore jouable et n'est pas encore branché au contrat hôte.
 
 ## Langage et intégration
 
@@ -20,11 +20,11 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 ## Implémentation actuelle
 
 - **CPU :** sous-ensemble élargi des instructions officielles : chargements/stores, ADC/SBC, AND/ORA/EOR, comparaisons, BIT, shifts/rotates, incréments/décréments, branchements, JMP indirect avec comportement de page 6502, pile, JSR/RTS, RTI et BRK. Les opcodes manquants renvoient une erreur explicite. Ce n'est pas encore un CPU complet ni cycle-exact.
-- **Bus :** 2 Kio de RAM interne avec miroirs et latch open-bus minimal ; registres PPU ($2000–$3FFF), DMA OAM ($4014), APU ($4000–$4017 hors adresses réservées), séquenceur de frame et deux manettes série ($4016/$4017) routés. Les manettes exposent huit boutons par port, latch sur strobe et décalage sériel avec ligne haute après le huitième bit.
+- **Bus :** 2 Kio de RAM interne avec miroirs et latch open-bus minimal ; registres PPU ($2000–$3FFF), DMA OAM ($4014), APU ($4000–$4017 hors adresses réservées), compteurs de longueur, séquenceur de frame approximatif et deux manettes série ($4016/$4017) routés. Les manettes exposent huit boutons par port, latch sur strobe et décalage sériel avec ligne haute après le huitième bit.
 - **PPU :** première couche matérielle : registres CPU, adresse VRAM, buffer de lecture, mémoire nametable/palette, OAM, mirroring de cartouche et drapeau VBlank/compteur de scanline. Le DMA OAM copie 256 octets d'une page CPU vers l'OAM et ajoute 513/514 cycles de blocage selon l'alignement. Un rendu par instantané est disponible via `NesMachine::render_background()` ou `NesMachine::render_frame()` et `NesMachine::framebuffer()` : le framebuffer de 256×240 pixels contient des indices de palette NES 6 bits. Le rendu lit les tuiles, plans de bits, attributs de palette, mirroring et défilement de base ; `render_frame()` compose aussi les sprites avec flips horizontal/vertical, tailles 8×8/8×16, priorité approximative, hit sprite 0 et overflow de sprites par ligne. Ce n'est pas encore une pipeline dot-par-dot. Le NMI VBlank est routé vers l'entrée d'interruption CPU ; le compteur NTSC modélise aussi le saut de dot du pré-rendu lors des images impaires avec rendu actif.
 - **Cartouche :** parsing iNES legacy, validation des tailles, mirroring, PRG-ROM NROM (mapper 0), CHR-ROM ou CHR-RAM. NES 2.0 et les autres mappers ne sont pas pris en charge.
 - **Machine :** `NesMachine` charge une image iNES/NROM, initialise le CPU depuis le vecteur de reset et expose le pas d'instruction ainsi que les lectures/écritures CPU.
-- **Tests :** 55 tests après ajout des régressions de priorité sprite OAM, branches conditionnelles, opérations de pile/transfert et ports manette ; la CI doit confirmer le résultat.
+- **Tests :** les tests couvrent aussi les compteurs de longueur APU et leur routage sur le bus ; la CI doit confirmer le résultat de priorité sprite OAM, branches conditionnelles, opérations de pile/transfert et ports manette ; la CI doit confirmer le résultat.
 - **CI :** workflow GitHub Actions ajouté pour formater les sources puis exécuter les tests et Clippy. Vérifier le dernier résultat dans GitHub Actions avant d'affirmer que la CI est verte.
 
 ## Ordre de développement
@@ -59,7 +59,7 @@ CI : un test de mirroring a échoué à cause d'une valeur attendue incorrecte ;
 | Cartouche NROM / iNES legacy | Première version |
 | Machine et reset vector | Première version — charge NROM et exécute le CPU |
 | PPU | Registres/mémoire/VBlank-NMI ; rendu de fond et sprites par instantané ; timing dot-par-dot à faire |
-| APU | Débuté — registre $4015 et séquenceur de frame 4/5 étapes avec drapeau IRQ ; synthèse audio à faire |
+| APU | Partiel — registres, compteurs de longueur pulse/triangle/bruit, séquenceur de frame et IRQ approximatifs ; synthèse audio/DMC à faire |
 | Contrôleurs | Première version — ports série $4016/$4017, huit boutons et latch |
 | Timing complet | À faire |
 | Adaptateur EmulationCore | À faire — partage du contrat à définir |
