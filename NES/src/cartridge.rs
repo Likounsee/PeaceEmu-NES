@@ -156,7 +156,7 @@ mod tests {
         let mut v = image(1, 1, 0, 0); v[16] = 0x42; v[16 + PRG_BANK_LEN - 1] = 0x99;
         let c = Nrom::parse(&v).unwrap();
         assert_eq!(c.cpu_read(0x8000), Some(0x42)); assert_eq!(c.cpu_read(0xC000), Some(0x42));
-        assert_eq!(c.cpu_read(0xFFFF), Some(0x99)); assert_eq!(c.cpu_read(0x7FFF), None);
+        assert_eq!(c.cpu_read(0xFFFF), Some(0x99)); assert_eq!(c.cpu_read(0x5FFF), None); assert_eq!(c.cpu_read(0x7FFF), Some(0));
     }
     #[test] fn supports_chr_ram_and_vertical_mirroring() {
         let mut c = Nrom::parse(&image(2, 0, 1, 0)).unwrap();
@@ -176,7 +176,7 @@ mod tests {
     fn prg_ram_is_writable_and_trainer_is_loaded_at_7000() {
         // Trainer payload is the 512 bytes immediately following the header.
         let mut with_trainer = vec![0; 16 + TRAINER_LEN + PRG_BANK_LEN];
-        with_trainer[0..4].copy_from_slice(b"NES\\x1A");
+        with_trainer[0..4].copy_from_slice(b"NES\x1A");
         with_trainer[4] = 1;
         with_trainer[6] = 0x04;
         with_trainer[16] = 0x5A;
