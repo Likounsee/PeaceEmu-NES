@@ -407,6 +407,7 @@ mod tests {
             0x08, // PHP
             0x18, // CLC
             0x28, // PLP
+            0xA9, 0x42, // LDA #$42
             0x48, // PHA
             0xA9, 0x00, // LDA #0
             0x68, // PLA
@@ -422,7 +423,7 @@ mod tests {
         cpu.step(&mut bus).unwrap();
         cpu.step(&mut bus).unwrap();
         cpu.step(&mut bus).unwrap();
-        assert_eq!(cpu.state().a, 0x01 | 0x00); // PHP's pushed status has BREAK set.
+        assert_eq!(cpu.state().a, 0x42);
         cpu.step(&mut bus).unwrap();
         cpu.step(&mut bus).unwrap();
         cpu.step(&mut bus).unwrap();
@@ -447,7 +448,7 @@ mod tests {
         assert_eq!(cpu.state().pc, 0x0604);
         cpu.step(&mut bus).unwrap();
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 3);
-        assert_eq!(cpu.state().pc, 0x060A);
+        assert_eq!(cpu.state().pc, 0x060B);
         cpu.step(&mut bus).unwrap();
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 3);
         assert_eq!(cpu.state().pc, 0x0610);
