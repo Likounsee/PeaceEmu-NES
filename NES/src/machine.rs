@@ -90,7 +90,8 @@ impl NesMachine {
             self.cpu.add_stall_cycles(dma_cycles);
             elapsed_cycles = elapsed_cycles.saturating_add(dma_cycles);
         }
-        self.bus.tick_ppu(u32::from(elapsed_cycles) * 3);\n        self.bus.tick_apu(u32::from(elapsed_cycles));
+        self.bus.tick_ppu(u32::from(elapsed_cycles) * 3);
+        self.bus.tick_apu(u32::from(elapsed_cycles));
         Ok(result)
     }
 
