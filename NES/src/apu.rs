@@ -338,7 +338,7 @@ mod tests {
         let mut apu = Apu::new();
         apu.write(0x4010, 0x80);
         apu.write(0x4012, 0x03);
-        apu.write(0x4013, 0x01);
+        apu.write(0x4013, 0x00); // One byte.
         apu.write(0x4015, 0x10);
         assert_eq!(apu.read(0x4015) & 0x10, 0x10);
         assert_eq!(apu.take_dmc_dma_request(), Some(0xC0C0));
