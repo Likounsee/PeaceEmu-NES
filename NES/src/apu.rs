@@ -139,7 +139,9 @@ impl Apu {
                 | (u16::from(self.registers[0x0B] & 7) << 8);
             if self.triangle_timer_counter == 0 {
                 self.triangle_timer_counter = triangle_period;
-                self.triangle_sequence = (self.triangle_sequence + 1) & 31;
+                if self.length_counters[2] > 0 && self.triangle_linear_counter > 0 {
+                    self.triangle_sequence = (self.triangle_sequence + 1) & 31;
+                }
             } else { self.triangle_timer_counter -= 1; }
             if self.dmc_timer_counter == 0 {
                 self.dmc_timer_counter = DMC_PERIODS[(self.registers[0x10] & 0x0F) as usize].saturating_sub(1);
