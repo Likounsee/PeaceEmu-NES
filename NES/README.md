@@ -46,9 +46,9 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 ## Avancement
 
-**Avancement global estimé : 10 %.** Le projet a désormais un crate Rust, une base CPU partielle, le bus RAM, le parseur NROM et des tests. Ce n'est pas une mesure de compatibilité des jeux : aucune ROM complète n'est encore exécutable.
+**Avancement global estimé : 15 %.** Le CPU couvre maintenant davantage de modes d'adressage et d'opérations mémoire, et sait charger son vecteur de reset depuis une cartouche. Le bus RAM, le parseur NROM et les tests sont présents. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM complète n'est encore exécutable.
 
-Dernière vérification CI observée : commit `51a35c55610607dac1b198bbece0b93daf18f75b`, 13 tests réussis et Clippy réussi. Le workflow formate les sources dans l'environnement CI avant de lancer les vérifications.
+Dernière CI confirmée verte : commit `d263b39b1c33783d95f645257c3f375571505fed`. Une nouvelle exécution est en cours pour les changements suivants (reset CPU et vecteur de reset) ; ne pas la considérer verte avant sa fin.
 
 | Domaine | État |
 |---|---|
