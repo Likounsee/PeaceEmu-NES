@@ -159,6 +159,14 @@ impl Cpu {
             0xC8 => { self.state.y = self.state.y.wrapping_add(1); self.set_nz(self.state.y); 2 }
             0xCA => { self.state.x = self.state.x.wrapping_sub(1); self.set_nz(self.state.x); 2 }
             0x88 => { self.state.y = self.state.y.wrapping_sub(1); self.set_nz(self.state.y); 2 }
+            0x0A => { self.state.a = self.shift(self.state.a, 0); 2 }
+            0x2A => { self.state.a = self.shift(self.state.a, 1); 2 }
+            0x4A => { self.state.a = self.shift(self.state.a, 2); 2 }
+            0x6A => { self.state.a = self.shift(self.state.a, 3); 2 }
+            0x06 | 0x26 | 0x46 | 0x66 => { let a = self.fetch(bus) as u16; let k = (opcode >> 5) & 3; let v = self.shift(bus.read(a), k); bus.write(a, v); 5 }
+            0x16 | 0x36 | 0x56 | 0x76 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; let k = (opcode >> 5) & 3; let v = self.shift(bus.read(a), k); bus.write(a, v); 6 }
+            0x0E | 0x2E | 0x4E | 0x6E => { let a = self.fetch_word(bus); let k = (opcode >> 5) & 3; let v = self.shift(bus.read(a), k); bus.write(a, v); 6 }
+            0x1E | 0x3E | 0x5E | 0x7E => { let a = self.fetch_word(bus).wrapping_add(self.state.x as u16); let k = (opcode >> 5) & 3; let v = self.shift(bus.read(a), k); bus.write(a, v); 7 }
             0x69 => { let v = self.fetch(bus); self.adc(v); 2 }
             0xE9 | 0xEB => { let v = self.fetch(bus); self.adc(!v); 2 }
             0x29 => { let v = self.fetch(bus); self.state.a &= v; self.set_nz(self.state.a); 2 }
@@ -178,7 +186,6 @@ impl Cpu {
             0xC9 => { let v = self.fetch(bus); self.compare(self.state.a, v); 2 }
             0xE0 => { let v = self.fetch(bus); self.compare(self.state.x, v); 2 }
             0xC0 => { let v = self.fetch(bus); self.compare(self.state.y, v); 2 }
-            0xC5 => { let a = self.fetch(bus) as u16; self.compare(self.state.a, bus.read(a)); 3 }
             0xCD => { let a = self.fetch_word(bus); self.compare(self.state.a, bus.read(a)); 4 }
             0xD5 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; self.compare(self.state.a, bus.read(a)); 4 }
             0xDD => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.compare(self.state.a, bus.read(a)); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
@@ -272,6 +279,17 @@ impl Cpu {
         self.set_flag(flags::OVERFLOW, (!(a ^ v) & (a ^ r) & 0x80) != 0);
         self.state.a = r; self.set_nz(r);
     }
+    fn shift(&mut self, value: u8, kind: u8) -> u8 {
+        let carry_in = u8::from(self.flag(flags::CARRY));
+        let result = match kind {
+            0 => { self.set_flag(flags::CARRY, value & 0x80 != 0); value.wrapping_shl(1) }
+            1 => { self.set_flag(flags::CARRY, value & 0x80 != 0); (value << 1) | carry_in }
+            2 => { self.set_flag(flags::CARRY, value & 0x01 != 0); value >> 1 }
+            _ => { self.set_flag(flags::CARRY, value & 0x01 != 0); (value >> 1) | (carry_in << 7) }
+        };
+        self.set_nz(result);
+        result
+    }
     fn compare(&mut self, a: u8, b: u8) {
         self.set_flag(flags::CARRY, a >= b); self.set_nz(a.wrapping_sub(b));
     }
@@ -351,6 +369,28 @@ mod tests {
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 6);
         assert_eq!(bus.read(0x0200), 0x6C);
     }
+    #[test] fn shifts_rotate_and_bit_set_expected_flags() {
+        let (mut c, mut b) = setup(&[0xA9, 0x81, 0x0A, 0x6A, 0xA9, 0xC0, 0x85, 0x10, 0x24, 0x10]);
+        c.step(&mut b).unwrap();
+        c.step(&mut b).unwrap();
+        assert_eq!(c.state().a, 0x02);
+        assert_ne!(c.state().status & flags::CARRY, 0);
+        c.step(&mut b).unwrap();
+        c.step(&mut b).unwrap();
+        c.step(&mut b).unwrap();
+        assert_eq!(c.state().a, 0xC0);
+        assert_ne!(c.state().status & flags::NEGATIVE, 0);
+        assert_ne!(c.state().status & flags::OVERFLOW, 0);
+    }
+
+    #[test] fn adc_sbc_and_indexed_logical_ops_work() {
+        let (mut c, mut b) = setup(&[0xA9, 0x10, 0x69, 0x05, 0xE9, 0x02, 0xA2, 1, 0x15, 0x20, 0x55, 0x20]);
+        b.write(0x21, 0x03);
+        b.write(0x21, 0x03);
+        for _ in 0..6 { c.step(&mut b).unwrap(); }
+        assert_eq!(c.state().a, 0x16);
+    }
+
     #[test] fn jsr_and_rts_round_trip() {
         let (mut c, mut b) = setup(&[0x20, 6, 6, 0xA9, 0x55, 0xEA, 0xA9, 0x77, 0x60]);
         c.step(&mut b).unwrap(); assert_eq!(c.state().pc, 0x0606);
