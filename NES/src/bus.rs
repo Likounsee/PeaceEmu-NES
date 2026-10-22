@@ -5,8 +5,8 @@ use crate::ppu::Ppu;
 
 /// CPU bus with 2 KiB internal RAM and optional NROM cartridge.
 ///
-/// PPU/APU/controller register routing is not implemented yet. Unmapped I/O
-/// reads return the current open-bus latch; writes update that latch.
+/// PPU registers, background/sprite frame rendering, NMI and OAM DMA are routed.
+/// APU and controller registers remain unimplemented; unmapped reads use open bus.
 #[derive(Debug)]
 pub struct CpuBus {
     ram: [u8; 0x800],
