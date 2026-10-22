@@ -64,6 +64,7 @@ impl Apu {
             if self.frame_irq_inhibit { self.frame_irq = false; }
             self.frame_cycles = 0;
             self.half_frame_cycles = 0;
+            self.quarter_frame_cycles = 0;
         } else if address != 0x4014 && address != 0x4016 {
             self.registers[(address - 0x4000) as usize] = value;
             let channel = match address {
@@ -381,6 +382,41 @@ mod tests {
         apu.write(0x400B, 0xF8);
         apu.tick_cpu_cycles(3_729);
         assert!(apu.sample() > 0.0);
+    }
+
+    #[test]
+    fn enabled_pulse_sweep_updates_timer_at_half_frame() {
+        let mut apu = Apu::new();
+        apu.write(0x4015, 0x01);
+        apu.write(0x4000, 0x9F);
+        apu.write(0x4001, 0x81); // Enable sweep, shift by one.
+        apu.write(0x4002, 0x20);
+        apu.write(0x4003, 0xF8);
+        apu.tick_cpu_cycles(7_457);
+        assert_eq!(apu.read(0x4002), 0x30); // 32 + (32 >> 1)
+    }
+
+    #[test]
+    fn oscillator_state_is_independent_of_cpu_cycle_batching() {
+        let mut whole = Apu::new();
+        whole.write(0x4015, 0x0F);
+        whole.write(0x4000, 0x9A);
+        whole.write(0x4002, 0x35);
+        whole.write(0x4003, 0xF8);
+        whole.write(0x4008, 0xFF);
+        whole.write(0x400A, 0x28);
+        whole.write(0x400B, 0xF8);
+        whole.write(0x400C, 0x0C);
+        whole.write(0x400E, 0x04);
+        whole.write(0x400F, 0xF8);
+        let mut chunked = whole.clone();
+        whole.tick_cpu_cycles(15_000);
+        for _ in 0..15 { chunked.tick_cpu_cycles(1_000); }
+        assert_eq!(whole.sample(), chunked.sample());
+        for channel in 0..4 {
+            assert_eq!(whole.length_counter(channel), chunked.length_counter(channel));
+        }
+        assert_eq!(whole.frame_irq_pending(), chunked.frame_irq_pending());
     }
 
     #[test]
