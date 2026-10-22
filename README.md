@@ -1,15 +1,26 @@
 # PeaceEmu-NES
 
-Module NES pour l'écosystème PeaceEmu.
+Cœur d'émulation Nintendo Entertainment System pour l'application PeaceEmu.
 
-Le développement du cœur d'émulation se trouve dans le dossier [NES/](NES/). Consultez son [README](NES/README.md) pour la feuille de route et [l'architecture](NES/docs/ARCHITECTURE.md) pour les responsabilités des composants.
+Le développement se trouve dans [NES/](NES/). Consultez le [README du module](NES/README.md) et sa [documentation d'architecture](NES/docs/ARCHITECTURE.md).
 
 ## État du projet
 
-Le dépôt contient actuellement la documentation et la structure initiale du module. Le CPU, le bus, la cartouche, la PPU, l'APU et la synchronisation ne sont pas encore implémentés.
+Le crate Rust initial est en place. Il comprend un premier interpréteur CPU Ricoh 2A03 pour un sous-ensemble d'instructions officielles, un bus avec RAM interne miroir et un parseur iNES limité au mapper NROM (0). Des tests unitaires accompagnent ces composants.
 
-## Démarrage du développement
+**Ce n'est pas encore un émulateur NES jouable.** La PPU, l'APU, les manettes, le timing matériel complet, la majorité des instructions CPU et l'adaptateur au contrat EmulationCore de PeaceEmu restent à implémenter. La stratégie de partage/versionnement du crate de contrat hôte doit être décidée avant l'intégration compilable.
 
-Le langage et le système de build restent à confirmer avant de créer le cœur exécutable. La première étape sera de fixer ces choix, puis d'implémenter le CPU avec des tests unitaires avant d'ajouter le bus et le support NROM (mapper 0).
+## Développement local
 
-Aucune ROM commerciale ne doit être ajoutée au dépôt.
+Depuis la racine du dépôt :
+
+~~~sh
+cd NES
+cargo fmt --all -- --check
+cargo test --all-targets --locked
+cargo clippy --all-targets --locked -- -D warnings
+~~~
+
+Le workflow GitHub Actions dans .github/workflows/nes.yml exécute ces contrôles. Le statut CI doit être vérifié dans GitHub Actions avant d'être déclaré vert.
+
+Aucune ROM commerciale ne doit être ajoutée au dépôt. Utiliser des programmes homebrew ou des suites de test dont la licence autorise l'usage.
