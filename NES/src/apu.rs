@@ -627,6 +627,16 @@ mod tests {
         whole.tick_cpu_cycles(15_000);
         for _ in 0..15 { chunked.tick_cpu_cycles(1_000); }
         assert_eq!(whole.sample(), chunked.sample());
+        assert_eq!(whole.pulse_timer_counter, chunked.pulse_timer_counter);
+        assert_eq!(whole.pulse_sequence, chunked.pulse_sequence);
+        assert_eq!(whole.triangle_timer_counter, chunked.triangle_timer_counter);
+        assert_eq!(whole.triangle_sequence, chunked.triangle_sequence);
+        assert_eq!(whole.noise_timer_counter, chunked.noise_timer_counter);
+        assert_eq!(whole.noise_shift, chunked.noise_shift);
+        assert_eq!(whole.dmc_timer_counter, chunked.dmc_timer_counter);
+        assert_eq!(whole.dmc_bits_remaining, chunked.dmc_bits_remaining);
+        assert_eq!(whole.quarter_frame_cycles, chunked.quarter_frame_cycles);
+        assert_eq!(whole.half_frame_cycles, chunked.half_frame_cycles);
         for channel in 0..4 {
             assert_eq!(whole.length_counter(channel), chunked.length_counter(channel));
         }
