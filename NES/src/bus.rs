@@ -287,7 +287,7 @@ mod tests {
     fn cartridge_prg_ram_is_visible_through_cpu_bus() {
         let mut bus = CpuBus::new();
         let mut image = vec![0; 16 + 16 * 1024];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         bus.insert_cartridge(Nrom::parse(&image).unwrap());
         bus.write(0x6000, 0x12);
