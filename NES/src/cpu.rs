@@ -489,8 +489,12 @@ mod tests {
     #[test]
     fn irq_is_deferred_while_interrupt_disable_is_set_and_pushes_state_when_enabled() {
         let (mut cpu, mut bus) = setup(&[0x58, 0xEA]); // CLI; NOP
-        bus.write(0xFFFE, 0x00);
-        bus.write(0xFFFF, 0x07);
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFE] = 0x00;
+        image[16 + 0x3FFF] = 0x07;
+        bus.insert_cartridge(crate::cartridge::Nrom::parse(&image).unwrap());
         bus.write(0x4017, 0x00);
         bus.tick_apu(14_915);
         assert!(bus.irq_pending());
@@ -508,8 +512,12 @@ mod tests {
     #[test]
     fn irq_is_not_taken_when_interrupt_disable_flag_is_set() {
         let (mut cpu, mut bus) = setup(&[0xEA]);
-        bus.write(0xFFFE, 0x00);
-        bus.write(0xFFFF, 0x07);
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFE] = 0x00;
+        image[16 + 0x3FFF] = 0x07;
+        bus.insert_cartridge(crate::cartridge::Nrom::parse(&image).unwrap());
         bus.tick_apu(14_915);
         assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0xEA);
         assert_eq!(cpu.state().pc, 0x0601);
