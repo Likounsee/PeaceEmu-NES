@@ -1,15 +1,16 @@
 # Code source NES
 
-Le cœur d'émulation sera placé ici après confirmation du langage et du système de build.
+Le code du cœur sera écrit en **Rust** et restera indépendant de l'interface PeaceEmu. L'application hôte existe déjà dans le dépôt [Likounsee/PeaceEmu](https://github.com/Likounsee/PeaceEmu).
 
 Découpage logique prévu :
-- CPU et instructions ;
-- bus mémoire ;
-- cartouches et mappers ;
-- PPU ;
-- APU ;
-- contrôleurs ;
-- machine et synchronisation ;
-- interfaces frontend séparées du cœur.
 
-Ne pas ajouter de fichiers factices prétendant implémenter l'émulation. Chaque composant doit arriver avec des tests et une description de son état réel.
+- `cpu/` — CPU Ricoh 2A03, registres, instructions et modes d'adressage ;
+- `bus/` — décodage mémoire et RAM ;
+- `cartridge/` — parsing iNES/NES 2.0 et mappers ;
+- `ppu/` — registres et rendu vidéo ;
+- `apu/` — canaux audio ;
+- `controller/` — manettes NES ;
+- `machine/` — ordonnanceur et synchronisation ;
+- `adapter/` — implémentation du contrat `EmulationCore` de PeaceEmu, après résolution du partage du crate `emulation-core`.
+
+Ce découpage est une proposition, pas une liste de fichiers déjà présents. Ne pas ajouter de stubs prétendant émuler le matériel : chaque composant doit avoir une responsabilité claire, des tests et un état de réalisation honnête.
