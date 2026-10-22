@@ -51,7 +51,7 @@ pub struct Apu {
 
 impl Apu {
     /// Creates an APU register model with all channels disabled.
-    pub fn new() -> Self { Self { dmc_bits_remaining: 8, ..Self::default() } }
+    pub fn new() -> Self { Self { dmc_bits_remaining: 8, dmc_silence: true, ..Self::default() } }
 
     /// Writes a register in the $4000-$4017 range.
     ///
@@ -349,6 +349,21 @@ mod tests {
         assert!(apu.irq_pending());
         apu.write(0x4015, 0x00);
         assert!(!apu.irq_pending());
+    }
+
+    #[test]
+    fn dmc_stays_silent_until_a_sample_byte_reaches_the_shift_register() {
+        let mut apu = Apu::new();
+        apu.write(0x4011, 64);
+        apu.write(0x4010, 0x0F);
+        apu.write(0x4013, 0);
+        apu.write(0x4015, 0x10);
+        let initial = apu.sample();
+        apu.tick_cpu_cycles(8 * 54);
+        assert_eq!(apu.sample(), initial, "silent startup must not pull the DAC down");
+        apu.supply_dmc_byte(0xFF);
+        apu.tick_cpu_cycles(8 * 54);
+        assert!(apu.sample() > initial, "loaded sample bits should now affect the DAC");
     }
 
     #[test]
