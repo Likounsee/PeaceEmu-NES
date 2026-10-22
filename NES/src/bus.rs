@@ -163,6 +163,18 @@ mod tests {
     }
 
     #[test]
+    fn apu_length_counter_status_is_visible_through_cpu_bus() {
+        let mut bus = CpuBus::new();
+        bus.write(0x4015, 0x01);
+        bus.write(0x4003, 0xF8); // Pulse 1 length table entry 31 = 30.
+        assert_eq!(bus.read(0x4015) & 0x01, 0x01);
+        bus.tick_apu(7_457);
+        assert_eq!(bus.read(0x4015) & 0x01, 0x01);
+        bus.write(0x4015, 0x00);
+        assert_eq!(bus.read(0x4015) & 0x0F, 0);
+    }
+
+    #[test]
     fn apu_registers_are_routed_and_status_tracks_channel_enable_bits() {
         let mut bus = CpuBus::new();
         bus.write(0x4000, 0xBF);
