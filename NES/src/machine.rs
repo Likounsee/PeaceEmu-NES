@@ -58,6 +58,9 @@ impl NesMachine {
     /// Call after updating PPU scroll/register state; per-dot rendering is not implemented yet.
     pub fn render_background(&mut self) { self.bus.render_background(); }
 
+    /// Renders a background snapshot and composites sprites; timing remains frame-based.
+    pub fn render_frame(&mut self) { self.bus.render_frame(); }
+
     /// Returns the most recently rendered 256x240 background as 6-bit NES palette indices.
     pub fn framebuffer(&self) -> &[u8] { self.bus.framebuffer() }
 
