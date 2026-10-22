@@ -43,6 +43,8 @@ pub enum CartridgeError {
     UnsupportedMapper(u16),
     /// PRG size is not valid for NROM.
     InvalidPrgSize(usize),
+    /// CHR-ROM size is not valid for NROM (only zero or one 8 KiB bank is supported).
+    InvalidChrSize(usize),
     /// Declared cartridge data is truncated.
     TruncatedImage {
         /// Minimum image length required by the header.
@@ -60,6 +62,7 @@ impl fmt::Display for CartridgeError {
             Self::Nes2NotSupported => f.write_str("NES 2.0 cartridge headers are not supported yet"),
             Self::UnsupportedMapper(m) => write!(f, "unsupported cartridge mapper: {m}"),
             Self::InvalidPrgSize(n) => write!(f, "invalid NROM PRG-ROM size: {n} bytes"),
+            Self::InvalidChrSize(n) => write!(f, "invalid NROM CHR-ROM size: {n} bytes"),
             Self::TruncatedImage { expected, actual } => write!(f, "truncated cartridge image: expected at least {expected} bytes, got {actual}"),
         }
     }
@@ -82,6 +85,9 @@ impl Nrom {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         let chr_len = image[5] as usize * CHR_BANK_LEN;
+        if chr_len != 0 && chr_len != CHR_BANK_LEN {
+            return Err(CartridgeError::InvalidChrSize(chr_len));
+        }
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
         let expected = INES_HEADER_LEN + trainer_len + prg_len + chr_len;
         if image.len() < expected {
@@ -171,6 +177,9 @@ mod tests {
     }
     #[test] fn rejects_nes2_until_implemented() {
         assert_eq!(Nrom::parse(&image(1, 1, 0, 8)), Err(CartridgeError::Nes2NotSupported));
+    }
+    #[test] fn rejects_chr_rom_sizes_outside_nrom_hardware() {
+        assert_eq!(Nrom::parse(&image(1, 2, 0, 0)), Err(CartridgeError::InvalidChrSize(2 * CHR_BANK_LEN)));
     }
     #[test]
     fn prg_ram_is_writable_and_trainer_is_loaded_at_7000() {
