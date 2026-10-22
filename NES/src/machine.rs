@@ -145,6 +145,23 @@ mod tests {
     }
 
     #[test]
+    fn machine_exposes_controller_input_to_cpu_reads() {
+        let image = nrom_with_program(&[
+            0xA9, 0x01,             // LDA #1: strobe high
+            0x8D, 0x16, 0x40,       // STA $4016
+            0xA9, 0x00,             // LDA #0: strobe low, latch buttons
+            0x8D, 0x16, 0x40,       // STA $4016
+            0xAD, 0x16, 0x40,       // LDA $4016
+        ]);
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        machine.set_controller_state(0, 0x01);
+        for _ in 0..5 {
+            machine.step().unwrap();
+        }
+        assert_eq!(machine.cpu_state().a, 0x41);
+    }
+
+    #[test]
     fn machine_reports_invalid_cartridges() {
         assert!(matches!(NesMachine::from_ines(&[0; 8]), Err(MachineError::Cartridge(CartridgeError::TruncatedHeader))));
     }
