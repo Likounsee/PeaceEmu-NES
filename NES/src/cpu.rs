@@ -552,7 +552,7 @@ mod tests {
     fn brk_pushes_incremented_pc_and_break_status_then_uses_irq_vector() {
         let (mut cpu, mut bus) = setup(&[0x00, 0xEA]);
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16 + 0x3FFE] = 0x34;
         image[16 + 0x3FFF] = 0x12;
