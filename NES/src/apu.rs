@@ -37,6 +37,16 @@ pub struct Apu {
     pulse_sweep_reload: [bool; 2],
     triangle_linear_counter: u8,
     triangle_reload_flag: bool,
+    dmc_irq: bool,
+    dmc_enabled: bool,
+    dmc_bytes_remaining: u16,
+    dmc_current_address: u16,
+    dmc_sample_buffer: Option<u8>,
+    dmc_shift_register: u8,
+    dmc_bits_remaining: u8,
+    dmc_silence: bool,
+    dmc_timer_counter: u16,
+    dmc_output_level: u8,
 }
 
 impl Apu {
@@ -45,18 +55,28 @@ impl Apu {
 
     /// Writes a register in the $4000-$4017 range.
     ///
-    /// $4014 and $4016 are owned by DMA and controllers. $4015 controls the four
-    /// implemented length-counter channels; DMC playback is not implemented.
+    /// $4014 and $4016 are owned by DMA and controllers. DMC sample fetches are
+    /// exposed to the bus as requests; the timing model is approximate.
     pub fn write(&mut self, address: u16, value: u8) {
         if !(0x4000..=0x4017).contains(&address) { return; }
         if address == 0x4015 {
             self.enabled_channels = value & 0x0F;
+            self.dmc_irq = false;
+            self.dmc_enabled = value & 0x10 != 0;
+            if !self.dmc_enabled { self.dmc_bytes_remaining = 0; }
+            else if self.dmc_bytes_remaining == 0 { self.restart_dmc_sample(); }
             for channel in 0..4 {
                 if self.enabled_channels & (1 << channel) == 0 {
                     self.length_counters[channel] = 0;
                 }
             }
             self.registers[(address - 0x4000) as usize] = value;
+        } else if address == 0x4010 {
+            self.registers[(address - 0x4000) as usize] = value;
+            if value & 0x80 == 0 { self.dmc_irq = false; }
+        } else if address == 0x4011 {
+            self.registers[(address - 0x4000) as usize] = value;
+            self.dmc_output_level = value & 0x7F;
         } else if address == 0x4017 {
             self.registers[(address - 0x4000) as usize] = value;
             self.frame_irq_inhibit = value & 0x40 != 0;
@@ -93,6 +113,7 @@ impl Apu {
     /// Exact regional timing and delayed $4017 reset are not modelled.
     pub fn tick_cpu_cycles(&mut self, cycles: u32) {
         const NOISE_PERIODS: [u16; 16] = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068];
+        const DMC_PERIODS: [u16; 16] = [428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106,  85,  72,  54];
         if self.noise_shift == 0 { self.noise_shift = 1; }
         for _ in 0..cycles {
             // Pulse/noise timers are clocked on alternating CPU cycles; triangle runs each cycle.
@@ -120,6 +141,23 @@ impl Apu {
                 self.triangle_timer_counter = triangle_period;
                 self.triangle_sequence = (self.triangle_sequence + 1) & 31;
             } else { self.triangle_timer_counter -= 1; }
+            if self.dmc_timer_counter == 0 {
+                self.dmc_timer_counter = DMC_PERIODS[(self.registers[0x10] & 0x0F) as usize].saturating_sub(1);
+                if !self.dmc_silence {
+                    if self.dmc_shift_register & 1 != 0 {
+                        if self.dmc_output_level <= 125 { self.dmc_output_level += 2; }
+                    } else if self.dmc_output_level >= 2 { self.dmc_output_level -= 2; }
+                }
+                self.dmc_shift_register >>= 1;
+                self.dmc_bits_remaining = self.dmc_bits_remaining.saturating_sub(1);
+                if self.dmc_bits_remaining == 0 {
+                    self.dmc_bits_remaining = 8;
+                    if let Some(sample) = self.dmc_sample_buffer.take() {
+                        self.dmc_shift_register = sample;
+                        self.dmc_silence = false;
+                    } else { self.dmc_silence = true; }
+                }
+            } else { self.dmc_timer_counter -= 1; }
             self.cpu_cycle_odd = !self.cpu_cycle_odd;
         }
         const FOUR_STEP_PERIOD: u32 = 14_915;
@@ -206,7 +244,9 @@ impl Apu {
             for channel in 0..4 {
                 if self.length_counters[channel] > 0 { status |= 1 << channel; }
             }
+            if self.dmc_bytes_remaining > 0 { status |= 0x10; }
             if self.frame_irq { status |= 0x40; }
+            if self.dmc_irq { status |= 0x80; }
             self.frame_irq = false;
             status
         } else if (0x4000..=0x4017).contains(&address) {
@@ -249,11 +289,39 @@ impl Apu {
         } else { 0.0 };
         let tnd_input = triangle / 8227.0 + noise / 12241.0;
         let tnd_out = if tnd_input == 0.0 { 0.0 } else { 159.79 / (1.0 / tnd_input + 100.0) };
-        (pulse_out + tnd_out).clamp(0.0, 1.0)
+        let dmc_out = f32::from(self.dmc_output_level) / 127.0 * 0.12;
+        (pulse_out + tnd_out + dmc_out).clamp(0.0, 1.0)
     }
 
     /// Returns whether the approximate frame sequencer currently asserts frame IRQ.
     pub fn frame_irq_pending(&self) -> bool { self.frame_irq }
+
+    /// Returns whether either the frame sequencer or DMC asserts the CPU IRQ line.
+    pub fn irq_pending(&self) -> bool { self.frame_irq || self.dmc_irq }
+
+    /// Returns a pending DMC sample-memory read address, if the sample buffer needs data.
+    pub fn take_dmc_dma_request(&mut self) -> Option<u16> {
+        if self.dmc_sample_buffer.is_none() && self.dmc_bytes_remaining > 0 {
+            Some(self.dmc_current_address)
+        } else { None }
+    }
+
+    /// Supplies a byte fetched by the bus for the DMC sample buffer.
+    pub fn supply_dmc_byte(&mut self, value: u8) {
+        if self.dmc_sample_buffer.is_some() || self.dmc_bytes_remaining == 0 { return; }
+        self.dmc_sample_buffer = Some(value);
+        self.dmc_current_address = if self.dmc_current_address == 0xFFFF { 0x8000 } else { self.dmc_current_address + 1 };
+        self.dmc_bytes_remaining -= 1;
+        if self.dmc_bytes_remaining == 0 {
+            if self.registers[0x10] & 0x40 != 0 && self.dmc_enabled { self.restart_dmc_sample(); }
+            else if self.registers[0x10] & 0x80 != 0 { self.dmc_irq = true; }
+        }
+    }
+
+    fn restart_dmc_sample(&mut self) {
+        self.dmc_current_address = 0xC000 | (u16::from(self.registers[0x12]) << 6);
+        self.dmc_bytes_remaining = u16::from(self.registers[0x13]) * 16 + 1;
+    }
 
     /// Returns the current length counter for pulse 1, pulse 2, triangle, or noise (0..3).
     pub fn length_counter(&self, channel: usize) -> Option<u8> {
