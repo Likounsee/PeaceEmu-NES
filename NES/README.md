@@ -21,7 +21,7 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 - **CPU :** sous-ensemble élargi des instructions officielles : chargements/stores, ADC/SBC, AND/ORA/EOR, comparaisons, BIT, shifts/rotates, incréments/décréments, branchements, JMP indirect avec comportement de page 6502, pile, JSR/RTS et BRK. Les opcodes manquants renvoient une erreur explicite. Ce n'est pas encore un CPU complet ni cycle-exact.
 - **Bus :** 2 Kio de RAM interne avec miroirs et latch open-bus minimal ; les registres PPU ($2000–$3FFF) sont routés avec leurs miroirs ; une écriture sur $4014 déclenche une demande de DMA OAM.
-- **PPU :** première couche matérielle : registres CPU, adresse VRAM, buffer de lecture, mémoire nametable/palette, OAM, mirroring de cartouche et drapeau VBlank/compteur de scanline. Le DMA OAM copie 256 octets d'une page CPU vers l'OAM et ajoute 513/514 cycles de blocage selon l'alignement. Un rendu de fond par instantané est disponible via `NesMachine::render_background()` et `NesMachine::framebuffer()` : le framebuffer de 256×240 pixels contient des indices de palette NES 6 bits. Il lit les tuiles, plans de bits, attributs de palette, mirroring et défilement de base. Ce rendu n'est pas encore synchronisé par dot, et les sprites/leur priorité restent à faire. Le NMI VBlank est routé vers l'entrée d'interruption CPU.
+- **PPU :** première couche matérielle : registres CPU, adresse VRAM, buffer de lecture, mémoire nametable/palette, OAM, mirroring de cartouche et drapeau VBlank/compteur de scanline. Le DMA OAM copie 256 octets d'une page CPU vers l'OAM et ajoute 513/514 cycles de blocage selon l'alignement. Un rendu par instantané est disponible via `NesMachine::render_background()` ou `NesMachine::render_frame()` et `NesMachine::framebuffer()` : le framebuffer de 256×240 pixels contient des indices de palette NES 6 bits. Le rendu lit les tuiles, plans de bits, attributs de palette, mirroring et défilement de base ; `render_frame()` compose aussi les sprites avec flips horizontal/vertical, tailles 8×8/8×16, priorité approximative, hit sprite 0 et overflow de sprites par ligne. Ce n'est pas encore une pipeline dot-par-dot. Le NMI VBlank est routé vers l'entrée d'interruption CPU.
 - **Cartouche :** parsing iNES legacy, validation des tailles, mirroring, PRG-ROM NROM (mapper 0), CHR-ROM ou CHR-RAM. NES 2.0 et les autres mappers ne sont pas pris en charge.
 - **Machine :** `NesMachine` charge une image iNES/NROM, initialise le CPU depuis le vecteur de reset et expose le pas d'instruction ainsi que les lectures/écritures CPU.
 - **Tests :** 27 tests couvrant CPU, bus, cartouche, registres PPU, copie DMA complète et comptabilisation des cycles de blocage.
@@ -29,7 +29,7 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 ## Ordre de développement
 
-1. Étendre le rendu PPU vers une pipeline par dot, synchronisation scroll et sprites.
+1. Étendre le rendu PPU vers une pipeline par dot, synchronisation scroll et précision du sprite 0/overflow.
 2. Compléter le CPU : instructions officielles restantes, cycles et tests de régression.
 3. Ajouter APU/manettes au bus et raffiner le timing DMA/NMI.
 4. Intégrer le contrat hôte PeaceEmu sans dépendance graphique dans le cœur.
@@ -47,7 +47,7 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 ## Avancement
 
-**Avancement global estimé : 30 %.** La machine minimale charge une cartouche NROM, exécute un sous-ensemble du CPU, et la PPU expose les registres, la mémoire graphique, le timing VBlank/NMI ainsi qu'un rendu de fond par instantané. Une suite de 31 tests couvre les composants de base, le transfert DMA des 256 octets, l'entrée NMI et le décodage des pixels de fond. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
+**Avancement global estimé : 32 %.** La machine minimale charge une cartouche NROM, exécute un sous-ensemble du CPU, et la PPU expose les registres, la mémoire graphique, le timing VBlank/NMI ainsi qu'un rendu de fond par instantané. Une suite de 32 tests couvre les composants de base, le transfert DMA des 256 octets, l'entrée NMI et le décodage des pixels de fond. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
 
 CI : vérifier le workflow le plus récent après les corrections de tests et l'ajout du rendu de fond.
 
@@ -58,7 +58,7 @@ CI : vérifier le workflow le plus récent après les corrections de tests et l'
 | Bus RAM et DMA OAM | RAM miroir, registres PPU routés, transfert DMA et blocage CPU |
 | Cartouche NROM / iNES legacy | Première version |
 | Machine et reset vector | Première version — charge NROM et exécute le CPU |
-| PPU | Registres/mémoire/timing VBlank-NMI partiels ; rendu de fond par instantané ; sprites et timing dot-par-dot à faire |
+| PPU | Registres/mémoire/VBlank-NMI ; rendu de fond et sprites par instantané ; timing dot-par-dot à faire |
 | APU | À faire |
 | Contrôleurs | À faire |
 | Timing complet | À faire |
