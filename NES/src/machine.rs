@@ -119,8 +119,8 @@ mod tests {
         machine.step().unwrap(); // LDA #$02
         machine.step().unwrap(); // STA $4014 starts DMA
         assert_eq!(machine.total_cycles(), 7 + 2 + 4 + 514);
-        machine.write_cpu(0x2003, 0);
         for i in 0..=u8::MAX {
+            machine.write_cpu(0x2003, i);
             assert_eq!(machine.read_cpu(0x2004), i ^ 0x5A);
         }
     }
