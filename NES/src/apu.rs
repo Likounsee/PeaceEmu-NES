@@ -442,6 +442,33 @@ mod tests {
     }
 
     #[test]
+    fn triangle_sequencer_holds_phase_when_length_counter_is_zero() {
+        let mut apu = Apu::new();
+        apu.triangle_sequence = 11;
+        apu.triangle_linear_counter = 7;
+        apu.triangle_timer_counter = 0;
+        apu.tick_cpu_cycles(1);
+        assert_eq!(apu.triangle_sequence, 11);
+    }
+
+    #[test]
+    fn triangle_sequencer_requires_both_length_and_linear_counters() {
+        let mut apu = Apu::new();
+        apu.triangle_sequence = 11;
+        apu.triangle_linear_counter = 7;
+        apu.length_counters[2] = 1;
+        apu.triangle_timer_counter = 0;
+        apu.tick_cpu_cycles(1);
+        assert_eq!(apu.triangle_sequence, 12);
+
+        apu.triangle_sequence = 12;
+        apu.triangle_linear_counter = 0;
+        apu.triangle_timer_counter = 0;
+        apu.tick_cpu_cycles(1);
+        assert_eq!(apu.triangle_sequence, 12);
+    }
+
+    #[test]
     fn stores_channel_registers_and_frame_counter() {
         let mut apu = Apu::new();
         apu.write(0x4000, 0xBF);
