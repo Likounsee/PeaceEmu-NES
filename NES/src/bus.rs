@@ -7,7 +7,8 @@ use crate::ppu::Ppu;
 /// CPU bus with 2 KiB internal RAM and optional NROM cartridge.
 ///
 /// PPU registers, frame rendering, NMI, OAM DMA and serial controller ports are routed.
-/// APU register storage/status is routed; audio synthesis and IRQ timing remain unimplemented.
+/// APU pulse/triangle/noise synthesis and an approximate DMC sample-fetch path are integrated;
+/// audio mixing, DMA stalls and interrupt timing are not cycle-accurate.
 #[derive(Debug)]
 pub struct CpuBus {
     ram: [u8; 0x800],
