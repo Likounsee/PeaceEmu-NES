@@ -548,6 +548,25 @@ mod tests {
         assert!(bus.irq_pending(), "servicing NMI must not acknowledge the APU IRQ");
     }
 
+    #[test]
+    fn brk_pushes_incremented_pc_and_break_status_then_uses_irq_vector() {
+        let (mut cpu, mut bus) = setup(&[0x00, 0xEA]);
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFE] = 0x34;
+        image[16 + 0x3FFF] = 0x12;
+        bus.insert_cartridge(crate::cartridge::Nrom::parse(&image).unwrap());
+        let result = cpu.step(&mut bus).unwrap();
+        assert_eq!(result.cycles, 7);
+        assert_eq!(cpu.state().pc, 0x1234);
+        assert_eq!(bus.read(0x01FD), 0x06);
+        assert_eq!(bus.read(0x01FC), 0x02);
+        assert_ne!(bus.read(0x01FB) & flags::BREAK, 0);
+        assert_ne!(bus.read(0x01FB) & flags::UNUSED, 0);
+        assert_ne!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
+    }
+
     #[test] fn unknown_opcode_is_explicit() {
         let (mut c, mut b) = setup(&[0x02]);
         assert_eq!(c.step(&mut b), Err(CpuError::UnsupportedOpcode { opcode: 2, pc: 0x0600 }));
