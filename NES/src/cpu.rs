@@ -500,9 +500,9 @@ mod tests {
         assert_eq!(irq.cycles, 7);
         assert_eq!(cpu.state().pc, 0x0700);
         assert_ne!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
-        assert_eq!(bus.read(0x01FB), 0x06); // return PC high byte
-        assert_eq!(bus.read(0x01FA), 0x01); // return PC low byte
-        assert_eq!(bus.read(0x01F9) & flags::BREAK, 0);
+        assert_eq!(bus.read(0x01FD), 0x06); // return PC high byte
+        assert_eq!(bus.read(0x01FC), 0x01); // return PC low byte
+        assert_eq!(bus.read(0x01FB) & flags::BREAK, 0);
     }
 
     #[test]
