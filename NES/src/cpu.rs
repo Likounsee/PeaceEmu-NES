@@ -379,6 +379,30 @@ mod tests {
         assert_eq!(c.step(&mut b), Err(CpuError::UnsupportedOpcode { opcode: 2, pc: 0x0600 }));
         assert_eq!(c.total_cycles(), 0);
     }
+    #[test]
+    fn nmi_pushes_cpu_state_and_jumps_to_nmi_vector() {
+        use crate::cartridge::Nrom;
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x1000] = 0x00; // $9000 NMI handler low byte
+        image[16 + 0x1001] = 0x90;
+        image[16 + 0x0600] = 0xEA;
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Nrom::parse(&image).unwrap());
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x8600);
+        bus.tick_ppu(243 * 341 + 1);
+        bus.write(0x2000, 0x80);
+        let result = cpu.step(&mut bus).unwrap();
+        assert_eq!(result.cycles, 7);
+        assert_eq!(result.opcode, 0xFF);
+        assert_eq!(cpu.state().pc, 0x9000);
+        assert_eq!(bus.read(0x01FD), 0x86);
+        assert_eq!(bus.read(0x01FC), 0x00);
+        assert_ne!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
+    }
+
     #[test] fn reset_loads_vector_from_nrom_cartridge() {
         use crate::cartridge::Nrom;
         let mut image = vec![0; 16 + 16_384];
