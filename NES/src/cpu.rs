@@ -304,6 +304,27 @@ mod tests {
         assert_eq!(c.step(&mut b), Err(CpuError::UnsupportedOpcode { opcode: 2, pc: 0x0600 }));
         assert_eq!(c.total_cycles(), 0);
     }
+    #[test] fn indexed_zero_page_and_absolute_reads_work() {
+        let (mut cpu, mut bus) = setup(&[0xA2, 0x01, 0xB5, 0x20, 0xBD, 0xFF, 0x02]);
+        bus.write(0x0021, 0x35);
+        bus.write(0x0300, 0xA7);
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 4);
+        assert_eq!(cpu.state().a, 0x35);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(cpu.state().a, 0xA7);
+    }
+    #[test] fn indexed_indirect_load_and_store_work() {
+        let (mut cpu, mut bus) = setup(&[0xA2, 0x04, 0xA1, 0x20, 0x81, 0x20]);
+        bus.write(0x0024, 0x00);
+        bus.write(0x0025, 0x02);
+        bus.write(0x0200, 0x6C);
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 6);
+        assert_eq!(cpu.state().a, 0x6C);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 6);
+        assert_eq!(bus.read(0x0200), 0x6C);
+    }
     #[test] fn jsr_and_rts_round_trip() {
         let (mut c, mut b) = setup(&[0x20, 6, 6, 0xA9, 0x55, 0xEA, 0xA9, 0x77, 0x60]);
         c.step(&mut b).unwrap(); assert_eq!(c.state().pc, 0x0606);
