@@ -175,6 +175,7 @@ mod tests {
         bus.write(0x4017, 0x00);
         bus.tick_apu(14_915);
         assert!(bus.irq_pending());
+        bus.write(0x4000, 0x20); // Put bit 5 high on the CPU data bus before reading status.
         let status = bus.read(0x4015);
         assert_ne!(status & 0x20, 0);
         assert_ne!(status & 0x40, 0);
