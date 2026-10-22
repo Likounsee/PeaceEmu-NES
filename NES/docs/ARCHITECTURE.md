@@ -30,7 +30,7 @@ Exécute les instructions du 6502 modifié pour la NES. Le composant gère les r
 
 ### Bus mémoire
 
-Centralise les accès CPU vers la RAM interne, les registres PPU/APU, les contrôleurs et la cartouche. Les miroirs d'adresses sont gérés par le décodage du bus, sans dupliquer les règles dans chaque composant.
+Centralise les accès CPU vers la RAM interne, les registres PPU/APU, les ports manette série ($4016/$4017) et la cartouche. Les manettes disposent d'un strobe, d'un latch des huit boutons et d'un registre à décalage ; l'entrée publique passe par `NesMachine::set_controller_state`. L'APU n'est pas encore implémentée.
 
 ### Cartouche et mapper
 
@@ -38,7 +38,7 @@ Valide les en-têtes iNES/NES 2.0, les tailles et les éventuels trainers avant 
 
 ### PPU
 
-Gère les registres vidéo, les motifs, nametables, palettes, sprites, NMI et timing de balayage. Le rendu et le timing doivent évoluer en synchronisation avec la machine ; ne pas traiter une instruction CPU comme une image entière.
+Gère les registres vidéo, motifs, nametables, palettes, sprites, NMI et timing de balayage. Un rendu par instantané 256×240 existe, avec priorité OAM et approximations du sprite 0/overflow ; le pipeline dot-par-dot et les changements de scroll en cours de ligne restent à faire.
 
 ### APU
 
@@ -46,7 +46,7 @@ Gère les canaux audio NES et leur évolution dans le temps. Le cœur produit de
 
 ### Contrôleurs
 
-Le cœur reçoit des transitions d'entrée sémantiques depuis PeaceEmu et les convertit au protocole de lecture/sérialisation matériel des manettes NES.
+Les deux ports de manette série sont implémentés au niveau du bus, avec huit bits dans l'ordre A/B/Select/Start/Up/Down/Left/Right. L'adaptateur PeaceEmu doit encore traduire les transitions d'entrée hôtes vers `set_controller_state`.
 
 ### Machine et ordonnanceur
 
@@ -69,4 +69,6 @@ Coordonne CPU, PPU, APU, cartouche et contrôleurs. Le modèle de timing doit ê
 4. Parsing de cartouche et NROM.
 5. Machine minimale et tests d'intégration.
 6. PPU et synchronisation.
-7. Adaptateur hôte, contrôleurs, audio, puis compatibilité étendue.
+7. Compléter le pipeline PPU et le timing synchronisé.
+8. Ajouter l'APU, puis connecter les manettes à l'adaptateur hôte.
+9. Adapter le contrat EmulationCore et étendre la compatibilité.
