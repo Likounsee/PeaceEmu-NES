@@ -701,6 +701,7 @@ mod tests {
             0xA9, 0x03, // LDA #$03
             0x4B, 0x03, // ALR #$03 -> A=$01, C=1
             0x6B, 0xFF, // ARR #$FF -> A=$80, C=0, N=1, V=0
+            0xA9, 0x03, // LDA #$03 (prepare A & X = $03 for AXS)
             0xA2, 0x03, // LDX #$03
             0xCB, 0x01, // AXS #$01 -> X=$02, C=1
         ]);
