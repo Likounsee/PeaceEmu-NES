@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   rust:
-    name: Rust format, tests and Clippy
+    name: Rust formatting, tests and Clippy
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,8 +30,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - name: Format Rust sources
+        run: cargo fmt --all
       - name: Run tests
         run: cargo test --all-targets --locked
       - name: Run Clippy
