@@ -38,7 +38,7 @@ Valide les en-têtes iNES/NES 2.0, les tailles et les éventuels trainers avant 
 
 ### PPU
 
-Gère les registres vidéo, motifs, nametables, palettes, sprites, NMI et timing de balayage. Un rendu par instantané 256×240 existe, avec priorité OAM et approximations du sprite 0/overflow. Le compteur NTSC inclut le saut de dot du pré-rendu sur les images impaires lorsque le rendu est actif ; le pipeline dot-par-dot et les changements de scroll en cours de ligne restent à faire.
+Gère les registres vidéo, motifs, nametables, palettes, sprites, NMI et timing de balayage. Un rendu par instantané 256×240 existe, avec priorité OAM, masque grayscale de PPUMASK et approximations du sprite 0/overflow. Le compteur NTSC inclut le saut de dot du pré-rendu sur les images impaires lorsque le rendu est actif ; le pipeline dot-par-dot et les changements de scroll en cours de ligne restent à faire.
 
 ### APU
 
