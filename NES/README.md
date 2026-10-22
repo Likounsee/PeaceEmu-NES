@@ -20,11 +20,11 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 ## Implémentation actuelle
 
 - **CPU :** sous-ensemble élargi des instructions officielles : chargements/stores, ADC/SBC, AND/ORA/EOR, comparaisons, BIT, shifts/rotates, incréments/décréments, branchements, JMP indirect avec comportement de page 6502, pile, JSR/RTS et BRK. Les opcodes manquants renvoient une erreur explicite. Ce n'est pas encore un CPU complet ni cycle-exact.
-- **Bus :** 2 Kio de RAM interne avec miroirs et latch open-bus minimal ; les registres PPU ($2000–$3FFF) sont routés avec leurs miroirs.
-- **PPU :** première couche matérielle : registres CPU, adresse VRAM, buffer de lecture, mémoire nametable/palette, OAM, mirroring de cartouche et drapeau VBlank/compteur de scanline. Le rendu des pixels, l'évaluation des sprites et le NMI restent à faire.
+- **Bus :** 2 Kio de RAM interne avec miroirs et latch open-bus minimal ; les registres PPU ($2000–$3FFF) sont routés avec leurs miroirs ; une écriture sur $4014 déclenche une demande de DMA OAM.
+- **PPU :** première couche matérielle : registres CPU, adresse VRAM, buffer de lecture, mémoire nametable/palette, OAM, mirroring de cartouche et drapeau VBlank/compteur de scanline. Le DMA OAM copie 256 octets d'une page CPU vers l'OAM et ajoute 513/514 cycles de blocage selon l'alignement. Le rendu des pixels, l'évaluation des sprites et le NMI restent à faire.
 - **Cartouche :** parsing iNES legacy, validation des tailles, mirroring, PRG-ROM NROM (mapper 0), CHR-ROM ou CHR-RAM. NES 2.0 et les autres mappers ne sont pas pris en charge.
 - **Machine :** `NesMachine` charge une image iNES/NROM, initialise le CPU depuis le vecteur de reset et expose le pas d'instruction ainsi que les lectures/écritures CPU.
-- **Tests :** 25 tests couvrant CPU, bus, cartouche, registres PPU et exécution d'un petit programme depuis une cartouche NROM.
+- **Tests :** 27 tests couvrant CPU, bus, cartouche, registres PPU, copie DMA complète et comptabilisation des cycles de blocage.
 - **CI :** workflow GitHub Actions ajouté pour formater les sources puis exécuter les tests et Clippy. Vérifier le dernier résultat dans GitHub Actions avant d'affirmer que la CI est verte.
 
 ## Ordre de développement
@@ -47,18 +47,18 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 ## Avancement
 
-**Avancement global estimé : 23 %.** La machine minimale charge une cartouche NROM, exécute le CPU, et une première PPU expose les registres, la mémoire graphique et le timing VBlank. Une suite de 25 tests couvre les composants de base. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
+**Avancement global estimé : 25 %.** La machine minimale charge une cartouche NROM, exécute le CPU, et une première PPU expose les registres, la mémoire graphique et le timing VBlank. Une suite de 27 tests couvre les composants de base, dont le transfert DMA des 256 octets. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
 
-Dernière CI confirmée verte : [run 39812576382](https://github.com/Likounsee/PeaceEmu-NES/actions/runs/39812576382) — 25 tests réussis, formatage et Clippy réussis.
+Dernière CI : à vérifier après l'ajout du DMA OAM.
 
 | Domaine | État |
 |---|---|
 | Structure Rust et build initial | En place |
 | CPU Ricoh 2A03 | Partiel — sous-ensemble d'opcodes |
-| Bus RAM | Première version, sans registres matériels |
+| Bus RAM et DMA OAM | RAM miroir, registres PPU routés, transfert DMA et blocage CPU |
 | Cartouche NROM / iNES legacy | Première version |
 | Machine et reset vector | Première version — charge NROM et exécute le CPU |
-| PPU | À faire |
+| PPU | Registres/mémoire/timing VBlank partiels ; rendu et NMI à faire |
 | APU | À faire |
 | Contrôleurs | À faire |
 | Timing complet | À faire |
