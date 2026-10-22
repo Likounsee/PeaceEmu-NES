@@ -60,10 +60,18 @@ impl NesMachine {
     /// Returns the accumulated nominal CPU cycle count, including reset.
     pub fn total_cycles(&self) -> u64 { self.cpu.total_cycles() }
 
-    /// Executes one CPU instruction.
+    /// Executes one CPU instruction and services any OAM DMA it requests.
     pub fn step(&mut self) -> Result<StepResult, MachineError> {
         let result = self.cpu.step(&mut self.bus)?;
-        self.bus.tick_ppu(u32::from(result.cycles) * 3);
+        let mut elapsed_cycles = u16::from(result.cycles);
+        if let Some(page) = self.bus.take_oam_dma_request() {
+            // DMA occupies 513 CPU cycles, plus one alignment cycle on odd parity.
+            let dma_cycles = if self.cpu.total_cycles() & 1 == 0 { 513 } else { 514 };
+            self.bus.transfer_oam_dma(page);
+            self.cpu.add_stall_cycles(dma_cycles);
+            elapsed_cycles = elapsed_cycles.saturating_add(dma_cycles);
+        }
+        self.bus.tick_ppu(u32::from(elapsed_cycles) * 3);
         Ok(result)
     }
 
