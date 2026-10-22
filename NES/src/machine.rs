@@ -35,9 +35,9 @@ impl From<CpuError> for MachineError {
 
 /// CPU plus the current minimal bus and an NROM cartridge.
 ///
-/// The wrapper supports instruction stepping, PPU register access and snapshot frame
-/// rendering, but is not yet a playable emulator: audio, controllers and precise timing
-/// remain incomplete.
+/// The wrapper supports instruction stepping, PPU register access, snapshot frame
+/// rendering and controller input, but is not yet a playable emulator: audio and precise
+/// timing remain incomplete.
 #[derive(Debug)]
 pub struct NesMachine {
     cpu: Cpu,
@@ -53,6 +53,14 @@ impl NesMachine {
         let mut cpu = Cpu::new();
         cpu.reset(&mut bus);
         Ok(Self { cpu, bus })
+    }
+
+    /// Updates controller 1 or 2 button state.
+    ///
+    /// Button bits, from least to most significant: A, B, Select, Start, Up, Down, Left,
+    /// Right. The CPU reads latched bits serially through $4016/$4017.
+    pub fn set_controller_state(&mut self, port: usize, buttons: u8) {
+        self.bus.set_controller_state(port, buttons);
     }
 
     /// Renders a background snapshot for frontends that need an indexed 256x240 image.
