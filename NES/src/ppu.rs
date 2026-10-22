@@ -343,9 +343,10 @@ mod tests {
         ppu.cpu_write_register(7, 0xA7, None);
         assert_eq!(ppu.v & 0x3FFF, 0x2020);
         ppu.cpu_write_register(6, 0x20, None);
-        ppu.cpu_write_register(6, 0x20, None);
+        ppu.cpu_write_register(6, 0x00, None);
         assert_eq!(ppu.cpu_read_register(7, None), 0);
         assert_eq!(ppu.cpu_read_register(7, None), 0xA7);
+        assert_eq!(ppu.v & 0x3FFF, 0x2040);
     }
 
     #[test]
