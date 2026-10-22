@@ -6,11 +6,11 @@ Le développement se trouve dans [NES/](NES/). Consultez le [README du module](N
 
 ## État du projet
 
-**Avancement estimé : 40 %.** Le crate Rust comprend un CPU Ricoh 2A03 partiel, un bus RAM miroir, un parseur iNES/NROM mapper 0, un wrapper `NesMachine` et une PPU avec registres CPU, mémoire graphique, OAM, VBlank/NMI et un rendu de fond par instantané et un compositing des sprites respectant la priorité OAM, avec détection approximative du sprite 0 et du dépassement de huit sprites par ligne, vers un framebuffer 256×240 d'indices de palette NES. Le DMA OAM copie 256 octets et ajoute 513/514 cycles de blocage ; les ports manette série $4016/$4017 sont implémentés avec latch et décalage des huit boutons. Un premier modèle APU stocke les registres $4000–$4017 et expose les bits d’activation des canaux via $4015, sans encore produire de son.
+**Avancement estimé : 40 %.** Le crate Rust comprend un CPU Ricoh 2A03 partiel, un bus RAM miroir, un parseur iNES/NROM mapper 0, un wrapper `NesMachine` et une PPU avec registres CPU, mémoire graphique, OAM, VBlank/NMI et un rendu de fond par instantané et un compositing des sprites respectant la priorité OAM, avec détection approximative du sprite 0 et du dépassement de huit sprites par ligne, vers un framebuffer 256×240 d'indices de palette NES. Le masque grayscale de PPUMASK est également appliqué au rendu snapshot. Le DMA OAM copie 256 octets et ajoute 513/514 cycles de blocage ; les ports manette série $4016/$4017 sont implémentés avec latch et décalage des huit boutons. Un premier modèle APU stocke les registres $4000–$4017 et expose les bits d’activation des canaux via $4015, sans encore produire de son.
 
 **Ce n'est pas encore un émulateur NES jouable.** Le rendu actuel est un instantané, pas un rendu synchronisé dot par dot ; le timing comprend désormais le saut de dot du pré-rendu NTSC sur les images impaires avec rendu actif. Le sprite 0 reste approximatif ; la synthèse audio et le timing IRQ de l’APU, plusieurs détails CPU et l’adaptateur EmulationCore restent à implémenter. La stratégie de partage/versionnement du crate de contrat hôte doit être décidée avant l'intégration compilable.
 
-CI : le dernier commit vérifié avant cette série avait **47 tests verts**. La nouvelle série ajoute 5 tests (3 APU, 1 bus, 1 CPU) ; sa validation par GitHub Actions est en cours/à vérifier.
+CI : le dernier workflow vert exécute **53 tests**, ainsi que le formatage et Clippy : [voir GitHub Actions](https://github.com/Likounsee/PeaceEmu-NES/actions/runs/39832859985).
 
 ## Développement local
 
