@@ -401,6 +401,34 @@ mod tests {
     }
 
     #[test]
+    fn ninth_sprite_on_scanline_sets_overflow_flag() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x10;
+        for sprite in 0..9usize {
+            ppu.oam[sprite * 4] = 255; // Every sprite starts at scanline zero.
+        }
+        ppu.render_frame(None);
+        assert_ne!(ppu.status & 0x20, 0);
+    }
+
+    #[test]
+    fn sprite_behind_background_does_not_replace_opaque_background() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Nrom::parse(&image).unwrap();
+        ppu.mask = 0x1E;
+        ppu.mem_write(0x0000, 0x80, Some(&mut cartridge)); // Background tile zero.
+        ppu.mem_write(0x0010, 0x80, Some(&mut cartridge)); // Sprite tile one.
+        ppu.mem_write(0x3F01, 0x22, Some(&mut cartridge));
+        ppu.mem_write(0x3F11, 0x30, Some(&mut cartridge));
+        ppu.oam[0..4].copy_from_slice(&[255, 1, 0x20, 16]);
+        ppu.render_frame(Some(&cartridge));
+        assert_eq!(ppu.framebuffer()[16], 0x22);
+    }
+
+    #[test]
     fn oam_data_auto_increments_address() {
         let mut ppu = Ppu::new();
         ppu.cpu_write_register(3, 0xFE, None);
