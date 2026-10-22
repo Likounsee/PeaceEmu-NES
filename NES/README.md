@@ -4,84 +4,60 @@
 
 ## Objectif
 
-Développer un cœur NES réel, indépendant de l'interface graphique, intégrable à l'application principale [PeaceEmu](https://github.com/Likounsee/PeaceEmu). **L'interface, la bibliothèque de jeux, les fenêtres et l'orchestration des sessions existent déjà dans le dépôt principal : ce dépôt ne doit pas recréer ces fonctionnalités.**
+Développer un cœur NES réel, indépendant de l'interface graphique, intégrable à l'application principale [PeaceEmu](https://github.com/Likounsee/PeaceEmu). L'interface, la bibliothèque de jeux, les fenêtres et l'orchestration des sessions existent déjà dans le dépôt principal : ce dépôt ne doit pas recréer ces fonctionnalités.
 
-La NES est un bon premier objectif pour apprendre l'émulation : son architecture est plus petite que celle des consoles modernes, mais une émulation fidèle doit tout de même respecter les instructions CPU, les accès mémoire, les interruptions, le timing vidéo/audio et les particularités des cartouches.
-
-**État réel :** structure et documentation initiales uniquement. Aucun cœur NES fonctionnel n'est encore implémenté.
+**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES/NROM et un premier sous-ensemble du CPU disposent de code et de tests. Le module n'est pas encore jouable et n'est pas encore branché au contrat hôte.
 
 ## Langage et intégration
 
 - **Langage :** Rust, en cohérence avec PeaceEmu.
-- **Édition cible :** Rust 2021 ; respecter la version minimale et les conventions du dépôt hôte lorsque l'intégration est mise en place.
-- **Responsabilité de ce dépôt :** le matériel émulé et les tests du cœur NES.
+- **Édition cible :** Rust 2021 ; respecter la version minimale et les conventions du dépôt hôte lors de l'intégration.
+- **Responsabilité de ce dépôt :** matériel émulé et tests du cœur NES.
 - **Responsabilité du dépôt PeaceEmu :** interface, bibliothèque, fenêtres, cycle de vie des sessions et services communs.
-- **Contrat d'intégration :** le cœur doit exposer un adaptateur compatible avec `EmulationCore` de PeaceEmu, fournir un identifiant système stable, déclarer honnêtement ses capacités et transférer les images/audio via les types communs.
-- **Point technique à régler avant le branchement compilable :** le crate `emulation-core` est actuellement dans le workspace du dépôt hôte, sous `PeaceEmu/crates/core`, et n'est pas déclaré ici comme dépendance publiée. Il faudra choisir une méthode de partage/versionnement du contrat plutôt que dupliquer silencieusement ses types.
+- **Contrat d'intégration :** adaptateur à écrire pour implémenter EmulationCore, fournir un identifiant système stable, déclarer les capacités réellement prises en charge et transférer images/audio via les types communs.
+- **Point à résoudre avant le branchement compilable :** le crate emulation-core se trouve actuellement dans le workspace du dépôt hôte et n'est pas publié comme dépendance. Il faut choisir une stratégie de partage/versionnement du contrat au lieu de dupliquer ses types.
 
-## Périmètre du cœur
+## Implémentation actuelle
 
-- CPU Ricoh 2A03 : instructions, registres, modes d'adressage, flags, interruptions et cycles.
-- Bus mémoire : RAM interne, registres mappés et accès aux composants.
-- Cartouches : parsing iNES/NES 2.0, PRG/CHR et premiers mappers.
-- PPU : registres, mémoire vidéo, sprites, arrière-plan, NMI et timing.
-- APU : canaux audio et synchronisation.
-- Contrôleurs : protocole de lecture des manettes NES.
-- Machine : coordination déterministe du CPU, de la PPU, de l'APU et des cartouches.
-- Adaptateur PeaceEmu : chargement du contenu, reset, exécution jusqu'à un événement, entrées et transfert des sorties multimédia.
-
-Le premier jalon de compatibilité sera **NROM (mapper 0)**. Les autres mappers et les fonctionnalités avancées viendront après des tests reproductibles.
-
-## Architecture visée
-
-```text
-NES/
-├── README.md
-├── docs/
-│   └── ARCHITECTURE.md
-├── src/
-│   └── README.md
-└── tests/
-    └── README.md
-```
-
-Cette structure décrit l'état documentaire actuel ; elle ne signifie pas que le code correspondant existe déjà.
+- **CPU :** interpréteur initial pour un sous-ensemble d'instructions officielles, registres, flags, branchements, opérations immédiates, pile, JSR/RTS et BRK. Les opcodes manquants renvoient une erreur explicite. Ce n'est pas encore un CPU complet ni cycle-exact.
+- **Bus :** 2 Kio de RAM interne avec miroirs dans l'espace CPU et latch open-bus minimal. Les registres PPU/APU et manettes ne sont pas encore routés.
+- **Cartouche :** parsing iNES legacy, validation des tailles, mirroring, PRG-ROM NROM (mapper 0), CHR-ROM ou CHR-RAM. NES 2.0 et les autres mappers ne sont pas pris en charge.
+- **Tests :** tests unitaires pour le CPU, le bus et le parseur de cartouche.
+- **CI :** workflow GitHub Actions ajouté pour formater les sources puis exécuter les tests et Clippy. Vérifier le dernier résultat dans GitHub Actions avant d'affirmer que la CI est verte.
 
 ## Ordre de développement
 
-1. **Fondations Rust** — crate compilable, conventions, erreurs et tests.
-2. **CPU** — registres, modes d'adressage et instructions, avec tests ciblés.
-3. **Bus et RAM** — lecture/écriture, mirroring et décodage des adresses.
-4. **Cartouche NROM** — validation iNES, PRG-ROM et CHR-ROM/CHR-RAM.
-5. **Machine minimale** — relier CPU, bus et cartouche.
-6. **PPU** — registres, rendu et synchronisation progressivement testés.
-7. **Adaptateur PeaceEmu** — implémenter le contrat commun une fois la dépendance au crate partagée définie.
-8. **Contrôleurs et APU** — entrées et audio.
-9. **Compatibilité** — suites de validation légales, homebrew et corrections progressives.
+1. Compléter le CPU : instructions officielles restantes, modes d'adressage, cycles et tests de régression.
+2. Solidifier le bus et connecter proprement la cartouche.
+3. Ajouter une machine et un reset vector réel.
+4. Implémenter la PPU et la synchronisation CPU/PPU.
+5. Intégrer le contrat hôte PeaceEmu sans dépendance graphique dans le cœur.
+6. Ajouter contrôleurs, APU, sauvegardes et tests de compatibilité.
+7. Étendre progressivement les mappers, à partir de tests reproductibles.
 
-## Principes de développement
+## Principes
 
 - Ne pas recréer une interface graphique ou une bibliothèque de jeux dans ce dépôt.
 - Garder le matériel NES indépendant de l'interface et du système d'exploitation.
-- Ne pas confondre « instructions CPU exécutées » et « jeu correctement émulé » : le timing et les composants vidéo/audio comptent.
-- Ajouter des tests ciblés avec chaque fonctionnalité et conserver les tests de régression.
-- Ne déclarer aucune capacité comme prise en charge avant son implémentation et ses tests.
-- Ne pas ajouter de ROM commerciale au dépôt. Utiliser des homebrews ou suites de tests dont la redistribution est autorisée.
+- Ne pas confondre instructions CPU exécutées et jeu correctement émulé : le timing et les composants vidéo/audio comptent.
+- Ajouter des tests ciblés avec chaque fonctionnalité ; ne pas supprimer de tests de régression pour faire passer la CI.
+- Ne pas déclarer une capacité prise en charge avant son implémentation et ses tests.
+- Ne pas ajouter de ROM commerciale au dépôt. Utiliser des homebrews ou des suites de tests dont la licence autorise l'usage.
 
 ## Avancement
 
-Les pourcentages doivent refléter les fonctionnalités implémentées et validées, et non la présence de dossiers ou la quantité de documentation.
+Estimation de travail, à réviser selon les fonctionnalités vérifiées ; ce n'est pas une mesure de compatibilité des jeux.
 
 | Domaine | État |
 |---|---|
-| Documentation et architecture initiales | En place, à maintenir |
-| Crate Rust compilable | À faire |
-| CPU Ricoh 2A03 | À faire |
-| Bus mémoire | À faire |
-| Cartouches / NROM mapper 0 | À faire |
+| Structure Rust et build initial | En place |
+| CPU Ricoh 2A03 | Partiel — sous-ensemble d'opcodes |
+| Bus RAM | Première version, sans registres matériels |
+| Cartouche NROM / iNES legacy | Première version |
+| Machine et reset vector | À faire |
 | PPU | À faire |
 | APU | À faire |
 | Contrôleurs | À faire |
-| Synchronisation complète | À faire |
-| Adaptateur `EmulationCore` | À faire — dépendance du contrat à définir |
+| Timing complet | À faire |
+| Adaptateur EmulationCore | À faire — partage du contrat à définir |
 | Tests de compatibilité | À faire |
