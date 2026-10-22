@@ -6,7 +6,7 @@
 
 Développer un cœur NES réel, indépendant de l'interface graphique, intégrable à l'application principale [PeaceEmu](https://github.com/Likounsee/PeaceEmu). L'interface, la bibliothèque de jeux, les fenêtres et l'orchestration des sessions existent déjà dans le dépôt principal : ce dépôt ne doit pas recréer ces fonctionnalités.
 
-**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES/NROM et un premier sous-ensemble du CPU disposent de code et de tests. Le module n'est pas encore jouable et n'est pas encore branché au contrat hôte.
+**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES/NROM, un sous-ensemble élargi du CPU et le rendu snapshot de la PPU disposent de code et de tests. Le module n'est pas encore jouable et n'est pas encore branché au contrat hôte.
 
 ## Langage et intégration
 
@@ -24,7 +24,7 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 - **PPU :** première couche matérielle : registres CPU, adresse VRAM, buffer de lecture, mémoire nametable/palette, OAM, mirroring de cartouche et drapeau VBlank/compteur de scanline. Le DMA OAM copie 256 octets d'une page CPU vers l'OAM et ajoute 513/514 cycles de blocage selon l'alignement. Un rendu par instantané est disponible via `NesMachine::render_background()` ou `NesMachine::render_frame()` et `NesMachine::framebuffer()` : le framebuffer de 256×240 pixels contient des indices de palette NES 6 bits. Le rendu lit les tuiles, plans de bits, attributs de palette, mirroring et défilement de base ; `render_frame()` compose aussi les sprites avec flips horizontal/vertical, tailles 8×8/8×16, priorité approximative, hit sprite 0 et overflow de sprites par ligne. Ce n'est pas encore une pipeline dot-par-dot. Le NMI VBlank est routé vers l'entrée d'interruption CPU.
 - **Cartouche :** parsing iNES legacy, validation des tailles, mirroring, PRG-ROM NROM (mapper 0), CHR-ROM ou CHR-RAM. NES 2.0 et les autres mappers ne sont pas pris en charge.
 - **Machine :** `NesMachine` charge une image iNES/NROM, initialise le CPU depuis le vecteur de reset et expose le pas d'instruction ainsi que les lectures/écritures CPU.
-- **Tests :** 27 tests couvrant CPU, bus, cartouche, registres PPU, copie DMA complète et comptabilisation des cycles de blocage.
+- **Tests :** 35 tests prévus après ajout des tests de priorité sprite OAM, branches conditionnelles et opérations de pile/transfert ; la CI doit confirmer le résultat.
 - **CI :** workflow GitHub Actions ajouté pour formater les sources puis exécuter les tests et Clippy. Vérifier le dernier résultat dans GitHub Actions avant d'affirmer que la CI est verte.
 
 ## Ordre de développement
@@ -47,14 +47,14 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 ## Avancement
 
-**Avancement global estimé : 32 %.** La machine minimale charge une cartouche NROM, exécute un sous-ensemble du CPU, et la PPU expose les registres, la mémoire graphique, le timing VBlank/NMI ainsi qu'un rendu de fond par instantané. Une suite de 32 tests couvre les composants de base, le transfert DMA des 256 octets, l'entrée NMI et le décodage des pixels de fond. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
+**Avancement global estimé : 34 %.** La machine minimale charge une cartouche NROM, exécute un sous-ensemble du CPU, et la PPU expose les registres, la mémoire graphique, le timing VBlank/NMI ainsi qu'un rendu de fond par instantané. Une suite de 35 tests vise à couvrir les composants de base, le transfert DMA des 256 octets, l'entrée NMI, le décodage des pixels et la priorité des sprites. Le résultat doit être confirmé par CI. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
 
-CI : vérifier le workflow le plus récent après les corrections de tests et l'ajout du rendu de fond.
+CI : les runs précédents ont échoué sur deux tests de rendu PPU ; leurs fixtures ont été simplifiées et la nouvelle exécution doit confirmer la correction.
 
 | Domaine | État |
 |---|---|
 | Structure Rust et build initial | En place |
-| CPU Ricoh 2A03 | Partiel — sous-ensemble d'opcodes ; entrée NMI implémentée |
+| CPU Ricoh 2A03 | Partiel — sous-ensemble élargi, pile/flags/transferts/branches ; entrée NMI implémentée |
 | Bus RAM et DMA OAM | RAM miroir, registres PPU routés, transfert DMA et blocage CPU |
 | Cartouche NROM / iNES legacy | Première version |
 | Machine et reset vector | Première version — charge NROM et exécute le CPU |
