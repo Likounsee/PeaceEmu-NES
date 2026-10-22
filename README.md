@@ -10,7 +10,7 @@ Le développement se trouve dans [NES/](NES/). Consultez le [README du module](N
 
 **Ce n'est pas encore un émulateur NES jouable.** Le rendu actuel est un instantané, pas un rendu synchronisé dot par dot ; le timing comprend désormais le saut de dot du pré-rendu NTSC sur les images impaires avec rendu actif. Le sprite 0 reste approximatif ; APU, instructions CPU restantes et adaptateur EmulationCore restent à implémenter. La stratégie de partage/versionnement du crate de contrat hôte doit être décidée avant l'intégration compilable.
 
-CI : les tests ont révélé une attente incorrecte dans un test de mirroring ; elle a été corrigée. La nouvelle exécution CI est en attente de confirmation.
+CI : **47 tests passent**, formatage et Clippy réussis sur le commit de code vérifié. Les derniers commits de documentation sont en attente de leur propre exécution CI.
 
 ## Développement local
 
