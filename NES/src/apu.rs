@@ -356,15 +356,24 @@ mod tests {
         let mut apu = Apu::new();
         apu.write(0x4010, 0x80); // Enable terminal DMC IRQ.
         apu.write(0x4012, 0x01);
-        apu.write(0x4013, 0x02); // 33 bytes.
+        apu.write(0x4013, 0x00); // One byte, then terminal IRQ.
         apu.write(0x4015, 0x10);
         assert_eq!(apu.take_dmc_dma_request(), Some(0xC040));
         apu.supply_dmc_byte(0x55);
-        assert_eq!(apu.read(0x4015) & 0x10, 0x10);
+        assert_eq!(apu.read(0x4015) & 0x10, 0);
+        assert!(apu.irq_pending());
         apu.write(0x4015, 0x00);
         assert_eq!(apu.read(0x4015) & 0x10, 0);
         assert_eq!(apu.take_dmc_dma_request(), None);
         assert!(!apu.irq_pending(), "writing $4015 acknowledges DMC IRQ");
+
+        apu.write(0x4010, 0x00); // No IRQ; restart a longer sample.
+        apu.write(0x4013, 0x02);
+        apu.write(0x4015, 0x10);
+        assert_ne!(apu.read(0x4015) & 0x10, 0);
+        apu.write(0x4015, 0x00);
+        assert_eq!(apu.read(0x4015) & 0x10, 0);
+        assert_eq!(apu.take_dmc_dma_request(), None);
     }
 
     #[test]
