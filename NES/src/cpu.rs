@@ -441,6 +441,41 @@ mod tests {
         assert_eq!(cpu.state().pc, 0x0610);
     }
 
+    #[test]
+    fn branch_page_crossing_adds_cycle_in_both_directions() {
+        let mut bus = CpuBus::new();
+        bus.write(0x06FD, 0xD0); // BNE from $06FD; offset is at $06FE, next PC=$06FF
+        bus.write(0x06FE, 0x02); // target $0701 crosses page
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x06FD);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 4);
+        assert_eq!(cpu.state().pc, 0x0701);
+
+        bus.write(0x0700, 0xD0); // branch backward across page from $0702 to $06FE
+        bus.write(0x0701, 0xFC);
+        cpu.set_pc(0x0700);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 4);
+        assert_eq!(cpu.state().pc, 0x06FE);
+    }
+
+    #[test]
+    fn untaken_branch_always_uses_two_cycles_even_near_page_boundary() {
+        let mut bus = CpuBus::new();
+        bus.write(0x06FD, 0xD0);
+        bus.write(0x06FE, 0x7F);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x06FD);
+        // Z is set, so BNE is not taken.
+        // Set status through a small instruction sequence rather than exposing a mutator.
+        bus.write(0x0600, 0xA9);
+        bus.write(0x0601, 0x00);
+        cpu.set_pc(0x0600);
+        cpu.step(&mut bus).unwrap();
+        cpu.set_pc(0x06FD);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
+        assert_eq!(cpu.state().pc, 0x06FF);
+    }
+
     #[test] fn unknown_opcode_is_explicit() {
         let (mut c, mut b) = setup(&[0x02]);
         assert_eq!(c.step(&mut b), Err(CpuError::UnsupportedOpcode { opcode: 2, pc: 0x0600 }));
