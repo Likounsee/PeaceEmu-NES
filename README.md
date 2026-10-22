@@ -6,11 +6,11 @@ Le développement se trouve dans [NES/](NES/). Consultez le [README du module](N
 
 ## État du projet
 
-**Avancement estimé : 25 %.** Le crate Rust comprend un CPU Ricoh 2A03 partiel, un bus RAM miroir, un parseur iNES/NROM mapper 0, un wrapper `NesMachine` et une première PPU avec registres CPU, mémoire graphique, OAM et timing VBlank, ainsi que le DMA OAM (256 octets et 513/514 cycles de blocage).
+**Avancement estimé : 28 %.** Le crate Rust comprend un CPU Ricoh 2A03 partiel, un bus RAM miroir, un parseur iNES/NROM mapper 0, un wrapper `NesMachine` et une première PPU avec registres CPU, mémoire graphique, OAM et timing VBlank, ainsi que le DMA OAM (256 octets et 513/514 cycles de blocage) et la génération des requêtes NMI en VBlank avec entrée d'interruption CPU.
 
-**Ce n'est pas encore un émulateur NES jouable.** Le rendu PPU, l'APU, les manettes, le NMI et le timing matériel précis, les instructions CPU restantes et l'adaptateur au contrat EmulationCore de PeaceEmu restent à implémenter. La stratégie de partage/versionnement du crate de contrat hôte doit être décidée avant l'intégration compilable.
+**Ce n'est pas encore un émulateur NES jouable.** Le rendu PPU, l'APU, les manettes et le timing matériel précis, les instructions CPU restantes et l'adaptateur au contrat EmulationCore de PeaceEmu restent à implémenter. La stratégie de partage/versionnement du crate de contrat hôte doit être décidée avant l'intégration compilable.
 
-CI après le dernier commit : en attente de vérification.
+CI après les changements NMI : en cours de vérification.
 
 ## Développement local
 
