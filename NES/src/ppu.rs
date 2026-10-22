@@ -767,10 +767,10 @@ mod tests {
         ppu.cpu_write_register(6, 0xFF, None);
         ppu.cpu_write_register(7, 0x2A, None);
         assert_eq!(ppu.v, 0x4000, "v is a 15-bit internal address; CPU memory access masks to 14 bits");
-        ppu.cpu_write_register(6, 0x00, None);
+        ppu.cpu_write_register(6, 0x20, None);
         ppu.cpu_write_register(6, 0x00, None);
         ppu.cpu_write_register(7, 0x55, None);
-        assert_eq!(ppu.mem_read(0x0000, None), 0x55);
+        assert_eq!(ppu.mem_read(0x2000, None), 0x55);
     }
 
     #[test]
