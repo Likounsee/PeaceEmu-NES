@@ -268,4 +268,18 @@ mod tests {
     fn machine_reports_invalid_cartridges() {
         assert!(matches!(NesMachine::from_ines(&[0; 8]), Err(MachineError::Cartridge(CartridgeError::TruncatedHeader))));
     }
+    #[test]
+    fn machine_controller_api_latches_both_ports() {
+        let image = nrom_with_program(&[0xEA, 0x4C, 0x00, 0x80]);
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        machine.set_controller_state(0, 0b1000_0001);
+        machine.set_controller_state(1, 0b0000_0010);
+        machine.write_cpu(0x4016, 1);
+        machine.write_cpu(0x4016, 0);
+        let a: Vec<u8> = (0..8).map(|_| machine.read_cpu(0x4016) & 1).collect();
+        let b: Vec<u8> = (0..8).map(|_| machine.read_cpu(0x4017) & 1).collect();
+        assert_eq!(a, [1, 0, 0, 0, 0, 0, 0, 1]);
+        assert_eq!(b, [0, 1, 0, 0, 0, 0, 0, 0]);
+    }
+
 }
