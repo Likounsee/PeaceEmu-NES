@@ -115,6 +115,25 @@ impl Ppu {
                 continue;
             }
             self.dot += 1;
+
+            // During visible and pre-render scanlines, the rendering pipeline advances
+            // coarse X every tile, increments Y at dot 256, and copies scroll fields at
+            // the hardware reload points. Pixel fetches are still snapshot-based.
+            if self.mask & 0x18 != 0 && (self.scanline < 240 || self.scanline == 261) {
+                if (1..=256).contains(&self.dot) && self.dot % 8 == 0 {
+                    self.increment_coarse_x();
+                }
+                if self.dot == 256 {
+                    self.increment_y();
+                }
+                if self.dot == 257 {
+                    self.v = (self.v & !0x041F) | (self.t & 0x041F);
+                }
+                if self.scanline == 261 && (280..=304).contains(&self.dot) {
+                    self.v = (self.v & !0x7BE0) | (self.t & 0x7BE0);
+                }
+            }
+
             if self.scanline == 241 && self.dot == 1 {
                 self.status |= 0x80;
                 self.update_nmi_line();
@@ -244,6 +263,34 @@ impl Ppu {
                     }
                 }
             }
+        }
+    }
+
+    /// Advances the coarse X scroll field, wrapping into the horizontal nametable bit.
+    fn increment_coarse_x(&mut self) {
+        if self.v & 0x001F == 31 {
+            self.v &= !0x001F;
+            self.v ^= 0x0400;
+        } else {
+            self.v = self.v.wrapping_add(1);
+        }
+    }
+
+    /// Advances fine Y and then coarse Y, toggling the vertical nametable when needed.
+    fn increment_y(&mut self) {
+        if self.v & 0x7000 != 0x7000 {
+            self.v = self.v.wrapping_add(0x1000);
+            return;
+        }
+        self.v &= !0x7000;
+        let coarse_y = (self.v & 0x03E0) >> 5;
+        match coarse_y {
+            29 => {
+                self.v &= !0x03E0;
+                self.v ^= 0x0800;
+            }
+            31 => self.v &= !0x03E0,
+            _ => self.v = (self.v & !0x03E0) | ((coarse_y + 1) << 5),
         }
     }
 
@@ -381,6 +428,46 @@ mod tests {
         assert_eq!(ppu.cpu_read_register(7, None), 0);
         assert_eq!(ppu.cpu_read_register(7, None), 0xA7);
         assert_eq!(ppu.v & 0x3FFF, 0x2040);
+    }
+
+    #[test]
+    fn rendering_pipeline_increments_coarse_x_and_wraps_nametable() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x08;
+        ppu.v = 0x041F;
+        ppu.tick(8);
+        assert_eq!(ppu.v & 0x041F, 0x0000);
+        assert_eq!(ppu.v & 0x0400, 0, "coarse X wrap toggles horizontal nametable bit");
+    }
+
+    #[test]
+    fn rendering_pipeline_increments_y_at_dot_256() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x08;
+        ppu.v = 0x7000 | (4 << 5);
+        ppu.scanline = 0;
+        ppu.dot = 255;
+        ppu.tick(1);
+        assert_eq!(ppu.v & 0x7000, 0);
+        assert_eq!((ppu.v >> 5) & 0x1F, 5);
+    }
+
+    #[test]
+    fn rendering_pipeline_copies_horizontal_and_prerender_vertical_scroll() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x08;
+        ppu.t = 0x7BE0 | 0x041F;
+        ppu.v = 0;
+        ppu.scanline = 0;
+        ppu.dot = 256;
+        ppu.tick(1);
+        assert_eq!(ppu.v & 0x041F, ppu.t & 0x041F);
+
+        ppu.v = 0;
+        ppu.scanline = 261;
+        ppu.dot = 279;
+        ppu.tick(1);
+        assert_eq!(ppu.v & 0x7BE0, ppu.t & 0x7BE0);
     }
 
     #[test]
