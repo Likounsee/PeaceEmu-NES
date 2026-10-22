@@ -111,6 +111,16 @@ impl Cpu {
     /// Executes one instruction. Unsupported opcodes return an error.
     pub fn step(&mut self, bus: &mut CpuBus) -> Result<StepResult, CpuError> {
         let pc = self.state.pc;
+        if bus.take_nmi_request() {
+            self.push(bus, (self.state.pc >> 8) as u8);
+            self.push(bus, self.state.pc as u8);
+            self.push(bus, (self.state.status | flags::UNUSED) & !flags::BREAK);
+            self.set_flag(flags::INTERRUPT_DISABLE, true);
+            self.state.pc = self.read_word(bus, 0xFFFA);
+            self.cycles = self.cycles.saturating_add(7);
+            self.state.status |= flags::UNUSED;
+            return Ok(StepResult { pc, opcode: 0xFF, cycles: 7 });
+        }
         let opcode = self.fetch(bus);
         let cycles = match opcode {
             0xEA => 2,
