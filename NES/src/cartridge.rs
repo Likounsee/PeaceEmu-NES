@@ -7,6 +7,7 @@ pub const INES_HEADER_LEN: usize = 16;
 const TRAINER_LEN: usize = 512;
 const PRG_BANK_LEN: usize = 16 * 1024;
 const CHR_BANK_LEN: usize = 8 * 1024;
+const PRG_RAM_LEN: usize = 8 * 1024;
 
 /// Cartridge nametable mirroring mode.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -23,6 +24,7 @@ pub enum Mirroring {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Nrom {
     prg_rom: Vec<u8>,
+    prg_ram: Vec<u8>,
     chr: Vec<u8>,
     chr_is_ram: bool,
     mirroring: Mirroring,
@@ -89,18 +91,34 @@ impl Nrom {
         let prg_start = INES_HEADER_LEN + trainer_len;
         let chr_start = prg_start + prg_len;
         let prg_rom = image[prg_start..chr_start].to_vec();
+        // NROM exposes 8 KiB of PRG-RAM at $6000-$7FFF. Legacy iNES trainers
+        // are copied to $7000-$71FF before the game starts.
+        let mut prg_ram = vec![0; PRG_RAM_LEN];
+        if trainer_len != 0 {
+            prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
+        }
         let chr_is_ram = chr_len == 0;
         let chr = if chr_is_ram { vec![0; CHR_BANK_LEN] } else { image[chr_start..chr_start + chr_len].to_vec() };
         let mirroring = if image[6] & 0x08 != 0 { Mirroring::FourScreen }
             else if image[6] & 0x01 != 0 { Mirroring::Vertical }
             else { Mirroring::Horizontal };
-        Ok(Self { prg_rom, chr, chr_is_ram, mirroring })
+        Ok(Self { prg_rom, prg_ram, chr, chr_is_ram, mirroring })
     }
 
-    /// Reads PRG-ROM at a CPU address from 0x8000 to 0xFFFF.
+    /// Reads cartridge RAM or PRG-ROM from the CPU address space.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
-        if address < 0x8000 { return None; }
-        Some(self.prg_rom[(address as usize - 0x8000) % self.prg_rom.len()])
+        match address {
+            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+            0x8000..=0xFFFF => Some(self.prg_rom[(address as usize - 0x8000) % self.prg_rom.len()]),
+            _ => None,
+        }
+    }
+
+    /// Writes the cartridge's 8 KiB PRG-RAM; PRG-ROM remains read-only.
+    pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
+        if !(0x6000..=0x7FFF).contains(&address) { return false; }
+        self.prg_ram[address as usize - 0x6000] = value;
+        true
     }
 
     /// Returns cartridge nametable mirroring.
@@ -154,4 +172,29 @@ mod tests {
     #[test] fn rejects_nes2_until_implemented() {
         assert_eq!(Nrom::parse(&image(1, 1, 0, 8)), Err(CartridgeError::Nes2NotSupported));
     }
+    #[test]
+    fn prg_ram_is_writable_and_trainer_is_loaded_at_7000() {
+        let mut v = vec![0; 16 + TRAINER_LEN + PRG_BANK_LEN];
+        v[0..4].copy_from_slice(b"NES\\x1A");
+        v[4] = 1;
+        v[6] = 0x04;
+        v[16] = 0xA5;
+        v[16 + TRAINER_LEN + PRG_BANK_LEN - 1] = 0x77;
+        let mut c = Nrom::parse(&v).unwrap();
+        assert_eq!(c.cpu_read(0x7000), Some(0));
+        // Trainer payload is the 512 bytes immediately following the header.
+        v[16] = 0x5A;
+        let mut with_trainer = vec![0; 16 + TRAINER_LEN + PRG_BANK_LEN];
+        with_trainer[0..4].copy_from_slice(b"NES\\x1A");
+        with_trainer[4] = 1;
+        with_trainer[6] = 0x04;
+        with_trainer[16] = 0x5A;
+        let mut c = Nrom::parse(&with_trainer).unwrap();
+        assert_eq!(c.cpu_read(0x7000), Some(0x5A));
+        assert!(c.cpu_write(0x6000, 0xA5));
+        assert_eq!(c.cpu_read(0x6000), Some(0xA5));
+        assert!(!c.cpu_write(0x8000, 0x11));
+        assert_eq!(c.cpu_read(0x8000), Some(0));
+    }
+
 }
