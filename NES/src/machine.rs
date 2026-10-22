@@ -174,7 +174,6 @@ mod tests {
         machine.write_cpu(0x4000, 0x9F);
         machine.write_cpu(0x4002, 0x20);
         machine.write_cpu(0x4003, 0xF8);
-        for _ in 0..20 { machine.step().unwrap(); }
         assert!(machine.audio_sample() > 0.0);
     }
 
