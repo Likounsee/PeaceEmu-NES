@@ -11,6 +11,8 @@ pub mod bus;
 pub mod cpu;
 /// Minimal top-level machine wrapper.
 pub mod machine;
+/// PPU register and memory model.
+pub mod ppu;
 
 /// Current module version.
 pub const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
