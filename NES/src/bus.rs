@@ -33,6 +33,7 @@ impl CpuBus {
     pub fn read(&mut self, address: u16) -> u8 {
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
+            0x6000..=0x7FFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
             0x2000..=0x3FFF => self.ppu.cpu_read_register(address & 7, self.cartridge.as_ref()),
             // Bit 5 of $4015 is open bus on the 2A03; preserve the previous bus value.
             0x4015 => self.apu.read(address) | (self.open_bus & 0x20),
@@ -48,6 +49,7 @@ impl CpuBus {
         self.open_bus = value;
         match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF] = value,
+            0x6000..=0x7FFF => { if let Some(cartridge) = self.cartridge.as_mut() { cartridge.cpu_write(address, value); } },
             0x2000..=0x3FFF => self.ppu.cpu_write_register(address & 7, value, self.cartridge.as_mut()),
             0x4000..=0x4013 | 0x4015 | 0x4017 => self.apu.write(address, value),
             0x4014 => self.pending_oam_dma = Some(value),
@@ -281,4 +283,19 @@ mod tests {
         let mut image = vec![0; 16 + 16384]; image[0..4].copy_from_slice(b"NES\x1A"); image[4] = 1;
         let mut b = CpuBus::new(); b.insert_cartridge(Nrom::parse(&image).unwrap()); assert!(b.has_cartridge());
     }
+    #[test]
+    fn cartridge_prg_ram_is_visible_through_cpu_bus() {
+        let mut bus = CpuBus::new();
+        let mut image = vec![0; 16 + 16 * 1024];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        bus.insert_cartridge(Nrom::parse(&image).unwrap());
+        bus.write(0x6000, 0x12);
+        bus.write(0x7FFF, 0x34);
+        assert_eq!(bus.read(0x6000), 0x12);
+        assert_eq!(bus.read(0x7FFF), 0x34);
+        bus.write(0x8000, 0x99);
+        assert_eq!(bus.read(0x8000), 0);
+    }
+
 }
