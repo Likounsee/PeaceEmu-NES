@@ -198,6 +198,23 @@ mod tests {
     }
 
     #[test]
+    fn vblank_requests_nmi_when_enabled() {
+        let mut ppu = Ppu::new();
+        ppu.cpu_write_register(0, 0x80, None);
+        ppu.tick(243 * 341 + 1);
+        assert!(ppu.take_nmi_request());
+        assert!(!ppu.take_nmi_request());
+    }
+
+    #[test]
+    fn enabling_nmi_during_vblank_requests_interrupt() {
+        let mut ppu = Ppu::new();
+        ppu.tick(243 * 341 + 1);
+        ppu.cpu_write_register(0, 0x80, None);
+        assert!(ppu.take_nmi_request());
+    }
+
+    #[test]
     fn oam_data_auto_increments_address() {
         let mut ppu = Ppu::new();
         ppu.cpu_write_register(3, 0xFE, None);
