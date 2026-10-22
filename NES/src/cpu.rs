@@ -121,6 +121,16 @@ impl Cpu {
             self.state.status |= flags::UNUSED;
             return Ok(StepResult { pc, opcode: 0xFF, cycles: 7 });
         }
+        if bus.irq_pending() && !self.flag(flags::INTERRUPT_DISABLE) {
+            self.push(bus, (self.state.pc >> 8) as u8);
+            self.push(bus, self.state.pc as u8);
+            self.push(bus, (self.state.status | flags::UNUSED) & !flags::BREAK);
+            self.set_flag(flags::INTERRUPT_DISABLE, true);
+            self.state.pc = self.read_word(bus, 0xFFFE);
+            self.cycles = self.cycles.saturating_add(7);
+            self.state.status |= flags::UNUSED;
+            return Ok(StepResult { pc, opcode: 0xFE, cycles: 7 });
+        }
         let opcode = self.fetch(bus);
         let cycles = match opcode {
             0xEA => 2,
@@ -474,6 +484,35 @@ mod tests {
         cpu.set_pc(0x06FD);
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
         assert_eq!(cpu.state().pc, 0x06FF);
+    }
+
+    #[test]
+    fn irq_is_deferred_while_interrupt_disable_is_set_and_pushes_state_when_enabled() {
+        let (mut cpu, mut bus) = setup(&[0x58, 0xEA]); // CLI; NOP
+        bus.write(0xFFFE, 0x00);
+        bus.write(0xFFFF, 0x07);
+        bus.write(0x4017, 0x00);
+        bus.tick_apu(14_915);
+        assert!(bus.irq_pending());
+        // IRQ is masked before CLI, so CLI executes first.
+        assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0x58);
+        let irq = cpu.step(&mut bus).unwrap();
+        assert_eq!(irq.cycles, 7);
+        assert_eq!(cpu.state().pc, 0x0700);
+        assert_ne!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
+        assert_eq!(bus.read(0x01FB), 0x06); // return PC high byte
+        assert_eq!(bus.read(0x01FA), 0x01); // return PC low byte
+        assert_eq!(bus.read(0x01F9) & flags::BREAK, 0);
+    }
+
+    #[test]
+    fn irq_is_not_taken_when_interrupt_disable_flag_is_set() {
+        let (mut cpu, mut bus) = setup(&[0xEA]);
+        bus.write(0xFFFE, 0x00);
+        bus.write(0xFFFF, 0x07);
+        bus.tick_apu(14_915);
+        assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0xEA);
+        assert_eq!(cpu.state().pc, 0x0601);
     }
 
     #[test] fn unknown_opcode_is_explicit() {
