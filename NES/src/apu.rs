@@ -4,16 +4,10 @@
 //! It does not synthesize audio or yet model frame/DMC IRQ timing.
 
 /// CPU-visible register state for the NES audio processing unit.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Apu {
     registers: [u8; 0x18],
     enabled_channels: u8,
-}
-
-impl Default for Apu {
-    fn default() -> Self {
-        Self { registers: [0; 0x18], enabled_channels: 0 }
-    }
 }
 
 impl Apu {
