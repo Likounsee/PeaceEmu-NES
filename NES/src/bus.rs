@@ -1,25 +1,27 @@
 //! CPU memory bus for the initial NROM machine.
 
+use crate::apu::Apu;
 use crate::cartridge::Nrom;
 use crate::ppu::Ppu;
 
 /// CPU bus with 2 KiB internal RAM and optional NROM cartridge.
 ///
 /// PPU registers, frame rendering, NMI, OAM DMA and serial controller ports are routed.
-/// APU registers remain unimplemented; other unmapped reads use open bus.
+/// APU register storage/status is routed; audio synthesis and IRQ timing remain unimplemented.
 #[derive(Debug)]
 pub struct CpuBus {
     ram: [u8; 0x800],
     cartridge: Option<Nrom>,
     open_bus: u8,
     ppu: Ppu,
+    apu: Apu,
     pending_oam_dma: Option<u8>,
     controller_state: [u8; 2],
     controller_shift: [u8; 2],
     controller_strobe: bool,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -31,6 +33,7 @@ impl CpuBus {
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x2000..=0x3FFF => self.ppu.cpu_read_register(address & 7, self.cartridge.as_ref()),
+            0x4015 => self.apu.read(address),
             0x4016..=0x4017 => self.read_controller((address - 0x4016) as usize),
             0x8000..=0xFFFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
             _ => self.open_bus,
@@ -44,6 +47,7 @@ impl CpuBus {
         match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF] = value,
             0x2000..=0x3FFF => self.ppu.cpu_write_register(address & 7, value, self.cartridge.as_mut()),
+            0x4000..=0x4013 | 0x4015 | 0x4017 => self.apu.write(address, value),
             0x4014 => self.pending_oam_dma = Some(value),
             0x4016 => {
                 let next_strobe = value & 1 != 0;
@@ -154,6 +158,21 @@ mod tests {
         assert_eq!(bus.read(0x4016) & 1, 1);
         assert_eq!(bus.read(0x4017) & 1, 0);
         assert_eq!(bus.read(0x4017) & 1, 1);
+    }
+
+    #[test]
+    fn apu_registers_are_routed_and_status_tracks_channel_enable_bits() {
+        let mut bus = CpuBus::new();
+        bus.write(0x4000, 0xBF);
+        bus.write(0x4015, 0x0D);
+        bus.write(0x4017, 0x80);
+        assert_eq!(bus.read(0x4000), 0xBF);
+        assert_eq!(bus.read(0x4015), 0x0D);
+        // Reading the second controller remains independent from APU frame-counter writes.
+        bus.set_controller_state(1, 0x02);
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+        assert_eq!(bus.read(0x4017) & 1, 0);
     }
 
     #[test] fn attaches_cartridge() {
