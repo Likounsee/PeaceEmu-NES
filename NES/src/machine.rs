@@ -212,7 +212,7 @@ mod tests {
     fn oam_dma_uses_513_cycles_when_the_write_finishes_on_even_parity() {
         // JMP takes 3 cycles, making the absolute STA to $4014 finish at cycle 16.
         let image = nrom_with_program(&[
-            0x4C, 0x03, 0x80, // JMP $8003
+            0x4C, 0x04, 0x80, // JMP $8004
             0xEA,             // skipped
             0xA9, 0x02,       // LDA #$02
             0x8D, 0x14, 0x40, // STA $4014
