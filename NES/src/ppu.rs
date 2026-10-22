@@ -169,6 +169,7 @@ mod tests {
         assert_ne!(ppu.cpu_read_register(2, None) & 0x80, 0);
         assert_eq!(ppu.cpu_read_register(2, None) & 0x80, 0);
         ppu.cpu_write_register(5, 0x12, None);
+        ppu.cpu_write_register(5, 0x34, None);
         ppu.cpu_write_register(6, 0x20, None);
         ppu.cpu_write_register(6, 0x00, None);
         assert_eq!(ppu.v, 0x2000);
