@@ -89,6 +89,8 @@ impl CpuBus {
     pub fn framebuffer(&self) -> &[u8] { self.ppu.framebuffer() }
     /// Advances the PPU by the specified number of dots.
     pub fn tick_ppu(&mut self, dots: u32) { self.ppu.tick(dots); }
+    /// Returns the current PPU scanline and dot, for frame scheduling and diagnostics.
+    pub fn ppu_position(&self) -> (u16, u16) { self.ppu.position() }
     /// Advances the APU by CPU cycles and services pending DMC sample reads.
     /// DMC fetches currently use the bus immediately; their CPU stall timing is approximate.
     pub fn tick_apu(&mut self, cycles: u32) {
@@ -192,6 +194,16 @@ mod tests {
         assert_ne!(status & 0x20, 0);
         assert_ne!(status & 0x40, 0);
         assert!(!bus.irq_pending());
+    }
+
+    #[test]
+    fn ppu_position_advances_and_wraps_through_the_cpu_bus() {
+        let mut bus = CpuBus::new();
+        assert_eq!(bus.ppu_position(), (261, 0));
+        bus.tick_ppu(341);
+        assert_eq!(bus.ppu_position(), (0, 0));
+        bus.tick_ppu(17);
+        assert_eq!(bus.ppu_position(), (0, 17));
     }
 
     #[test]
