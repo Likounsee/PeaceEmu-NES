@@ -120,7 +120,9 @@ impl Ppu {
             // coarse X every tile, increments Y at dot 256, and copies scroll fields at
             // the hardware reload points. Pixel fetches are still snapshot-based.
             if self.mask & 0x18 != 0 && (self.scanline < 240 || self.scanline == 261) {
-                if (1..=256).contains(&self.dot) && self.dot % 8 == 0 {
+                if ((1..=256).contains(&self.dot) || (328..=336).contains(&self.dot))
+                    && self.dot % 8 == 0
+                {
                     self.increment_coarse_x();
                 }
                 if self.dot == 256 {
@@ -212,7 +214,9 @@ impl Ppu {
     /// a dot-accurate sprite evaluator and does not model fetch contention.
     pub fn render_frame(&mut self, cartridge: Option<&Nrom>) {
         self.render_background(cartridge);
-        self.status &= !0x40;
+        // Sprite 0 hit and overflow are derived from this snapshot, not persistent events.
+        // Recompute both so changing OAM or masks cannot leave stale status behind.
+        self.status &= !0x60;
         if self.mask & 0x10 == 0 { return; }
         let sprite_height: usize = if self.ctrl & 0x20 != 0 { 16 } else { 8 };
         let mut rows_per_scanline = [0u8; 240];
@@ -437,6 +441,37 @@ mod tests {
         ppu.v = 0x001F;
         ppu.tick(8);
         assert_eq!(ppu.v & 0x041F, 0x0400, "coarse X wraps and toggles horizontal nametable bit");
+    }
+
+    #[test]
+    fn rendering_pipeline_fetches_next_tiles_at_dots_328_and_336() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x08;
+        ppu.v = 0x0000;
+        ppu.scanline = 0;
+        ppu.dot = 327;
+        ppu.tick(1);
+        assert_eq!(ppu.v & 0x001F, 1);
+        ppu.dot = 335;
+        ppu.v = 0x0001;
+        ppu.tick(1);
+        assert_eq!(ppu.v & 0x001F, 2);
+    }
+
+    #[test]
+    fn sprite_overflow_is_recomputed_instead_of_sticking_between_snapshots() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x10;
+        for sprite in 0..9usize {
+            ppu.oam[sprite * 4] = 255;
+        }
+        ppu.render_frame(None);
+        assert_ne!(ppu.status & 0x20, 0);
+        for sprite in 0..64usize {
+            ppu.oam[sprite * 4] = 239; // starts below visible scanlines
+        }
+        ppu.render_frame(None);
+        assert_eq!(ppu.status & 0x20, 0);
     }
 
     #[test]
