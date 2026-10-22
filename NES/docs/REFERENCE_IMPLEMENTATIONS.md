@@ -28,6 +28,13 @@ Aucun fichier source tiers n'est importé dans le cœur par cette décision. Tou
 5. Ajouter ici la provenance et la licence si du code est effectivement repris ; conserver les notices exigées par la licence.
 6. Valider formatage, tests et Clippy via CI avant d'annoncer le résultat.
 
+## Première adaptation réalisée : LAX/SAX
+
+- Référence consultée : [table des opcodes TetaNES](https://github.com/lukexor/tetanes/blob/main/tetanes-core/src/cpu/instr.rs), projet sous Apache-2.0 (le dépôt propose aussi le texte MIT).
+- Adaptation PeaceEmu : prise en charge des formes stables LAX (A/X chargés ensemble) et SAX (écriture de A & X) dans `NES/src/cpu.rs`, avec calcul local des adresses, flags et cycles.
+- Les lignes de code n'ont pas été copiées telles quelles : la logique a été réécrite pour notre interpréteur existant et couverte par des tests de régression locaux, y compris le franchissement de page pour LAX absolute,Y.
+- Aucun code source tiers ni ROM de test tierce n'est embarqué par cette tranche. La table d'opcodes sert de référence de comportement ; les tests sont écrits pour PeaceEmu-NES.
+
 ## Première tranche de validation
 
 La PPU possède désormais des tests explicites pour les quatre alias de palette universelle (`$3F10/$3F14/$3F18/$3F1C`), les mappings horizontal/vertical/four-screen des nametables et le miroir de `$3000-$3EFF`. Ces tests sont des garde-fous avant l'évolution du rendu snapshot vers un pipeline de pixels et de fetchs par dot.
