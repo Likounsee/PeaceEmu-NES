@@ -197,4 +197,46 @@ mod tests {
         assert_eq!(c.cpu_read(0x8000), Some(0));
     }
 
+
+    #[test]
+    fn supports_horizontal_and_four_screen_mirroring() {
+        let horizontal = Nrom::parse(&image(1, 1, 0, 0)).unwrap();
+        assert_eq!(horizontal.mirroring(), Mirroring::Horizontal);
+
+        let four_screen = Nrom::parse(&image(1, 1, 0x08, 0)).unwrap();
+        assert_eq!(four_screen.mirroring(), Mirroring::FourScreen);
+    }
+
+    #[test]
+    fn legacy_mapper_number_uses_upper_nibble_of_flags7() {
+        let mut image = image(1, 1, 0, 0x20);
+        assert_eq!(
+            Nrom::parse(&image),
+            Err(CartridgeError::UnsupportedMapper(2))
+        );
+
+        // NES 2.0's format marker takes precedence over legacy mapper decoding.
+        image[7] = 0x28;
+        assert_eq!(
+            Nrom::parse(&image),
+            Err(CartridgeError::Nes2NotSupported)
+        );
+    }
+
+    #[test]
+    fn trainer_does_not_shift_prg_rom_or_chr_rom_offsets() {
+        let mut image = vec![0; 16 + TRAINER_LEN + PRG_BANK_LEN + CHR_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        image[6] = 0x04;
+        let prg_start = 16 + TRAINER_LEN;
+        image[prg_start] = 0xA9;
+        image[prg_start + PRG_BANK_LEN] = 0x5C;
+
+        let cartridge = Nrom::parse(&image).unwrap();
+        assert_eq!(cartridge.cpu_read(0x8000), Some(0xA9));
+        assert_eq!(cartridge.ppu_read(0), Some(0x5C));
+    }
+
 }
