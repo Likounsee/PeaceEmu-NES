@@ -326,7 +326,7 @@ mod tests {
         let mut ppu = Ppu::new();
         ppu.cpu_write_register(0, 0x1B, None);
         ppu.cpu_write_register(5, 0x03, None); // First $2005 write.
-        ppu.cpu_write_register(2, 0x00, None); // Reading status resets the shared write toggle.
+        let _ = ppu.cpu_read_register(2, None); // Reading status resets the shared write toggle.
         ppu.cpu_write_register(5, 0x28, None); // Must be interpreted as the first write again.
         assert_eq!(ppu.fine_x, 0);
         assert_eq!(ppu.t & 0x001F, 5);
