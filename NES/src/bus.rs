@@ -88,12 +88,19 @@ impl CpuBus {
     pub fn framebuffer(&self) -> &[u8] { self.ppu.framebuffer() }
     /// Advances the PPU by the specified number of dots.
     pub fn tick_ppu(&mut self, dots: u32) { self.ppu.tick(dots); }
-    /// Advances the APU frame sequencer by CPU cycles.
-    pub fn tick_apu(&mut self, cycles: u32) { self.apu.tick_cpu_cycles(cycles); }
+    /// Advances the APU by CPU cycles and services pending DMC sample reads.
+    /// DMC fetches currently use the bus immediately; their CPU stall timing is approximate.
+    pub fn tick_apu(&mut self, cycles: u32) {
+        self.apu.tick_cpu_cycles(cycles);
+        while let Some(address) = self.apu.take_dmc_dma_request() {
+            let value = self.read(address);
+            self.apu.supply_dmc_byte(value);
+        }
+    }
     /// Returns one approximate normalized mono sample from the APU mixer.
     pub fn apu_sample(&self) -> f32 { self.apu.sample() }
-    /// Returns the level-triggered APU frame IRQ line without clearing it.
-    pub fn irq_pending(&self) -> bool { self.apu.frame_irq_pending() }
+    /// Returns the level-triggered APU IRQ line without clearing it.
+    pub fn irq_pending(&self) -> bool { self.apu.irq_pending() }
     /// Takes a pending NMI edge raised by the PPU.
     pub fn take_nmi_request(&mut self) -> bool { self.ppu.take_nmi_request() }
     /// Takes a pending OAM DMA page requested by a write to $4014.
@@ -180,6 +187,28 @@ mod tests {
         assert_ne!(status & 0x20, 0);
         assert_ne!(status & 0x40, 0);
         assert!(!bus.irq_pending());
+    }
+
+    #[test]
+    fn dmc_sample_reads_from_cpu_bus_and_sets_status_irq() {
+        let mut bus = CpuBus::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFA] = 0x11;
+        image[16 + 0x3FFA + 1] = 0x22;
+        bus.insert_cartridge(Nrom::parse(&image).unwrap());
+        bus.write(0x4010, 0x80); // Enable DMC IRQ, fastest-rate selection is not required for fetch.
+        bus.write(0x4012, 0x00); // $C000 sample address.
+        bus.write(0x4013, 0x00); // One byte.
+        bus.write(0x4015, 0x10); // Start DMC.
+        bus.tick_apu(1);
+        assert!(bus.irq_pending());
+        assert_ne!(bus.read(0x4015) & 0x80, 0);
+        assert_eq!(bus.read(0x4015) & 0x10, 0);
+        assert!(bus.irq_pending(), "reading status must not acknowledge DMC IRQ");
+        bus.write(0x4015, 0x00);
+        assert!(!bus.irq_pending(), "writing $4015 acknowledges DMC IRQ");
     }
 
     #[test]
