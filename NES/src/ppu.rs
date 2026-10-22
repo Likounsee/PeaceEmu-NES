@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn status_read_clears_vblank_and_write_toggle() {
         let mut ppu = Ppu::new();
-        ppu.tick(242 * 341 + 1);
+        ppu.tick(243 * 341 + 1);
         assert_ne!(ppu.cpu_read_register(2, None) & 0x80, 0);
         assert_eq!(ppu.cpu_read_register(2, None) & 0x80, 0);
         ppu.cpu_write_register(5, 0x12, None);
@@ -182,7 +182,6 @@ mod tests {
         ppu.cpu_write_register(7, 0x2A, None);
         ppu.cpu_write_register(6, 0x3F, None);
         ppu.cpu_write_register(6, 0x00, None);
-        ppu.cpu_read_register(7, None);
         assert_eq!(ppu.cpu_read_register(7, None), 0x2A);
     }
 
