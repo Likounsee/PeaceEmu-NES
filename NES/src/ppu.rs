@@ -185,10 +185,9 @@ impl Ppu {
         if self.mask & 0x10 == 0 { return; }
         let sprite_height: usize = if self.ctrl & 0x20 != 0 { 16 } else { 8 };
         let mut rows_per_scanline = [0u8; 240];
-        let mut sprite_zero_visible = false;
         for sprite in 0..64usize {
             let base = sprite * 4;
-            let top = self.oam[base] as usize + 1;
+            let top = (self.oam[base] as usize + 1) & 0xFF;
             let tile = self.oam[base + 1] as usize;
             let attributes = self.oam[base + 2];
             let left = self.oam[base + 3] as usize;
@@ -220,7 +219,6 @@ impl Ppu {
                     if x < 8 && self.mask & 0x02 == 0 { continue; }
                     if sprite == 0 && self.background_opaque[index] && x < 255 {
                         self.status |= 0x40;
-                        sprite_zero_visible = true;
                     }
                     if !behind_background || !self.background_opaque[index] {
                         let palette_index = 0x10 + ((attributes as usize & 3) * 4) + pixel as usize;
@@ -229,7 +227,6 @@ impl Ppu {
                 }
             }
         }
-        let _ = sprite_zero_visible;
     }
 
     /// Returns the most recently rendered 256x240 image as NES palette indices.
@@ -367,7 +364,7 @@ mod tests {
     fn sprite_renderer_composites_sprite_pixel_and_sets_zero_hit() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Nrom::parse(&image).unwrap();
         // Background tile zero has an opaque pixel at (0,0).
