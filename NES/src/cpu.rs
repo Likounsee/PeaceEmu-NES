@@ -383,7 +383,7 @@ mod tests {
     fn nmi_pushes_cpu_state_and_jumps_to_nmi_vector() {
         use crate::cartridge::Nrom;
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16 + 0x1000] = 0x00; // $9000 NMI handler low byte
         image[16 + 0x1001] = 0x90;
