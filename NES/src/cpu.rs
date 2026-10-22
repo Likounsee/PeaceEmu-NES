@@ -317,7 +317,7 @@ mod tests {
     #[test] fn reset_loads_vector_from_nrom_cartridge() {
         use crate::cartridge::Nrom;
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16 + 0x3FFC] = 0x34;
         image[16 + 0x3FFD] = 0x12;
