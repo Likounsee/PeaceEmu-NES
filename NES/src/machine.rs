@@ -12,6 +12,8 @@ pub enum MachineError {
     Cartridge(CartridgeError),
     /// CPU encountered an unsupported instruction.
     Cpu(CpuError),
+    /// A frame could not be reached within the safety instruction budget.
+    FrameTimeout,
 }
 
 impl fmt::Display for MachineError {
@@ -19,6 +21,7 @@ impl fmt::Display for MachineError {
         match self {
             Self::Cartridge(error) => write!(f, "invalid NES cartridge: {error}"),
             Self::Cpu(error) => write!(f, "NES CPU error: {error}"),
+            Self::FrameTimeout => write!(f, "NES frame step exceeded its instruction budget"),
         }
     }
 }
@@ -110,8 +113,7 @@ impl NesMachine {
             previous_scanline = scanline;
             // Prevent a malformed ROM from trapping a host frontend forever.
             if iterations >= 100_000 {
-                self.bus.render_frame();
-                return Ok(self.cpu.total_cycles().saturating_sub(start_cycles) as u32);
+                return Err(MachineError::FrameTimeout);
             }
         }
     }
