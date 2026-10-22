@@ -82,6 +82,40 @@ impl NesMachine {
     /// Returns one approximate normalized mono audio sample (0.0..1.0).
     pub fn audio_sample(&self) -> f32 { self.bus.apu_sample() }
 
+    /// Executes instructions until the next complete PPU frame boundary.
+    ///
+    /// On a freshly reset machine, the initial pre-render-to-visible transition is skipped
+    /// so this method advances a full frame instead of returning after startup scanline 261.
+    /// Returns nominal CPU cycles consumed; instruction granularity means the boundary may
+    /// be crossed by a few dots. The current snapshot renderer runs once at the boundary.
+    pub fn step_frame(&mut self) -> Result<u32, MachineError> {
+        let start_cycles = self.cpu.total_cycles();
+        let (start_scanline, _) = self.bus.ppu_position();
+        let mut previous_scanline = start_scanline;
+        let mut skipped_initial_prerender = start_scanline == 261;
+        let mut iterations = 0u32;
+        loop {
+            self.step()?;
+            iterations += 1;
+            let (scanline, _) = self.bus.ppu_position();
+            let crossed_frame = previous_scanline > scanline;
+            if crossed_frame {
+                if skipped_initial_prerender {
+                    skipped_initial_prerender = false;
+                } else {
+                    self.bus.render_frame();
+                    return Ok(self.cpu.total_cycles().saturating_sub(start_cycles) as u32);
+                }
+            }
+            previous_scanline = scanline;
+            // Prevent a malformed ROM from trapping a host frontend forever.
+            if iterations >= 100_000 {
+                self.bus.render_frame();
+                return Ok(self.cpu.total_cycles().saturating_sub(start_cycles) as u32);
+            }
+        }
+    }
+
     /// Executes one CPU instruction and services any OAM DMA it requests.
     pub fn step(&mut self) -> Result<StepResult, MachineError> {
         let result = self.cpu.step(&mut self.bus)?;
@@ -146,6 +180,18 @@ mod tests {
             machine.write_cpu(0x2003, i);
             assert_eq!(machine.read_cpu(0x2004), i ^ 0x5A);
         }
+    }
+
+    #[test]
+    fn machine_step_frame_advances_ppu_and_populates_framebuffer() {
+        let image = nrom_with_program(&[0xEA, 0x4C, 0x00, 0x80]); // NOP; JMP $8000
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        let before = machine.total_cycles();
+        let elapsed = machine.step_frame().unwrap();
+        assert!(elapsed > 29_000 && elapsed < 31_000, "one NTSC frame should take about 29.8k CPU cycles");
+        assert_eq!(machine.total_cycles() - before, u64::from(elapsed));
+        assert_eq!(machine.framebuffer().len(), 256 * 240);
+        assert_eq!(machine.framebuffer()[0], 0);
     }
 
     #[test]
