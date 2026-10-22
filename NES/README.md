@@ -48,7 +48,7 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 **Avancement global estimé : 15 %.** Le CPU couvre maintenant davantage de modes d'adressage et d'opérations mémoire, et sait charger son vecteur de reset depuis une cartouche. Le bus RAM, le parseur NROM et les tests sont présents. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM complète n'est encore exécutable.
 
-Dernière CI confirmée verte : commit `d263b39b1c33783d95f645257c3f375571505fed`. Une nouvelle exécution est en cours pour les changements suivants (reset CPU et vecteur de reset) ; ne pas la considérer verte avant sa fin.
+Dernière CI confirmée verte : commit `c1deaedc8b2d9372b902d96990f60e5342d11f30` — 16 tests réussis, formatage et Clippy réussis.
 
 | Domaine | État |
 |---|---|
