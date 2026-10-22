@@ -91,6 +91,8 @@ impl CpuBus {
     pub fn tick_apu(&mut self, cycles: u32) { self.apu.tick_cpu_cycles(cycles); }
     /// Returns one approximate normalized mono sample from the APU mixer.
     pub fn apu_sample(&self) -> f32 { self.apu.sample() }
+    /// Returns the level-triggered APU frame IRQ line without clearing it.
+    pub fn irq_pending(&self) -> bool { self.apu.frame_irq_pending() }
     /// Takes a pending NMI edge raised by the PPU.
     pub fn take_nmi_request(&mut self) -> bool { self.ppu.take_nmi_request() }
     /// Takes a pending OAM DMA page requested by a write to $4014.
