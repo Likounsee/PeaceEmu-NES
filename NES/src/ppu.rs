@@ -322,6 +322,28 @@ mod tests {
     }
 
     #[test]
+    fn status_read_returns_open_bus_low_bits_and_resets_scroll_latch() {
+        let mut ppu = Ppu::new();
+        ppu.cpu_write_register(0, 0x1B, None);
+        ppu.cpu_write_register(5, 0x03, None); // First $2005 write.
+        ppu.cpu_write_register(2, 0x00, None); // Reading status resets the shared write toggle.
+        ppu.cpu_write_register(5, 0x28, None); // Must be interpreted as the first write again.
+        assert_eq!(ppu.fine_x, 0);
+        assert_eq!(ppu.t & 0x001F, 5);
+        assert_eq!(ppu.cpu_read_register(2, None) & 0x1F, 0x08);
+    }
+
+    #[test]
+    fn vblank_flag_clears_at_pre_render_start() {
+        let mut ppu = Ppu::new();
+        ppu.status |= 0xE0;
+        ppu.scanline = 261;
+        ppu.dot = 0;
+        ppu.tick(1);
+        assert_eq!(ppu.status & 0xE0, 0);
+    }
+
+    #[test]
     fn ppudata_non_palette_reads_are_buffered_and_increment_by_one() {
         let mut ppu = Ppu::new();
         ppu.cpu_write_register(6, 0x20, None);
