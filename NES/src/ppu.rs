@@ -253,7 +253,8 @@ impl Ppu {
                     let pixel = ((low >> source_x) & 1) | (((high >> source_x) & 1) << 1);
                     if pixel == 0 { continue; }
                     let index = y * 256 + x;
-                    if x < 8 && self.mask & 0x02 == 0 { continue; }
+                    // Background and sprite left-edge clipping are independent PPUMASK bits.
+                    // The background clip must not hide a sprite whose own left-edge bit is set.
                     if sprite == 0 && self.background_opaque[index] && x < 255 {
                         self.status |= 0x40;
                     }
@@ -623,6 +624,29 @@ mod tests {
         ppu.render_frame(Some(&cartridge));
         assert_ne!(ppu.status & 0x40, 0);
         assert_eq!(ppu.framebuffer()[0], 0x30);
+    }
+
+    #[test]
+    fn background_left_clip_does_not_hide_sprites_when_sprite_left_clip_is_enabled() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Nrom::parse(&image).unwrap();
+        // Background is enabled but clipped on the left; sprites are enabled and visible there.
+        ppu.mask = 0x1C;
+        ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x3F00, 0x0F, Some(&mut cartridge));
+        ppu.mem_write(0x3F01, 0x21, Some(&mut cartridge));
+        ppu.mem_write(0x3F11, 0x30, Some(&mut cartridge));
+        ppu.oam[0..4].copy_from_slice(&[255, 1, 0, 0]);
+
+        ppu.render_frame(Some(&cartridge));
+
+        assert_eq!(ppu.framebuffer()[0], 0x30, "sprite pixel must remain visible in the leftmost eight pixels");
+        assert_eq!(ppu.framebuffer()[1], 0x0F, "transparent sprite pixels show the clipped background color");
+        assert_eq!(ppu.status & 0x40, 0, "sprite-zero hit is suppressed where the background is clipped");
     }
 
     #[test]
