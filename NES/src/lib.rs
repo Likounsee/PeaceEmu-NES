@@ -9,6 +9,8 @@ pub mod cartridge;
 pub mod bus;
 /// Ricoh 2A03 CPU implementation.
 pub mod cpu;
+/// Minimal top-level machine wrapper.
+pub mod machine;
 
 /// Current module version.
 pub const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
