@@ -12,7 +12,7 @@ Aucun fichier source tiers n'est importé dans le cœur par cette décision. Tou
 - Composant matériel : [tetanes-core](https://github.com/lukexor/tetanes/tree/main/tetanes-core)
 - Licence annoncée : MIT ou Apache-2.0 ; voir les fichiers [LICENSE-MIT](https://github.com/lukexor/tetanes/blob/main/LICENSE-MIT) et [LICENSE-APACHE](https://github.com/lukexor/tetanes/blob/main/LICENSE-APACHE).
 - Zones pertinentes à comparer : CPU 6502 et modes d'adressage, séquencement PPU, registres de scroll, sprites, compteurs et canaux APU, lecture DMC et synchronisation bus/horloges.
-- Limite d'intégration actuelle : la branche consultée exige Rust 1.88.0 pour `tetanes-core`, alors que PeaceEmu-NES cible Rust 1.78. Une dépendance directe à la version actuelle n'est donc pas acceptable sans changement explicite de la politique MSRV. Le cœur dépend aussi d'un modèle Bus/Mapper plus large que le nôtre ; l'ajouter comme dépendance ne remplacerait pas simplement `NesMachine`.
+- Limite d'intégration actuelle : la branche consultée exige Rust 1.88.0 pour `tetanes-core`, PeaceEmu-NES suit désormais le canal `stable` via `NES/rust-toolchain.toml` et déclare Rust 1.99 comme version minimale dans `NES/Cargo.toml`. Une dépendance directe reste à évaluer selon son modèle Bus/Mapper et son API, pas seulement selon sa version de Rust. Le cœur dépend aussi d'un modèle Bus/Mapper plus large que le nôtre ; l'ajouter comme dépendance ne remplacerait pas simplement `NesMachine`.
 
 ## Autres références examinées
 
@@ -56,3 +56,10 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - Adaptation locale : ajout des 42 formes stables des familles SLO, RLA, SRE, RRA, DCP et ISC/ISB, avec les sept modes d'adressage usuels et leurs cycles nominaux.
 - Les opérations réutilisent les helpers locaux `shift`, `adc`, `compare`, `indirect_x` et `indirect_y`, sans nouvelle dépendance et sans copier un cœur externe.
 - Une régression vérifie les effets mémoire, registres et flags pour les six familles. Les écritures factices et les effets de bus à chaque cycle restent hors périmètre : cette tranche n'est pas cycle-exacte.
+
+
+## Politique Rust
+
+- `NES/rust-toolchain.toml` sélectionne `stable` et installe `rustfmt`/`clippy`, afin que les outils locaux suivent la dernière version stable disponible avec rustup.
+- `NES/Cargo.toml` fixe `rust-version = "1.99"`, la version minimale compatible visée par le projet depuis la mise à niveau vers Rust 1.99.x.
+- La CI utilise également `dtolnay/rust-toolchain@stable` : elle valide donc le cœur avec la dernière stable disponible au moment de l'exécution, pas avec Nightly.
