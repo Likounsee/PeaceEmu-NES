@@ -198,7 +198,7 @@ mod tests {
     fn dmc_bus_fetches_follow_sample_address_register_and_buffer_refills() {
         let mut bus = CpuBus::new();
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16 + 0x100] = 0xFF;
         image[16 + 0x101] = 0x00;
