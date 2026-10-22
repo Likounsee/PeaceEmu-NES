@@ -296,6 +296,8 @@ mod tests {
         ppu.cpu_write_register(6, 0x3F, Some(&mut cartridge));
         ppu.cpu_write_register(6, 0x01, Some(&mut cartridge));
         ppu.cpu_write_register(7, 0x21, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 0x20, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 0x00, Some(&mut cartridge));
         ppu.render_background(Some(&cartridge));
         assert_eq!(ppu.framebuffer()[0], 0x21);
         assert_eq!(ppu.framebuffer()[1], 0x0F);
