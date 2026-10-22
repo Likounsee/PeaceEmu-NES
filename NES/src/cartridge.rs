@@ -209,14 +209,14 @@ mod tests {
 
     #[test]
     fn legacy_mapper_number_uses_upper_nibble_of_flags7() {
-        let mut image = image(1, 1, 0, 0x20);
+        let mut image = image(1, 1, 0x20, 0);
         assert_eq!(
             Nrom::parse(&image),
             Err(CartridgeError::UnsupportedMapper(2))
         );
 
         // NES 2.0's format marker takes precedence over legacy mapper decoding.
-        image[7] = 0x28;
+        image[7] = 0x08;
         assert_eq!(
             Nrom::parse(&image),
             Err(CartridgeError::Nes2NotSupported)
