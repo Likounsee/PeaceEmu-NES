@@ -6,11 +6,11 @@ Le développement se trouve dans [NES/](NES/). Consultez le [README du module](N
 
 ## État du projet
 
-**Avancement estimé : 19 %.** Le crate Rust comprend un CPU Ricoh 2A03 partiel (opérations arithmétiques/logiques, shifts et BIT ajoutés), un bus RAM miroir, un parseur iNES/NROM mapper 0 et un wrapper `NesMachine` qui charge le vecteur de reset et exécute un petit programme de test.
+**Avancement estimé : 19 %.** Le crate Rust comprend un CPU Ricoh 2A03 partiel (opérations arithmétiques/logiques, shifts et BIT ajoutés), un bus RAM miroir, un parseur iNES/NROM mapper 0 et un wrapper `NesMachine` qui charge le vecteur de reset et exécute un petit programme de test, ainsi que JMP indirect avec le comportement historique du 6502.
 
 **Ce n'est pas encore un émulateur NES jouable.** La PPU, l'APU, les manettes, le timing matériel complet, les instructions CPU restantes et l'adaptateur au contrat EmulationCore de PeaceEmu restent à implémenter. La stratégie de partage/versionnement du crate de contrat hôte doit être décidée avant l'intégration compilable.
 
-Dernière CI confirmée verte : [20 tests, formatage et Clippy réussis](https://github.com/Likounsee/PeaceEmu-NES/actions/runs/39810911201).
+Dernière CI confirmée verte : [21 tests, formatage et Clippy réussis](https://github.com/Likounsee/PeaceEmu-NES/actions/runs/39811116103).
 
 ## Développement local
 
