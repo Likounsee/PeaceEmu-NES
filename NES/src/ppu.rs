@@ -391,11 +391,13 @@ mod tests {
         ppu.palette[0x11] = 0x30;
         ppu.palette[0x15] = 0x27;
         ppu.mask = 0x14; // Show sprites and the leftmost eight sprite pixels.
-        ppu.oam[0..8].copy_from_slice(&[255, 1, 0, 0, 255, 2, 1, 0]);
+        ppu.oam[0..8].copy_from_slice(&[255, 1, 0, 16, 255, 2, 1, 16]);
+        assert_eq!(cartridge.ppu_read(0x10), Some(0x80));
+        assert_eq!(ppu.palette[0x11], 0x30);
 
         ppu.render_frame(Some(&cartridge));
 
-        assert_eq!(ppu.framebuffer()[0], 0x30);
+        assert_eq!(ppu.framebuffer()[16], 0x30);
     }
 
     #[test]
