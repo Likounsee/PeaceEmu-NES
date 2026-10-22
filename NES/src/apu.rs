@@ -237,7 +237,8 @@ impl Apu {
     }
 
     /// Reads APU status at $4015, clearing the frame IRQ flag as a side effect.
-    /// Bits 0-3 report nonzero length counters; bit 6 reports and clears frame IRQ.
+    /// Bits 0-3 report nonzero length counters, bit 4 reports DMC bytes remaining,
+    /// bit 6 reports and clears frame IRQ, and bit 7 reports DMC IRQ (not cleared by read).
     pub fn read(&mut self, address: u16) -> u8 {
         if address == 0x4015 {
             let mut status = 0;
@@ -257,7 +258,7 @@ impl Apu {
     }
 
     /// Generates one normalized mono sample (0.0..1.0) from current channel states.
-    /// Pulse envelope/sweep and triangle linear-counter behavior are approximated; DMC is silent.
+    /// The pulse/TND nonlinear mixer is approximate; DMC output is included in the TND path.
     pub fn sample(&self) -> f32 {
         const DUTY: [u8; 4] = [0b0000_0001, 0b0000_0011, 0b0000_1111, 0b1111_1100];
         let mut pulse = 0.0f32;
@@ -287,10 +288,10 @@ impl Apu {
         let noise = if self.length_counters[3] > 0 && self.noise_shift & 1 == 0 {
             f32::from(self.registers[0x0C] & 0x0F)
         } else { 0.0 };
-        let tnd_input = triangle / 8227.0 + noise / 12241.0;
+        let dmc = f32::from(self.dmc_output_level);
+        let tnd_input = triangle / 8227.0 + noise / 12241.0 + dmc / 22638.0;
         let tnd_out = if tnd_input == 0.0 { 0.0 } else { 159.79 / (1.0 / tnd_input + 100.0) };
-        let dmc_out = f32::from(self.dmc_output_level) / 127.0 * 0.12;
-        (pulse_out + tnd_out + dmc_out).clamp(0.0, 1.0)
+        (pulse_out + tnd_out).clamp(0.0, 1.0)
     }
 
     /// Returns whether the approximate frame sequencer currently asserts frame IRQ.
@@ -348,6 +349,37 @@ mod tests {
         assert!(apu.irq_pending());
         apu.write(0x4015, 0x00);
         assert!(!apu.irq_pending());
+    }
+
+    #[test]
+    fn dmc_delta_unit_changes_dac_level_from_sample_bits() {
+        let mut apu = Apu::new();
+        apu.write(0x4011, 64);
+        apu.write(0x4010, 0x0F); // Fastest DMC timer.
+        apu.write(0x4012, 0);
+        apu.write(0x4013, 0);
+        apu.write(0x4015, 0x10);
+        apu.supply_dmc_byte(0xFF);
+        let before = apu.sample();
+        apu.tick_cpu_cycles(8 * 54);
+        let after = apu.sample();
+        assert!(after > before, "eight one-bits should raise the 7-bit DMC DAC");
+        assert!(after <= 1.0);
+    }
+
+    #[test]
+    fn dmc_address_wraps_from_ffff_to_8000() {
+        let mut apu = Apu::new();
+        apu.write(0x4012, 0xFF);
+        apu.write(0x4013, 0xFF);
+        apu.write(0x4015, 0x10);
+        // The DMC sample starts at $FFC0 and can continue across the top of memory.
+        for _ in 0..64 {
+            let address = apu.take_dmc_dma_request().unwrap();
+            apu.supply_dmc_byte(0);
+            if address == 0xFFFF { break; }
+        }
+        assert_eq!(apu.take_dmc_dma_request(), Some(0x8000));
     }
 
     #[test]
