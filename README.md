@@ -12,7 +12,7 @@ Le crate Rust contient un CPU Ricoh 2A03 couvrant un large sous-ensemble d'instr
 
 **Le cœur n'est pas encore déclaré jouable ni compatible avec une ROM complète.** La PPU rend encore une image par instantané plutôt que pixel par pixel. Le timing CPU/bus et le blocage DMC ne sont pas cycle-exacts ; les mappers autres que NROM, les filtres/resampling audio et l'adaptateur vers le contrat `EmulationCore` de PeaceEmu restent à faire. Aucun pourcentage ci-dessus ne doit être interprété comme une compatibilité commerciale.
 
-La dernière CI validée exécute **99 tests** sur le commit documenté, avec formatage, tests et Clippy : [workflow GitHub Actions](https://github.com/Likounsee/PeaceEmu-NES/actions/runs/39845707220). Le commit le plus récent peut avoir une exécution CI encore en cours ; vérifier son statut avant de le déclarer validé.
+La dernière CI validée exécute **107 tests** sur le commit `37042a3a`, avec formatage, tests et Clippy tous verts : [workflow GitHub Actions](https://github.com/Likounsee/PeaceEmu-NES/actions/runs/39848529602). Les régressions ajoutées couvrent notamment le wrap des pointeurs en page zéro, les branches qui traversent une page, la progression de VBlank, le compteur VRAM autour de `$3FFF` et l’API manette exposée par la machine.
 
 ## Développement local
 
