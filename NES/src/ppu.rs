@@ -667,6 +667,47 @@ mod tests {
     }
 
     #[test]
+    fn sprite_8x16_mode_uses_tile_bit_for_pattern_table_and_next_tile_for_lower_half() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Nrom::parse(&image).unwrap();
+
+        ppu.ctrl = 0x20; // 8x16 sprites: tile bit 0 selects the pattern table.
+        ppu.mask = 0x14;
+        // Tile 3 selects table $1000 and its even partner tile 2 for the upper half.
+        ppu.mem_write(0x1020, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x3F11, 0x2A, Some(&mut cartridge));
+        ppu.oam[0..4].copy_from_slice(&[255, 3, 0, 16]);
+
+        ppu.render_frame(Some(&cartridge));
+
+        assert_eq!(ppu.framebuffer()[16], 0x2A);
+    }
+
+    #[test]
+    fn sprite_vertical_flip_reads_the_opposite_pattern_row() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Nrom::parse(&image).unwrap();
+
+        ppu.mask = 0x14;
+        ppu.mem_write(0x3F00, 0x0F, Some(&mut cartridge));
+        // Only row 7 has an opaque leftmost pixel; vertical flip moves it to output row 0.
+        ppu.mem_write(0x0017, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x3F11, 0x2B, Some(&mut cartridge));
+        ppu.oam[0..4].copy_from_slice(&[255, 1, 0x80, 16]);
+
+        ppu.render_frame(Some(&cartridge));
+
+        assert_eq!(ppu.framebuffer()[16], 0x2B);
+        assert_eq!(ppu.framebuffer()[16 + 256], 0x0F);
+    }
+
+    #[test]
     fn background_left_clip_does_not_hide_sprites_when_sprite_left_clip_is_enabled() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
