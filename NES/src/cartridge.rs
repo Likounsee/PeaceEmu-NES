@@ -42,7 +42,12 @@ pub enum CartridgeError {
     /// PRG size is not valid for NROM.
     InvalidPrgSize(usize),
     /// Declared cartridge data is truncated.
-    TruncatedImage { expected: usize, actual: usize },
+    TruncatedImage {
+        /// Minimum image length required by the header.
+        expected: usize,
+        /// Actual image length.
+        actual: usize,
+    },
 }
 
 impl fmt::Display for CartridgeError {
