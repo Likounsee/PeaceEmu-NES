@@ -29,6 +29,12 @@ pub struct Apu {
     noise_timer_counter: u16,
     noise_shift: u16,
     cpu_cycle_odd: bool,
+    quarter_frame_cycles: u32,
+    pulse_envelope_start: [bool; 2],
+    pulse_envelope_divider: [u8; 2],
+    pulse_envelope_decay: [u8; 2],
+    triangle_linear_counter: u8,
+    triangle_reload_flag: bool,
 }
 
 impl Apu {
@@ -68,6 +74,11 @@ impl Apu {
             if let Some(channel) = channel {
                 if self.enabled_channels & (1 << channel) != 0 {
                     self.length_counters[channel] = LENGTH_TABLE[(value >> 3) as usize];
+                }
+                match channel {
+                    0 | 1 => self.pulse_envelope_start[channel] = true,
+                    2 => self.triangle_reload_flag = true,
+                    _ => {},
                 }
             }
         }
@@ -114,6 +125,35 @@ impl Apu {
             self.frame_cycles -= if self.five_step_mode { FIVE_STEP_PERIOD } else { FOUR_STEP_PERIOD };
             if !self.five_step_mode && !self.frame_irq_inhibit { self.frame_irq = true; }
         }
+        self.quarter_frame_cycles = self.quarter_frame_cycles.saturating_add(cycles);
+        while self.quarter_frame_cycles >= 3_729 {
+            self.quarter_frame_cycles -= 3_729;
+            for channel in 0..2 {
+                let register = channel * 4;
+                let control = self.registers[register];
+                if self.pulse_envelope_start[channel] {
+                    self.pulse_envelope_start[channel] = false;
+                    self.pulse_envelope_decay[channel] = 15;
+                    self.pulse_envelope_divider[channel] = control & 0x0F;
+                } else if self.pulse_envelope_divider[channel] == 0 {
+                    self.pulse_envelope_divider[channel] = control & 0x0F;
+                    if self.pulse_envelope_decay[channel] > 0 {
+                        self.pulse_envelope_decay[channel] -= 1;
+                    } else if control & 0x20 != 0 {
+                        self.pulse_envelope_decay[channel] = 15;
+                    }
+                } else {
+                    self.pulse_envelope_divider[channel] -= 1;
+                }
+            }
+            let triangle_control = self.registers[0x08];
+            if self.triangle_reload_flag {
+                self.triangle_linear_counter = triangle_control & 0x7F;
+            } else if self.triangle_linear_counter > 0 {
+                self.triangle_linear_counter -= 1;
+            }
+            if triangle_control & 0x80 == 0 { self.triangle_reload_flag = false; }
+        }
         self.half_frame_cycles = self.half_frame_cycles.saturating_add(cycles);
         while self.half_frame_cycles >= HALF_FRAME_PERIOD {
             self.half_frame_cycles -= HALF_FRAME_PERIOD;
@@ -125,6 +165,14 @@ impl Apu {
                 };
                 if !halt && self.length_counters[channel] > 0 {
                     self.length_counters[channel] -= 1;
+                }
+            }
+            // Sweep is clocked at half-frame cadence. This approximation mutes out-of-range periods.
+            for channel in 0..2 {
+                let register = channel * 4;
+                let sweep = self.registers[register + 1];
+                if sweep & 0x80 != 0 && sweep & 7 != 0 && self.pulse_timer_counter[channel] == u16::MAX {
+                    self.pulse_timer_counter[channel] = 0;
                 }
             }
         }
@@ -158,8 +206,13 @@ impl Apu {
             let period = u16::from(self.registers[register + 2])
                 | (u16::from(self.registers[register + 3] & 7) << 8);
             let duty = usize::from(self.registers[register] >> 6);
-            let volume = f32::from(self.registers[register] & 0x0F);
-            if self.length_counters[channel] > 0 && period >= 8
+            let control = self.registers[register];
+            let volume = f32::from(if control & 0x10 != 0 { control & 0x0F } else { self.pulse_envelope_decay[channel] });
+            let sweep = self.registers[register + 1];
+            let change = period >> (sweep & 7);
+            let target = if channel == 0 { period.saturating_add(change).saturating_add(u16::from(sweep & 0x08 != 0)) } else { period.saturating_add(change) };
+            let sweep_muted = period < 8 || target > 0x07FF || (sweep & 0x80 != 0 && sweep & 7 != 0 && sweep & 0x08 != 0 && channel == 0);
+            if self.length_counters[channel] > 0 && period >= 8 && !sweep_muted
                 && DUTY[duty] & (1 << self.pulse_sequence[channel]) != 0 {
                 pulse += volume;
             }
@@ -167,7 +220,7 @@ impl Apu {
         let pulse_out = if pulse == 0.0 { 0.0 } else { 95.88 / (8128.0 / pulse + 100.0) };
         let triangle_period = u16::from(self.registers[0x0A]) | (u16::from(self.registers[0x0B] & 7) << 8);
         let triangle_value = if self.triangle_sequence < 16 { 15 - self.triangle_sequence } else { self.triangle_sequence - 16 };
-        let triangle = if self.length_counters[2] > 0 && triangle_period > 1 { f32::from(triangle_value) } else { 0.0 };
+        let triangle = if self.length_counters[2] > 0 && self.triangle_linear_counter > 0 && triangle_period > 1 { f32::from(triangle_value) } else { 0.0 };
         let noise = if self.length_counters[3] > 0 && self.noise_shift & 1 == 0 {
             f32::from(self.registers[0x0C] & 0x0F)
         } else { 0.0 };
@@ -277,6 +330,35 @@ mod tests {
         assert!(apu.sample() > 0.0);
         apu.write(0x4015, 0x00);
         assert_eq!(apu.sample(), 0.0);
+    }
+
+    #[test]
+    fn pulse_envelope_decays_and_constant_volume_bypasses_envelope() {
+        let mut apu = Apu::new();
+        apu.write(0x4015, 0x01);
+        apu.write(0x4000, 0x00); // Envelope decay, period zero.
+        apu.write(0x4002, 0x20);
+        apu.write(0x4003, 0xF8);
+        apu.tick_cpu_cycles(3_729);
+        let decaying = apu.sample();
+        apu.write(0x4000, 0x1F); // Constant volume 15.
+        let constant = apu.sample();
+        assert!(constant >= decaying);
+    }
+
+    #[test]
+    fn triangle_linear_counter_must_be_loaded_before_output() {
+        let mut apu = Apu::new();
+        apu.write(0x4015, 0x04);
+        apu.write(0x4008, 0x00);
+        apu.write(0x400A, 0x40);
+        apu.write(0x400B, 0xF8);
+        apu.tick_cpu_cycles(100);
+        assert_eq!(apu.sample(), 0.0);
+        apu.write(0x4008, 0x80 | 0x7F);
+        apu.write(0x400B, 0xF8);
+        apu.tick_cpu_cycles(3_729);
+        assert!(apu.sample() >= 0.0);
     }
 
     #[test]
