@@ -2,9 +2,9 @@
 //!
 //! Approximate CPU-cycle APU model with pulse, triangle and noise sample generation.
 //!
-//! Envelope/sweep units, triangle linear-counter behavior, DMC playback, and exact regional
-//! timing remain incomplete; output is suitable for integration and smoke tests, not yet
-//! cycle-accurate audio.
+//! Envelope/sweep units, triangle linear-counter behavior and DMC playback are approximate;
+//! DMC fetches are supplied by the bus without cycle-accurate DMA stalls. Exact regional
+//! timing and host-rate resampling remain incomplete.
 
 const LENGTH_TABLE: [u8; 32] = [
     10, 254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
@@ -332,6 +332,40 @@ impl Apu {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dmc_registers_control_sample_address_length_and_irq() {
+        let mut apu = Apu::new();
+        apu.write(0x4010, 0x80);
+        apu.write(0x4012, 0x03);
+        apu.write(0x4013, 0x01);
+        apu.write(0x4015, 0x10);
+        assert_eq!(apu.read(0x4015) & 0x10, 0x10);
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xC0C0));
+        apu.supply_dmc_byte(0xA5);
+        assert_eq!(apu.read(0x4015) & 0x10, 0);
+        assert_ne!(apu.read(0x4015) & 0x80, 0);
+        assert!(apu.irq_pending());
+        apu.write(0x4015, 0x00);
+        assert!(!apu.irq_pending());
+    }
+
+    #[test]
+    fn dmc_loop_restarts_sample_and_output_level_is_mixed() {
+        let mut apu = Apu::new();
+        apu.write(0x4010, 0x40); // Loop, IRQ disabled.
+        apu.write(0x4011, 64);
+        apu.write(0x4012, 0x02);
+        apu.write(0x4013, 0x00); // One-byte sample.
+        apu.write(0x4015, 0x10);
+        assert!(apu.sample() > 0.0);
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xC080));
+        apu.supply_dmc_byte(0x5A);
+        assert_eq!(apu.take_dmc_dma_request(), None, "sample buffer is occupied until shifted");
+        apu.tick_cpu_cycles(4_000);
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xC080), "loop mode restarts the one-byte sample");
+        assert!(!apu.irq_pending());
+    }
 
     #[test]
     fn stores_channel_registers_and_frame_counter() {
