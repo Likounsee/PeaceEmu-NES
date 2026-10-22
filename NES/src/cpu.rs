@@ -372,9 +372,11 @@ mod tests {
     #[test] fn shifts_rotate_and_bit_set_expected_flags() {
         let (mut c, mut b) = setup(&[0xA9, 0x81, 0x0A, 0x6A, 0xA9, 0xC0, 0x85, 0x10, 0x24, 0x10]);
         c.step(&mut b).unwrap();
-        c.step(&mut b).unwrap();
         assert_eq!(c.state().a, 0x02);
         assert_ne!(c.state().status & flags::CARRY, 0);
+        c.step(&mut b).unwrap();
+        assert_eq!(c.state().a, 0x81);
+        assert_eq!(c.state().status & flags::CARRY, 0);
         c.step(&mut b).unwrap();
         c.step(&mut b).unwrap();
         c.step(&mut b).unwrap();
