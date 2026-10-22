@@ -239,4 +239,42 @@ mod tests {
         assert_eq!(cartridge.ppu_read(0), Some(0x5C));
     }
 
+
+    #[test]
+    fn prg_rom_and_chr_rom_are_read_only_while_chr_ram_is_writable() {
+        let mut chr_rom_image = image(2, 1, 0, 0);
+        let prg_start = INES_HEADER_LEN;
+        let chr_start = prg_start + 2 * PRG_BANK_LEN;
+        chr_rom_image[prg_start] = 0x31;
+        chr_rom_image[chr_start] = 0x72;
+        let mut chr_rom = Nrom::parse(&chr_rom_image).unwrap();
+
+        assert_eq!(chr_rom.cpu_read(0x8000), Some(0x31));
+        assert!(!chr_rom.cpu_write(0x8000, 0x99));
+        assert_eq!(chr_rom.cpu_read(0x8000), Some(0x31));
+        assert_eq!(chr_rom.ppu_read(0), Some(0x72));
+        assert!(!chr_rom.ppu_write(0, 0x99));
+        assert_eq!(chr_rom.ppu_read(0), Some(0x72));
+
+        let mut chr_ram = Nrom::parse(&image(1, 0, 0, 0)).unwrap();
+        assert!(chr_ram.ppu_write(0x1FFF, 0xA6));
+        assert_eq!(chr_ram.ppu_read(0x1FFF), Some(0xA6));
+    }
+
+    #[test]
+    fn two_bank_nrom_maps_distinct_prg_rom_halves() {
+        let mut image = image(2, 0, 0, 0);
+        let prg_start = INES_HEADER_LEN;
+        image[prg_start] = 0x12;
+        image[prg_start + PRG_BANK_LEN] = 0x34;
+        image[prg_start + PRG_BANK_LEN - 1] = 0x56;
+        image[prg_start + 2 * PRG_BANK_LEN - 1] = 0x78;
+
+        let cartridge = Nrom::parse(&image).unwrap();
+        assert_eq!(cartridge.cpu_read(0x8000), Some(0x12));
+        assert_eq!(cartridge.cpu_read(0xC000), Some(0x34));
+        assert_eq!(cartridge.cpu_read(0xBFFF), Some(0x56));
+        assert_eq!(cartridge.cpu_read(0xFFFF), Some(0x78));
+    }
+
 }
