@@ -101,6 +101,6 @@ mod tests {
 
     #[test]
     fn machine_reports_invalid_cartridges() {
-        assert_eq!(NesMachine::from_ines(&[0; 8]), Err(MachineError::Cartridge(CartridgeError::TruncatedHeader)));
+        assert!(matches!(NesMachine::from_ines(&[0; 8]), Err(MachineError::Cartridge(CartridgeError::TruncatedHeader))));
     }
 }
