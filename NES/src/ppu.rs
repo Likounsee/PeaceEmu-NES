@@ -692,7 +692,7 @@ mod tests {
     fn sprite_horizontal_flip_reverses_pattern_bits() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Nrom::parse(&image).unwrap();
 
