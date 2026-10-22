@@ -21,6 +21,10 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 - **Contrat d'intégration :** adaptateur à écrire pour implémenter EmulationCore, fournir un identifiant système stable, déclarer les capacités réellement prises en charge et transférer images/audio via les types communs.
 - **Point à résoudre avant le branchement compilable :** le crate emulation-core se trouve actuellement dans le workspace du dépôt hôte et n'est pas publié comme dépendance. Il faut choisir une stratégie de partage/versionnement du contrat au lieu de dupliquer ses types.
 
+## Réutilisation de références existantes
+
+Le développement s'appuie sur des émulateurs NES existants et des références matérielles plutôt que de réécrire chaque détail isolément. Le CPU intègre maintenant des variantes stables non officielles LAX/SAX adaptées à nos registres, à notre bus et à nos tests. Les projets étudiés, leurs licences, leurs limites de compatibilité et la méthode de portage sont documentés dans [REFERENCE_IMPLEMENTATIONS.md](docs/REFERENCE_IMPLEMENTATIONS.md). Cette démarche privilégie des ports ciblés et testés : aucune dépendance d'émulateur complète n'est ajoutée aveuglément, et les composants PeaceEmu gardent leurs propres interfaces.
+
 ## Implémentation actuelle
 
 - **CPU :** sous-ensemble élargi des instructions officielles : chargements/stores, ADC/SBC, AND/ORA/EOR, comparaisons, BIT, shifts/rotates, incréments/décréments, branchements, JMP indirect avec comportement de page 6502, pile, JSR/RTS, RTI et BRK. Plusieurs NOP non officiels courants sont aussi reconnus avec leurs octets opérandes, lectures mémoire et pénalités de franchissement de page ; les opcodes encore inconnus renvoient une erreur explicite. Ce n'est pas encore un CPU complet ni cycle-exact.
