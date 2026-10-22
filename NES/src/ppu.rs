@@ -383,8 +383,8 @@ mod tests {
         ppu.mem_write(0x3F11, 0x17, Some(&mut cartridge));
         ppu.oam[0..4].copy_from_slice(&[255, 1, 0, 16]);
         ppu.render_frame(Some(&cartridge));
-        assert_eq!(ppu.framebuffer()[16], 0x20);
-        assert_eq!(ppu.framebuffer()[0], 0x10);
+        assert_eq!(ppu.framebuffer()[16], 0x10);
+        assert_eq!(ppu.framebuffer()[0], 0x20);
     }
 
     #[test]
