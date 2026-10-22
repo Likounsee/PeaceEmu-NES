@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn trainer_does_not_shift_prg_rom_or_chr_rom_offsets() {
         let mut image = vec![0; 16 + TRAINER_LEN + PRG_BANK_LEN + CHR_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[5] = 1;
         image[6] = 0x04;
