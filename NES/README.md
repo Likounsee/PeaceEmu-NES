@@ -6,7 +6,7 @@
 
 Développer un cœur NES réel, indépendant de l'interface graphique, intégrable à l'application principale [PeaceEmu](https://github.com/Likounsee/PeaceEmu). L'interface, la bibliothèque de jeux, les fenêtres et l'orchestration des sessions existent déjà dans le dépôt principal : ce dépôt ne doit pas recréer ces fonctionnalités.
 
-**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES/NROM, un sous-ensemble élargi du CPU, un modèle de registres APU, compteurs de longueur, séquenceur de frame approximatif et un premier mélangeur audio pulse/triangle/bruit, ainsi que le rendu snapshot de la PPU disposent de code et de tests. Le module n'est pas encore jouable et n'est pas encore branché au contrat hôte.
+**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES/NROM, un sous-ensemble élargi du CPU, un modèle de registres APU, compteurs de longueur, séquenceur de frame approximatif et un mélangeur audio pulse/triangle/bruit avec enveloppes, sweep et compteur linéaire triangle approximatifs, ainsi que le rendu snapshot de la PPU disposent de code et de tests. Le module n'est pas encore jouable et n'est pas encore branché au contrat hôte.
 
 ## Langage et intégration
 
@@ -24,14 +24,14 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 - **PPU :** première couche matérielle : registres CPU, adresse VRAM, buffer de lecture, mémoire nametable/palette, OAM, mirroring de cartouche et drapeau VBlank/compteur de scanline. Le DMA OAM copie 256 octets d'une page CPU vers l'OAM et ajoute 513/514 cycles de blocage selon l'alignement. Un rendu par instantané est disponible via `NesMachine::render_background()` ou `NesMachine::render_frame()` et `NesMachine::framebuffer()` : le framebuffer de 256×240 pixels contient des indices de palette NES 6 bits. Le rendu lit les tuiles, plans de bits, attributs de palette, mirroring et défilement de base ; `render_frame()` compose aussi les sprites avec flips horizontal/vertical, tailles 8×8/8×16, priorité approximative, hit sprite 0 et overflow de sprites par ligne. Ce n'est pas encore une pipeline dot-par-dot. Le NMI VBlank est routé vers l'entrée d'interruption CPU ; le compteur NTSC modélise aussi le saut de dot du pré-rendu lors des images impaires avec rendu actif.
 - **Cartouche :** parsing iNES legacy, validation des tailles, mirroring, PRG-ROM NROM (mapper 0), CHR-ROM ou CHR-RAM. NES 2.0 et les autres mappers ne sont pas pris en charge.
 - **Machine :** `NesMachine` charge une image iNES/NROM, initialise le CPU depuis le vecteur de reset et expose le pas d'instruction ainsi que les lectures/écritures CPU.
-- **Tests :** les tests couvrent aussi les compteurs de longueur APU et leur routage sur le bus ; la CI doit confirmer le résultat de priorité sprite OAM, branches conditionnelles, opérations de pile/transfert et ports manette ; la CI doit confirmer le résultat.
+- **Tests :** les tests couvrent les compteurs de longueur, la génération audio, les branches CPU avec franchissement de page, les ports manette, les sprites et le buffer/incrément PPUDATA ; consulter la dernière CI avant d'affirmer son résultat.
 - **CI :** workflow GitHub Actions ajouté pour formater les sources puis exécuter les tests et Clippy. Vérifier le dernier résultat dans GitHub Actions avant d'affirmer que la CI est verte.
 
 ## Ordre de développement
 
 1. Étendre le rendu PPU vers une pipeline par dot, synchronisation scroll et précision du sprite 0/overflow.
 2. Compléter le CPU : CMP dispose maintenant des modes indirect X, zéro-page et indirect Y avec pénalité de franchissement de page ; RTI restaure le statut et le PC depuis la pile. Les modes AND absolu,Y et indirect,Y appliquent aussi la pénalité de franchissement de page. Poursuivre les instructions officielles restantes et leurs cycles.
-3. Étendre l’APU vers génération audio réelle, compteurs de longueur et IRQ frame/DMC ; raffiner le timing DMA/NMI.
+3. Raffiner l’APU : enveloppes pulse, sweep et compteur linéaire triangle sont maintenant modélisés de façon approximative ; restent le DMC, le filtrage, le resampling à fréquence hôte et un timing plus fidèle. Raffiner le timing DMA/NMI.
 4. Intégrer le contrat hôte PeaceEmu sans dépendance graphique dans le cœur.
 5. Ajouter sauvegardes et tests de compatibilité reproductibles.
 6. Étendre progressivement les mappers.
@@ -47,9 +47,9 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 ## Avancement
 
-**Avancement global estimé : 44 %.** La machine minimale charge une cartouche NROM, exécute un sous-ensemble du CPU, et la PPU expose les registres, la mémoire graphique, le timing VBlank/NMI ainsi qu'un rendu de fond par instantané. Une suite de tests couvre les composants de base, le transfert DMA des 256 octets, l'entrée NMI, le décodage des pixels, la priorité des sprites, le protocole série des manettes, les mirroring nametables/palettes et le saut de dot des images impaires. Le séquenceur APU utilise une approximation du timing 4/5 étapes ; vérifier la CI avant de déclarer ce lot validé ([workflow](https://github.com/Likounsee/PeaceEmu-NES/actions/runs/39832859985)). Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
+**Avancement global estimé : 46 %.** La machine minimale charge une cartouche NROM, exécute un sous-ensemble du CPU, et la PPU expose les registres, la mémoire graphique, le timing VBlank/NMI ainsi qu'un rendu de fond par instantané. Une suite de tests couvre les composants de base, le transfert DMA des 256 octets, l'entrée NMI, le décodage des pixels, la priorité des sprites, le protocole série des manettes, les mirroring nametables/palettes et le saut de dot des images impaires. L’APU expose un échantillon mono normalisé et modélise désormais approximativement les enveloppes pulse, le sweep et le compteur linéaire du triangle, en plus des compteurs et de l’IRQ frame. Des tests supplémentaires couvrent le port PPUDATA (buffer et incrément de 1/32) et les canaux audio. Le timing reste approximatif et la compatibilité de jeux n’est pas encore établie. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
 
-CI : un test de mirroring a échoué à cause d'une valeur attendue incorrecte ; cette assertion a été corrigée. Vérifier la dernière exécution avant d'annoncer un résultat vert.
+CI : le lot courant doit encore être vérifié après les dernières modifications.
 
 | Domaine | État |
 |---|---|
@@ -59,7 +59,7 @@ CI : un test de mirroring a échoué à cause d'une valeur attendue incorrecte ;
 | Cartouche NROM / iNES legacy | Première version |
 | Machine et reset vector | Première version — charge NROM et exécute le CPU |
 | PPU | Registres/mémoire/VBlank-NMI ; rendu de fond et sprites par instantané ; timing dot-par-dot à faire |
-| APU | Partiel — registres, compteurs, séquenceur/IRQ approximatifs et premier mélangeur mono pulse/triangle/bruit ; enveloppes, sweep, compteur linéaire, DMC et timing exact à faire |
+| APU | Partiel — registres, compteurs, enveloppes pulse, sweep, compteur linéaire triangle et mélangeur mono approximatifs ; DMC, filtrage, resampling et timing exact à faire |
 | Contrôleurs | Première version — ports série $4016/$4017, huit boutons et latch |
 | Timing complet | À faire |
 | Adaptateur EmulationCore | À faire — partage du contrat à définir |
