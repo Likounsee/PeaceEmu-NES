@@ -47,18 +47,18 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 ## Avancement
 
-**Avancement global estimé : 25 %.** La machine minimale charge une cartouche NROM, exécute le CPU, et une première PPU expose les registres, la mémoire graphique et le timing VBlank. Une suite de 27 tests couvre les composants de base, dont le transfert DMA des 256 octets. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
+**Avancement global estimé : 28 %.** La machine minimale charge une cartouche NROM, exécute le CPU, et une première PPU expose les registres, la mémoire graphique, le timing VBlank et les requêtes NMI vers le CPU. Une suite de 30 tests couvre les composants de base, dont le transfert DMA des 256 octets et la génération/prise en charge du NMI. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
 
-Dernière CI : à vérifier après l'ajout du DMA OAM.
+CI après les changements NMI : en cours de vérification.
 
 | Domaine | État |
 |---|---|
 | Structure Rust et build initial | En place |
-| CPU Ricoh 2A03 | Partiel — sous-ensemble d'opcodes |
+| CPU Ricoh 2A03 | Partiel — sous-ensemble d'opcodes ; entrée NMI implémentée |
 | Bus RAM et DMA OAM | RAM miroir, registres PPU routés, transfert DMA et blocage CPU |
 | Cartouche NROM / iNES legacy | Première version |
 | Machine et reset vector | Première version — charge NROM et exécute le CPU |
-| PPU | Registres/mémoire/timing VBlank partiels ; rendu et NMI à faire |
+| PPU | Registres/mémoire/timing VBlank partiels et requêtes NMI ; rendu/sprites à faire |
 | APU | À faire |
 | Contrôleurs | À faire |
 | Timing complet | À faire |
