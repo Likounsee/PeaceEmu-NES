@@ -78,7 +78,7 @@ mod tests {
 
     fn nrom_with_program(program: &[u8]) -> Vec<u8> {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16..16 + program.len()].copy_from_slice(program);
         image[16 + 0x3FFC] = 0x00;
