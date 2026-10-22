@@ -16,6 +16,7 @@ pub struct Apu {
     enabled_channels: u8,
     length_counters: [u8; 4],
     frame_cycles: u32,
+    half_frame_cycles: u32,
     frame_irq: bool,
     frame_irq_inhibit: bool,
     five_step_mode: bool,
@@ -45,6 +46,7 @@ impl Apu {
             self.five_step_mode = value & 0x80 != 0;
             if self.frame_irq_inhibit { self.frame_irq = false; }
             self.frame_cycles = 0;
+            self.half_frame_cycles = 0;
         } else if address != 0x4014 && address != 0x4016 {
             self.registers[(address - 0x4000) as usize] = value;
             let channel = match address {
@@ -73,10 +75,9 @@ impl Apu {
             self.frame_cycles -= if self.five_step_mode { FIVE_STEP_PERIOD } else { FOUR_STEP_PERIOD };
             if !self.five_step_mode && !self.frame_irq_inhibit { self.frame_irq = true; }
         }
-        // Clock once for each crossed half-frame boundary, independent of call chunking.
-        // Sequencer reset restarts this approximate phase along with frame_cycles.
-        let half_frames = cycles / HALF_FRAME_PERIOD;
-        for _ in 0..half_frames {
+        self.half_frame_cycles = self.half_frame_cycles.saturating_add(cycles);
+        while self.half_frame_cycles >= HALF_FRAME_PERIOD {
+            self.half_frame_cycles -= HALF_FRAME_PERIOD;
             for channel in 0..4 {
                 let halt = match channel {
                     0 | 1 => self.registers[if channel == 0 { 0 } else { 4 }] & 0x20 != 0,
