@@ -159,12 +159,19 @@ impl Cpu {
             0xB9 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); let v = bus.read(a); self.state.a = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0xA1 => { let a = self.indirect_x(bus); let v = bus.read(a); self.state.a = v; self.set_nz(v); 6 }
             0xB1 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); let v = bus.read(a); self.state.a = v; self.set_nz(v); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xA3 => { let a = self.indirect_x(bus); let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 6 }
+            0xB3 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0xA2 => { let v = self.fetch(bus); self.state.x = v; self.set_nz(v); 2 }
             0xA0 => { let v = self.fetch(bus); self.state.y = v; self.set_nz(v); 2 }
             0xA6 => { let a = self.fetch(bus) as u16; let v = bus.read(a); self.state.x = v; self.set_nz(v); 3 }
             0xAE => { let a = self.fetch_word(bus); let v = bus.read(a); self.state.x = v; self.set_nz(v); 4 }
             0xB6 => { let a = self.fetch(bus).wrapping_add(self.state.y) as u16; let v = bus.read(a); self.state.x = v; self.set_nz(v); 4 }
             0xBE => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); let v = bus.read(a); self.state.x = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            // Stable unofficial LAX loads one value into both A and X.
+            0xA7 => { let a = self.fetch(bus) as u16; let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 3 }
+            0xAF => { let a = self.fetch_word(bus); let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 4 }
+            0xB7 => { let a = self.fetch(bus).wrapping_add(self.state.y) as u16; let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 4 }
+            0xBF => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0xA4 => { let a = self.fetch(bus) as u16; let v = bus.read(a); self.state.y = v; self.set_nz(v); 3 }
             0xAC => { let a = self.fetch_word(bus); let v = bus.read(a); self.state.y = v; self.set_nz(v); 4 }
             0xB4 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; let v = bus.read(a); self.state.y = v; self.set_nz(v); 4 }
@@ -182,6 +189,11 @@ impl Cpu {
             0x8E => { let a = self.fetch_word(bus); bus.write(a, self.state.x); 4 }
             0x94 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; bus.write(a, self.state.y); 4 }
             0x8C => { let a = self.fetch_word(bus); bus.write(a, self.state.y); 4 }
+            // Stable unofficial SAX stores A & X without changing flags.
+            0x87 => { let a = self.fetch(bus) as u16; bus.write(a, self.state.a & self.state.x); 3 }
+            0x8F => { let a = self.fetch_word(bus); bus.write(a, self.state.a & self.state.x); 4 }
+            0x97 => { let a = self.fetch(bus).wrapping_add(self.state.y) as u16; bus.write(a, self.state.a & self.state.x); 4 }
+            0x83 => { let a = self.indirect_x(bus); bus.write(a, self.state.a & self.state.x); 6 }
             0xAA => { self.state.x = self.state.a; self.set_nz(self.state.x); 2 }
             0xA8 => { self.state.y = self.state.a; self.set_nz(self.state.y); 2 }
             0x8A => { self.state.a = self.state.x; self.set_nz(self.state.a); 2 }
@@ -403,6 +415,37 @@ mod tests {
         assert_ne!(c.state().status & flags::NEGATIVE, 0); c.step(&mut b).unwrap();
         assert_eq!(b.read(0x0200), 0x80); assert_eq!(c.total_cycles(), 8);
     }
+    #[test]
+    fn unofficial_lax_loads_accumulator_and_x_with_shared_flags() {
+        let (mut cpu, mut bus) = setup(&[0xA7, 0x10, 0xBF, 0xFF, 0x02]);
+        bus.write(0x0010, 0x80);
+        bus.write(0x0300, 0x00);
+        cpu.state.a = 0x11;
+        cpu.state.x = 0x22;
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 3);
+        assert_eq!((cpu.state.a, cpu.state.x), (0x80, 0x80));
+        assert_ne!(cpu.state.status & flags::NEGATIVE, 0);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5, "LAX absolute,Y adds a cycle on page crossing");
+        assert_eq!((cpu.state.a, cpu.state.x), (0x00, 0x00));
+        assert_ne!(cpu.state.status & flags::ZERO, 0);
+    }
+
+    #[test]
+    fn unofficial_sax_stores_accumulator_and_x_without_changing_flags() {
+        let (mut cpu, mut bus) = setup(&[0x87, 0x10, 0x97, 0x20, 0x8F, 0x00, 0x03]);
+        cpu.state.a = 0xF3;
+        cpu.state.x = 0x5A;
+        cpu.state.status = flags::CARRY | flags::UNUSED;
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 3);
+        assert_eq!(bus.read(0x0010), 0x52);
+        assert_eq!(cpu.state.status, flags::CARRY | flags::UNUSED);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 4);
+        assert_eq!(bus.read(0x0020), 0x52);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 4);
+        assert_eq!(bus.read(0x0300), 0x52);
+        assert_eq!(cpu.state.status, flags::CARRY | flags::UNUSED);
+    }
+
     #[test] fn compare_sets_zero_and_carry() {
         let (mut c, mut b) = setup(&[0xA9, 0x10, 0xC9, 0x10]);
         c.step(&mut b).unwrap(); c.step(&mut b).unwrap();
