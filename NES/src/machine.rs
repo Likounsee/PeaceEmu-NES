@@ -110,6 +110,22 @@ mod tests {
     }
 
     #[test]
+    fn machine_services_oam_dma_and_counts_stall_cycles() {
+        let image = nrom_with_program(&[0xA9, 0x02, 0x8D, 0x14, 0x40, 0xEA]);
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        for i in 0..=u8::MAX {
+            machine.write_cpu(0x0200 | u16::from(i), i ^ 0x5A);
+        }
+        machine.step().unwrap(); // LDA #$02
+        machine.step().unwrap(); // STA $4014 starts DMA
+        assert_eq!(machine.total_cycles(), 7 + 2 + 4 + 514);
+        machine.write_cpu(0x2003, 0);
+        for i in 0..=u8::MAX {
+            assert_eq!(machine.read_cpu(0x2004), i ^ 0x5A);
+        }
+    }
+
+    #[test]
     fn machine_reports_invalid_cartridges() {
         assert!(matches!(NesMachine::from_ines(&[0; 8]), Err(MachineError::Cartridge(CartridgeError::TruncatedHeader))));
     }
