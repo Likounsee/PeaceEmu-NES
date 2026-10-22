@@ -46,6 +46,8 @@ impl CpuBus {
     }
     /// Advances the PPU by the specified number of dots.
     pub fn tick_ppu(&mut self, dots: u32) { self.ppu.tick(dots); }
+    /// Takes a pending NMI edge raised by the PPU.
+    pub fn take_nmi_request(&mut self) -> bool { self.ppu.take_nmi_request() }
     /// Takes a pending OAM DMA page requested by a write to $4014.
     pub fn take_oam_dma_request(&mut self) -> Option<u8> { self.pending_oam_dma.take() }
     /// Copies a full 256-byte page into PPU OAM, starting at the current OAM address.
