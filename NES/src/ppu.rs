@@ -148,7 +148,7 @@ impl Ppu {
             for x in 0..WIDTH {
                 let output = y * WIDTH + x;
                 if !rendering_enabled || (x < 8 && !show_left) {
-                    self.framebuffer[output] = self.palette[0] & 0x3F;
+                    self.framebuffer[output] = self.output_color(self.palette[0]);
                     self.background_opaque[output] = false;
                     continue;
                 }
@@ -170,14 +170,14 @@ impl Ppu {
                 let pixel = ((low >> bit) & 1) | (((high >> bit) & 1) << 1);
                 self.background_opaque[output] = pixel != 0;
                 if pixel == 0 {
-                    self.framebuffer[output] = self.palette[0] & 0x3F;
+                    self.framebuffer[output] = self.output_color(self.palette[0]);
                 } else {
                     let attr_addr = nametable + 0x3C0
                         + (((tile_y % 30) / 4) * 8 + (tile_x % 32) / 4) as u16;
                     let attr = self.mem_read(attr_addr, cartridge);
                     let shift = (((tile_y % 4) / 2) * 4 + ((tile_x % 4) / 2) * 2) as u8;
                     let palette_id = (attr >> shift) & 3;
-                    self.framebuffer[output] = self.palette[(palette_id * 4 + pixel) as usize] & 0x3F;
+                    self.framebuffer[output] = self.output_color(self.palette[(palette_id * 4 + pixel) as usize]);
                 }
             }
         }
@@ -235,11 +235,16 @@ impl Ppu {
                     sprite_claimed[index] = true;
                     if !behind_background || !self.background_opaque[index] {
                         let palette_index = 0x10 + ((attributes as usize & 3) * 4) + pixel as usize;
-                        self.framebuffer[index] = self.palette[Self::palette_index(0x3F00 + palette_index as u16)] & 0x3F;
+                        self.framebuffer[index] = self.output_color(self.palette[Self::palette_index(0x3F00 + palette_index as u16)]);
                     }
                 }
             }
         }
+    }
+
+    /// Applies the PPU grayscale output mask while retaining a 6-bit palette index.
+    fn output_color(&self, color: u8) -> u8 {
+        if self.mask & 0x01 != 0 { color & 0x30 } else { color & 0x3F }
     }
 
     /// Returns the most recently rendered 256x240 image as NES palette indices.
@@ -362,6 +367,24 @@ mod tests {
         assert_eq!(ppu.framebuffer()[0], 0x21);
         assert_eq!(ppu.framebuffer()[1], 0x0F);
         assert_eq!(ppu.framebuffer().len(), 256 * 240);
+    }
+
+    #[test]
+    fn grayscale_mask_restricts_background_and_sprite_palette_indices() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Nrom::parse(&image).unwrap();
+        ppu.mask = 0x1F; // Background, sprites, both left columns and grayscale.
+        ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x3F01, 0x2B, Some(&mut cartridge));
+        ppu.mem_write(0x3F11, 0x17, Some(&mut cartridge));
+        ppu.oam[0..4].copy_from_slice(&[255, 1, 0, 16]);
+        ppu.render_frame(Some(&cartridge));
+        assert_eq!(ppu.framebuffer()[16], 0x20);
+        assert_eq!(ppu.framebuffer()[0], 0x10);
     }
 
     #[test]
