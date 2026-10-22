@@ -721,6 +721,7 @@ mod tests {
         assert_eq!(cpu.state().status & flags::OVERFLOW, 0);
         cpu.step(&mut bus).unwrap();
         cpu.step(&mut bus).unwrap();
+        cpu.step(&mut bus).unwrap(); // AXS #$01
         assert_eq!(cpu.state().x, 0x02);
         assert_ne!(cpu.state().status & flags::CARRY, 0);
         assert_eq!(cpu.state().status & flags::ZERO, 0);
