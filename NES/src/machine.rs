@@ -209,6 +209,33 @@ mod tests {
     }
 
     #[test]
+    fn oam_dma_uses_513_cycles_when_the_write_finishes_on_even_parity() {
+        // JMP takes 3 cycles, making the absolute STA to $4014 finish at cycle 16.
+        let image = nrom_with_program(&[
+            0x4C, 0x03, 0x80, // JMP $8003
+            0xEA,             // skipped
+            0xA9, 0x02,       // LDA #$02
+            0x8D, 0x14, 0x40, // STA $4014
+            0xEA,
+        ]);
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        machine.step().unwrap();
+        machine.step().unwrap();
+        machine.step().unwrap();
+        assert_eq!(machine.total_cycles(), 7 + 3 + 2 + 4 + 513);
+    }
+
+    #[test]
+    fn cpu_instruction_cycles_advance_ppu_by_three_dots_each() {
+        let image = nrom_with_program(&[0xEA, 0xEA]);
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        assert_eq!(machine.bus.ppu_position(), (261, 0));
+        let result = machine.step().unwrap();
+        assert_eq!(result.cycles, 2);
+        assert_eq!(machine.bus.ppu_position(), (261, 6));
+    }
+
+    #[test]
     fn machine_exposes_controller_input_to_cpu_reads() {
         let image = nrom_with_program(&[
             0xA9, 0x01,             // LDA #1: strobe high
