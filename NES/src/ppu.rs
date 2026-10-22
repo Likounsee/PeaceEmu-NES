@@ -121,7 +121,7 @@ impl Ppu {
             // the hardware reload points. Pixel fetches are still snapshot-based.
             if self.mask & 0x18 != 0 && (self.scanline < 240 || self.scanline == 261) {
                 if ((1..=256).contains(&self.dot) || (328..=336).contains(&self.dot))
-                    && self.dot % 8 == 0
+                    && self.dot.is_multiple_of(8)
                 {
                     self.increment_coarse_x();
                 }
