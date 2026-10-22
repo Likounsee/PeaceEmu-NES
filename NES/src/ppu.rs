@@ -776,7 +776,8 @@ mod tests {
     #[test]
     fn vblank_flag_clears_at_prerender_start_and_does_not_stick_between_frames() {
         let mut ppu = Ppu::new();
-        ppu.tick(243 * 341 + 1);
+        ppu.tick(242 * 341 + 1);
+        assert_eq!(ppu.position(), (241, 1));
         assert_ne!(ppu.status & 0x80, 0, "vblank starts at scanline 241 dot 1");
         // Advance from scanline 241 dot 1 to pre-render scanline 261 dot 1.
         ppu.tick(20 * 341);
