@@ -105,6 +105,13 @@ impl Ppu {
     /// Advances the PPU by a number of dots and updates vblank timing.
     pub fn tick(&mut self, dots: u32) {
         for _ in 0..dots {
+            // NTSC skips pre-render dot 340 on odd frames while rendering is active.
+            if self.scanline == 261 && self.dot == 339 && self.odd_frame && self.mask & 0x18 != 0 {
+                self.dot = 0;
+                self.scanline = 0;
+                self.odd_frame = false;
+                continue;
+            }
             self.dot += 1;
             if self.scanline == 241 && self.dot == 1 {
                 self.status |= 0x80;
@@ -426,6 +433,31 @@ mod tests {
         ppu.oam[0..4].copy_from_slice(&[255, 1, 0x20, 16]);
         ppu.render_frame(Some(&cartridge));
         assert_eq!(ppu.framebuffer()[16], 0x22);
+    }
+
+    #[test]
+    fn odd_ntsc_frame_skips_pre_render_dot_when_rendering_is_enabled() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 261;
+        ppu.dot = 339;
+        ppu.odd_frame = true;
+        ppu.mask = 0x08;
+        ppu.tick(1);
+        assert_eq!(ppu.scanline, 0);
+        assert_eq!(ppu.dot, 0);
+        assert!(!ppu.odd_frame);
+    }
+
+    #[test]
+    fn even_frame_does_not_skip_pre_render_dot() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 261;
+        ppu.dot = 339;
+        ppu.odd_frame = false;
+        ppu.mask = 0x08;
+        ppu.tick(1);
+        assert_eq!(ppu.scanline, 261);
+        assert_eq!(ppu.dot, 340);
     }
 
     #[test]
