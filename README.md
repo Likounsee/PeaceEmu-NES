@@ -6,11 +6,11 @@ Le développement se trouve dans [NES/](NES/). Consultez le [README du module](N
 
 ## État du projet
 
-**Avancement estimé : 28 %.** Le crate Rust comprend un CPU Ricoh 2A03 partiel, un bus RAM miroir, un parseur iNES/NROM mapper 0, un wrapper `NesMachine` et une première PPU avec registres CPU, mémoire graphique, OAM et timing VBlank, ainsi que le DMA OAM (256 octets et 513/514 cycles de blocage) et la génération des requêtes NMI en VBlank avec entrée d'interruption CPU.
+**Avancement estimé : 30 %.** Le crate Rust comprend un CPU Ricoh 2A03 partiel, un bus RAM miroir, un parseur iNES/NROM mapper 0, un wrapper `NesMachine` et une PPU avec registres CPU, mémoire graphique, OAM, VBlank/NMI et un rendu de fond par instantané vers un framebuffer 256×240 d'indices de palette NES. Le DMA OAM copie 256 octets et ajoute 513/514 cycles de blocage.
 
-**Ce n'est pas encore un émulateur NES jouable.** Le rendu PPU, l'APU, les manettes et le timing matériel précis, les instructions CPU restantes et l'adaptateur au contrat EmulationCore de PeaceEmu restent à implémenter. La stratégie de partage/versionnement du crate de contrat hôte doit être décidée avant l'intégration compilable.
+**Ce n'est pas encore un émulateur NES jouable.** Le rendu actuel est un instantané de fond, pas un rendu synchronisé dot par dot ; sprites, hit sprite 0, APU, manettes, timing matériel précis, instructions CPU restantes et adaptateur au contrat EmulationCore restent à implémenter. La stratégie de partage/versionnement du crate de contrat hôte doit être décidée avant l'intégration compilable.
 
-CI après les changements NMI : en cours de vérification.
+CI : vérifier le dernier workflow après les corrections de régressions DMA/NMI et l'ajout du rendu de fond.
 
 ## Développement local
 
