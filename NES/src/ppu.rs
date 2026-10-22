@@ -569,6 +569,25 @@ mod tests {
     }
 
     #[test]
+    fn background_left_edge_mask_hides_only_the_first_eight_pixels() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Nrom::parse(&image).unwrap();
+        ppu.mask = 0x08; // Background on, background's leftmost eight pixels hidden.
+        ppu.mem_write(0x0000, 0xFF, Some(&mut cartridge));
+        ppu.mem_write(0x3F00, 0x0F, Some(&mut cartridge));
+        ppu.mem_write(0x3F01, 0x21, Some(&mut cartridge));
+        ppu.render_background(Some(&cartridge));
+        assert_eq!(ppu.framebuffer()[0], 0x0F);
+        assert_eq!(ppu.framebuffer()[7], 0x0F);
+        assert_eq!(ppu.framebuffer()[8], 0x21);
+        assert!(ppu.background_opaque[8]);
+        assert!(!ppu.background_opaque[0]);
+    }
+
+    #[test]
     fn grayscale_mask_restricts_background_and_sprite_palette_indices() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
