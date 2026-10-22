@@ -434,7 +434,7 @@ mod tests {
     fn rendering_pipeline_increments_coarse_x_and_wraps_nametable() {
         let mut ppu = Ppu::new();
         ppu.mask = 0x08;
-        ppu.v = 0x041F;
+        ppu.v = 0x001F;
         ppu.tick(8);
         assert_eq!(ppu.v & 0x041F, 0x0000);
         assert_ne!(ppu.v & 0x0400, 0, "coarse X wrap toggles horizontal nametable bit");
