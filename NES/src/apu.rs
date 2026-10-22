@@ -329,7 +329,7 @@ mod tests {
     }
 
     #[test]
-        fn five_step_mode_does_not_raise_frame_irq() {
+    fn five_step_mode_does_not_raise_frame_irq() {
         let mut apu = Apu::new();
         apu.write(0x4017, 0x80);
         apu.tick_cpu_cycles(18_641);
