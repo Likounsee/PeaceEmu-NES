@@ -415,7 +415,7 @@ mod tests {
     fn sprite_behind_background_does_not_replace_opaque_background() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Nrom::parse(&image).unwrap();
         ppu.mask = 0x1E;
