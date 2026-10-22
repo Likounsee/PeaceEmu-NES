@@ -358,10 +358,10 @@ mod tests {
         apu.write(0x4010, 0x0F);
         apu.write(0x4013, 0);
         apu.write(0x4015, 0x10);
+        apu.supply_dmc_byte(0xFF);
         let initial = apu.sample();
         apu.tick_cpu_cycles(8 * 54);
         assert_eq!(apu.sample(), initial, "silent startup must not pull the DAC down");
-        apu.supply_dmc_byte(0xFF);
         apu.tick_cpu_cycles(8 * 54);
         assert!(apu.sample() > initial, "loaded sample bits should now affect the DAC");
     }
