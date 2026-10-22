@@ -8,6 +8,10 @@
 pub struct Apu {
     registers: [u8; 0x18],
     enabled_channels: u8,
+    frame_cycles: u32,
+    frame_irq: bool,
+    frame_irq_inhibit: bool,
+    five_step_mode: bool,
 }
 
 impl Apu {
@@ -24,12 +28,18 @@ impl Apu {
         if address == 0x4015 {
             self.enabled_channels = value & 0x0F;
             self.registers[(address - 0x4000) as usize] = value;
+        } else if address == 0x4017 {
+            self.registers[(address - 0x4000) as usize] = value;
+            self.frame_irq_inhibit = value & 0x40 != 0;
+            self.five_step_mode = value & 0x80 != 0;
+            if self.frame_irq_inhibit { self.frame_irq = false; }
+            self.frame_cycles = 0;
         } else if address != 0x4014 && address != 0x4016 {
             self.registers[(address - 0x4000) as usize] = value;
         }
     }
 
-    /// Reads APU status at $4015. Other addresses return their stored register value.
+    /// Advances the frame sequencer by CPU cycles. Audio synthesis remains unimplemented.\n    pub fn tick_cpu_cycles(&mut self, cycles: u32) {\n        let period = if self.five_step_mode { 18_641 } else { 14_915 };\n        self.frame_cycles = self.frame_cycles.saturating_add(cycles);\n        while self.frame_cycles >= period {\n            self.frame_cycles -= period;\n            if !self.five_step_mode && !self.frame_irq_inhibit { self.frame_irq = true; }\n        }\n    }\n\n    /// Reads APU status at $4015. Other addresses return their stored register value.
     ///
     /// Only channel-enable state is currently emulated; length counters, frame IRQ,
     /// DMC state, and audio generation are intentionally not reported as active.
