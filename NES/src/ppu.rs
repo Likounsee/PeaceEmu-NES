@@ -322,6 +322,33 @@ mod tests {
     }
 
     #[test]
+    fn ppudata_non_palette_reads_are_buffered_and_increment_by_one() {
+        let mut ppu = Ppu::new();
+        ppu.cpu_write_register(6, 0x20, None);
+        ppu.cpu_write_register(6, 0x00, None);
+        ppu.cpu_write_register(7, 0x5A, None);
+        ppu.cpu_write_register(6, 0x20, None);
+        ppu.cpu_write_register(6, 0x00, None);
+        assert_eq!(ppu.cpu_read_register(7, None), 0);
+        assert_eq!(ppu.cpu_read_register(7, None), 0x5A);
+        assert_eq!(ppu.v & 0x3FFF, 0x2002);
+    }
+
+    #[test]
+    fn ppudata_increment_by_32_follows_control_register() {
+        let mut ppu = Ppu::new();
+        ppu.cpu_write_register(0, 0x04, None);
+        ppu.cpu_write_register(6, 0x20, None);
+        ppu.cpu_write_register(6, 0x00, None);
+        ppu.cpu_write_register(7, 0xA7, None);
+        assert_eq!(ppu.v & 0x3FFF, 0x2020);
+        ppu.cpu_write_register(6, 0x20, None);
+        ppu.cpu_write_register(6, 0x20, None);
+        assert_eq!(ppu.cpu_read_register(7, None), 0);
+        assert_eq!(ppu.cpu_read_register(7, None), 0xA7);
+    }
+
+    #[test]
     fn palette_mirrors_universal_background_entries() {
         let mut ppu = Ppu::new();
         ppu.cpu_write_register(6, 0x3F, None);
