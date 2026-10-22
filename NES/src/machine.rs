@@ -79,6 +79,9 @@ impl NesMachine {
     /// Returns the accumulated nominal CPU cycle count, including reset.
     pub fn total_cycles(&self) -> u64 { self.cpu.total_cycles() }
 
+    /// Returns one approximate normalized mono audio sample (0.0..1.0).
+    pub fn audio_sample(&self) -> f32 { self.bus.apu_sample() }
+
     /// Executes one CPU instruction and services any OAM DMA it requests.
     pub fn step(&mut self) -> Result<StepResult, MachineError> {
         let result = self.cpu.step(&mut self.bus)?;
@@ -160,6 +163,19 @@ mod tests {
             machine.step().unwrap();
         }
         assert_eq!(machine.cpu_state().a, 0x41);
+    }
+
+    #[test]
+    fn machine_exposes_apu_sample_output() {
+        let image = nrom_with_program(&[0xEA]);
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        assert_eq!(machine.audio_sample(), 0.0);
+        machine.write_cpu(0x4015, 0x01);
+        machine.write_cpu(0x4000, 0x9F);
+        machine.write_cpu(0x4002, 0x20);
+        machine.write_cpu(0x4003, 0xF8);
+        for _ in 0..20 { machine.step().unwrap(); }
+        assert!(machine.audio_sample() > 0.0);
     }
 
     #[test]
