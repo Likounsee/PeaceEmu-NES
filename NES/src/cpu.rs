@@ -253,6 +253,13 @@ impl Cpu {
                 let lo = self.pop(bus) as u16; let hi = self.pop(bus) as u16;
                 self.state.pc = ((hi << 8) | lo).wrapping_add(1); 6
             }
+            0x40 => {
+                self.state.status = (self.pop(bus) | flags::UNUSED) & !flags::BREAK;
+                let lo = self.pop(bus) as u16;
+                let hi = self.pop(bus) as u16;
+                self.state.pc = (hi << 8) | lo;
+                6
+            }
             0x48 => { self.push(bus, self.state.a); 3 }
             0x68 => { self.state.a = self.pop(bus); self.set_nz(self.state.a); 4 }
             0x08 => { self.push(bus, self.state.status | flags::BREAK | flags::UNUSED); 3 }
@@ -570,6 +577,21 @@ mod tests {
         bus.write(0x0300, 0x99);
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
         assert_eq!(cpu.state().pc, 0x1234);
+    }
+
+    #[test]
+    fn rti_restores_status_and_program_counter_from_stack() {
+        let (mut cpu, mut bus) = setup(&[0x40]);
+        bus.write(0x01FE, flags::CARRY | flags::OVERFLOW | flags::BREAK);
+        bus.write(0x01FF, 0x34);
+        bus.write(0x0100, 0x12);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 6);
+        assert_eq!(cpu.state().pc, 0x1234);
+        assert_ne!(cpu.state().status & flags::CARRY, 0);
+        assert_ne!(cpu.state().status & flags::OVERFLOW, 0);
+        assert_eq!(cpu.state().status & flags::BREAK, 0);
+        assert_ne!(cpu.state().status & flags::UNUSED, 0);
+        assert_eq!(cpu.state().sp, 0x00);
     }
 
     #[test] fn jsr_and_rts_round_trip() {
