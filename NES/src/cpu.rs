@@ -95,6 +95,16 @@ impl Cpu {
     pub fn total_cycles(&self) -> u64 { self.cycles }
     /// Sets the program counter; useful for reset initialization and unit tests.
     pub fn set_pc(&mut self, pc: u16) { self.state.pc = pc; }
+    /// Performs the hardware reset sequence and loads the reset vector at $FFFC.
+    pub fn reset(&mut self, bus: &mut CpuBus) {
+        self.state.a = 0;
+        self.state.x = 0;
+        self.state.y = 0;
+        self.state.sp = 0xFD;
+        self.state.status = flags::INTERRUPT_DISABLE | flags::UNUSED;
+        self.state.pc = self.read_word(bus, 0xFFFC);
+        self.cycles = self.cycles.saturating_add(7);
+    }
 
     /// Executes one instruction. Unsupported opcodes return an error.
     pub fn step(&mut self, bus: &mut CpuBus) -> Result<StepResult, CpuError> {
@@ -303,6 +313,22 @@ mod tests {
         let (mut c, mut b) = setup(&[0x02]);
         assert_eq!(c.step(&mut b), Err(CpuError::UnsupportedOpcode { opcode: 2, pc: 0x0600 }));
         assert_eq!(c.total_cycles(), 0);
+    }
+    #[test] fn reset_loads_vector_from_nrom_cartridge() {
+        use crate::cartridge::Nrom;
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFC] = 0x34;
+        image[16 + 0x3FFD] = 0x12;
+        let cartridge = Nrom::parse(&image).unwrap();
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(cartridge);
+        let mut cpu = Cpu::new();
+        cpu.reset(&mut bus);
+        assert_eq!(cpu.state().pc, 0x1234);
+        assert_eq!(cpu.state().sp, 0xFD);
+        assert_eq!(cpu.total_cycles(), 7);
     }
     #[test] fn indexed_zero_page_and_absolute_reads_work() {
         let (mut cpu, mut bus) = setup(&[0xA2, 0x01, 0xB5, 0x20, 0xBD, 0xFF, 0x02]);
