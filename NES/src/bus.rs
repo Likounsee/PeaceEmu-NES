@@ -87,6 +87,8 @@ impl CpuBus {
     pub fn framebuffer(&self) -> &[u8] { self.ppu.framebuffer() }
     /// Advances the PPU by the specified number of dots.
     pub fn tick_ppu(&mut self, dots: u32) { self.ppu.tick(dots); }
+    /// Advances the APU frame sequencer by CPU cycles.
+    pub fn tick_apu(&mut self, cycles: u32) { self.apu.tick_cpu_cycles(cycles); }
     /// Takes a pending NMI edge raised by the PPU.
     pub fn take_nmi_request(&mut self) -> bool { self.ppu.take_nmi_request() }
     /// Takes a pending OAM DMA page requested by a write to $4014.
