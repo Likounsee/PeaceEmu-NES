@@ -58,6 +58,13 @@ mod tests {
     #[test] fn unmapped_io_uses_open_bus_latch() {
         let mut b = CpuBus::new(); b.write(0x4000, 0xC3); assert_eq!(b.read(0x4000), 0xC3);
     }
+    #[test]
+    fn ppu_registers_are_mirrored_through_cpu_bus() {
+        let mut bus = CpuBus::new();
+        bus.tick_ppu(243 * 341 + 1);
+        assert_ne!(bus.read(0x2002) & 0x80, 0);
+        assert_eq!(bus.read(0x3FFA) & 0x80, 0);
+    }
     #[test] fn attaches_cartridge() {
         let mut image = vec![0; 16 + 16384]; image[0..4].copy_from_slice(b"NES\x1A"); image[4] = 1;
         let mut b = CpuBus::new(); b.insert_cartridge(Nrom::parse(&image).unwrap()); assert!(b.has_cartridge());
