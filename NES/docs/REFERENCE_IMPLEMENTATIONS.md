@@ -35,6 +35,13 @@ Aucun fichier source tiers n'est importé dans le cœur par cette décision. Tou
 - Les lignes de code n'ont pas été copiées telles quelles : la logique a été réécrite pour notre interpréteur existant et couverte par des tests de régression locaux, y compris le franchissement de page pour LAX absolute,Y.
 - Aucun code source tiers ni ROM de test tierce n'est embarqué par cette tranche. La table d'opcodes sert de référence de comportement ; les tests sont écrits pour PeaceEmu-NES.
 
+## Deuxième adaptation réalisée : opcodes immédiats non officiels
+
+- Référence de comportement : tables d'opcodes 2A03/6502 de TetaNES et documentation matérielle NESdev.
+- Adaptation PeaceEmu : ANC ($0B/$2B), ALR ($4B), ARR ($6B) et AXS ($CB) sont désormais interprétés dans le CPU existant. Les opérations utilisent les helpers locaux de flags et les cycles de notre interpréteur ; aucune dépendance d'émulateur n'est ajoutée.
+- Une régression dédiée vérifie les résultats de registres, les flags Carry/Zero/Negative/Overflow et les deux cycles de chaque instruction immédiate.
+- Le comportement de ces opcodes non officiels varie parfois selon la famille de puces et les cas limites ; ils sont documentés comme couverture pratique 2A03, pas comme preuve de cycle-exactitude.
+
 ## Première tranche de validation
 
 La PPU possède désormais des tests explicites pour les quatre alias de palette universelle (`$3F10/$3F14/$3F18/$3F1C`), les mappings horizontal/vertical/four-screen des nametables et le miroir de `$3000-$3EFF`. Ces tests sont des garde-fous avant l'évolution du rendu snapshot vers un pipeline de pixels et de fetchs par dot.
