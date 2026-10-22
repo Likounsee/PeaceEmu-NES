@@ -33,7 +33,8 @@ impl CpuBus {
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x2000..=0x3FFF => self.ppu.cpu_read_register(address & 7, self.cartridge.as_ref()),
-            0x4015 => self.apu.read(address),
+            // Bit 5 of $4015 is open bus on the 2A03; preserve the previous bus value.
+            0x4015 => self.apu.read(address) | (self.open_bus & 0x20),
             0x4016..=0x4017 => self.read_controller((address - 0x4016) as usize),
             0x8000..=0xFFFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
             _ => self.open_bus,
@@ -164,6 +165,20 @@ mod tests {
         assert_eq!(bus.read(0x4016) & 1, 1);
         assert_eq!(bus.read(0x4017) & 1, 0);
         assert_eq!(bus.read(0x4017) & 1, 1);
+    }
+
+    #[test]
+    fn apu_status_preserves_open_bus_bit_five_and_clears_frame_irq() {
+        let mut bus = CpuBus::new();
+        bus.write(0x4000, 0x20);
+        bus.write(0x4015, 0x00);
+        bus.write(0x4017, 0x00);
+        bus.tick_apu(14_915);
+        assert!(bus.irq_pending());
+        let status = bus.read(0x4015);
+        assert_ne!(status & 0x20, 0);
+        assert_ne!(status & 0x40, 0);
+        assert!(!bus.irq_pending());
     }
 
     #[test]
