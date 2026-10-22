@@ -179,6 +179,9 @@ mod tests {
         let mut bus = CpuBus::new();
         bus.write(0x4000, 0xBF);
         bus.write(0x4015, 0x0D);
+        bus.write(0x4003, 0xF8);
+        bus.write(0x400B, 0xF8);
+        bus.write(0x400F, 0xF8);
         bus.write(0x4017, 0x80);
         // Most APU registers are write-only; $4015 is the readable status register.
         assert_eq!(bus.read(0x4015), 0x0D);
