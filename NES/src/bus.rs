@@ -88,7 +88,7 @@ mod tests {
         assert_eq!(bus.take_oam_dma_request(), Some(0x02));
         bus.transfer_oam_dma(0x02);
         for i in 0..=u8::MAX {
-            bus.write(0x2003, i);
+            bus.write(0x2003, i.wrapping_add(0x80));
             assert_eq!(bus.read(0x2004), i.wrapping_mul(3));
         }
         assert_eq!(bus.take_oam_dma_request(), None);
