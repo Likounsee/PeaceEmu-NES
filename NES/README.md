@@ -6,7 +6,7 @@
 
 Développer un cœur NES réel, indépendant de l'interface graphique, intégrable à l'application principale [PeaceEmu](https://github.com/Likounsee/PeaceEmu). L'interface, la bibliothèque de jeux, les fenêtres et l'orchestration des sessions existent déjà dans le dépôt principal : ce dépôt ne doit pas recréer ces fonctionnalités.
 
-**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES/NROM, un sous-ensemble élargi du CPU, un modèle de registres APU, compteurs de longueur, séquenceur de frame approximatif et un mélangeur audio pulse/triangle/bruit/DMC à mixage non linéaire approximatif avec enveloppes, sweep et compteur linéaire triangle approximatifs, un premier canal DMC avec lecture d'échantillons par le bus et IRQ, ainsi que le rendu snapshot de la PPU disposent de code et de tests. Le module n'est pas encore déclaré jouable et n'est pas encore branché au contrat hôte.
+**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES/NROM, un sous-ensemble élargi du CPU, un modèle de registres APU, compteurs de longueur, séquenceur de frame approximatif et un mélangeur audio pulse/triangle/bruit/DMC à mixage non linéaire approximatif avec enveloppes, sweep et compteur linéaire triangle approximatifs, un premier canal DMC avec lecture d'échantillons par le bus et IRQ, ainsi que le rendu snapshot de la PPU disposent de code et de tests. Le séquenceur APU fait avancer ses horloges frame à chaque cycle CPU pour garder un état déterministe quelle que soit la taille des lots passés à `tick_cpu_cycles`. Le module n'est pas encore déclaré jouable et n'est pas encore branché au contrat hôte.
 
 ## Langage et intégration
 
