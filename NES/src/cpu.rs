@@ -808,8 +808,8 @@ mod tests {
         bus.write(0x06FD, 0xD0);
         bus.write(0x06FE, 0x02);
         cpu.set_pc(0x06FD);
-        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 3);
-        assert_eq!(cpu.state().pc, 0x06FF);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 4);
+        assert_eq!(cpu.state().pc, 0x0701);
 
         // Put the next branch at $0700 and use a negative offset to cross back to $06xx.
         bus.write(0x0700, 0xD0);
