@@ -33,6 +33,8 @@ pub struct Apu {
     pulse_envelope_start: [bool; 2],
     pulse_envelope_divider: [u8; 2],
     pulse_envelope_decay: [u8; 2],
+    pulse_sweep_divider: [u8; 2],
+    pulse_sweep_reload: [bool; 2],
     triangle_linear_counter: u8,
     triangle_reload_flag: bool,
 }
@@ -71,6 +73,8 @@ impl Apu {
                 0x400F => Some(3),
                 _ => None,
             };
+            if address == 0x4001 { self.pulse_sweep_reload[0] = true; }
+            if address == 0x4005 { self.pulse_sweep_reload[1] = true; }
             if let Some(channel) = channel {
                 if self.enabled_channels & (1 << channel) != 0 {
                     self.length_counters[channel] = LENGTH_TABLE[(value >> 3) as usize];
@@ -167,12 +171,27 @@ impl Apu {
                     self.length_counters[channel] -= 1;
                 }
             }
-            // Sweep is clocked at half-frame cadence. This approximation mutes out-of-range periods.
+            // Clock each pulse sweep divider and apply valid period updates.
             for channel in 0..2 {
                 let register = channel * 4;
                 let sweep = self.registers[register + 1];
-                if sweep & 0x80 != 0 && sweep & 7 != 0 && self.pulse_timer_counter[channel] == u16::MAX {
-                    self.pulse_timer_counter[channel] = 0;
+                let period = u16::from(self.registers[register + 2])
+                    | (u16::from(self.registers[register + 3] & 7) << 8);
+                let shift = sweep & 7;
+                let change = period >> shift;
+                let target = if sweep & 0x08 != 0 {
+                    period.wrapping_sub(change).wrapping_sub(u16::from(channel == 0))
+                } else { period.saturating_add(change) };
+                if sweep & 0x80 != 0 && shift != 0 && self.pulse_sweep_divider[channel] == 0
+                    && period >= 8 && target <= 0x07FF {
+                    self.registers[register + 2] = target as u8;
+                    self.registers[register + 3] = (self.registers[register + 3] & 0xF8) | ((target >> 8) as u8 & 7);
+                }
+                if self.pulse_sweep_divider[channel] == 0 || self.pulse_sweep_reload[channel] {
+                    self.pulse_sweep_divider[channel] = (sweep >> 4) & 7;
+                    self.pulse_sweep_reload[channel] = false;
+                } else {
+                    self.pulse_sweep_divider[channel] -= 1;
                 }
             }
         }
@@ -210,8 +229,11 @@ impl Apu {
             let volume = f32::from(if control & 0x10 != 0 { control & 0x0F } else { self.pulse_envelope_decay[channel] });
             let sweep = self.registers[register + 1];
             let change = period >> (sweep & 7);
-            let target = if channel == 0 { period.saturating_add(change).saturating_add(u16::from(sweep & 0x08 != 0)) } else { period.saturating_add(change) };
-            let sweep_muted = period < 8 || target > 0x07FF || (sweep & 0x80 != 0 && sweep & 7 != 0 && sweep & 0x08 != 0 && channel == 0);
+            let target = if sweep & 0x08 != 0 {
+                period.wrapping_sub(change).wrapping_sub(u16::from(channel == 0))
+            } else { period.saturating_add(change) };
+            let sweep_muted = period < 8 || (sweep & 0x80 != 0 && sweep & 7 != 0 && target > 0x07FF)
+                || (sweep & 0x80 != 0 && sweep & 7 != 0 && sweep & 0x08 != 0 && channel == 0 && change + 1 > period);
             if self.length_counters[channel] > 0 && period >= 8 && !sweep_muted
                 && DUTY[duty] & (1 << self.pulse_sequence[channel]) != 0 {
                 pulse += volume;
@@ -358,7 +380,7 @@ mod tests {
         apu.write(0x4008, 0x80 | 0x7F);
         apu.write(0x400B, 0xF8);
         apu.tick_cpu_cycles(3_729);
-        assert!(apu.sample() >= 0.0);
+        assert!(apu.sample() > 0.0);
     }
 
     #[test]
