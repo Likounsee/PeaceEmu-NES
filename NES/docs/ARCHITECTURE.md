@@ -30,7 +30,7 @@ Exécute les instructions du 6502 modifié pour la NES. Le composant gère les r
 
 ### Bus mémoire
 
-Centralise les accès CPU vers la RAM interne, les registres PPU/APU, les ports manette série ($4016/$4017) et la cartouche. Les manettes disposent d'un strobe, d'un latch des huit boutons et d'un registre à décalage ; l'entrée publique passe par `NesMachine::set_controller_state`. L'APU n'est pas encore implémentée.
+Centralise les accès CPU vers la RAM interne, les registres PPU/APU, les ports manette série ($4016/$4017) et la cartouche. Les manettes disposent d'un strobe, d'un latch des huit boutons et d'un registre à décalage ; l'entrée publique passe par `NesMachine::set_controller_state`. L'APU expose les registres, les quatre compteurs de longueur et un IRQ de frame approximatif ; la synthèse audio et le DMC restent à implémenter.
 
 ### Cartouche et mapper
 
@@ -42,7 +42,7 @@ Gère les registres vidéo, motifs, nametables, palettes, sprites, NMI et timing
 
 ### APU
 
-Gère les canaux audio NES et leur évolution dans le temps. Le cœur produit des échantillons ; PeaceEmu reste responsable de la lecture et de l'intégration audio côté hôte.
+L'APU stocke les registres, modélise les compteurs de longueur pulse/triangle/bruit, l'état de $4015 et un séquenceur de frame approximatif à 4/5 étapes. Le drapeau IRQ est lisible puis effacé via $4015. La synthèse audio, le DMC et le timing exact, y compris le délai de reset de $4017, restent à faire.
 
 ### Contrôleurs
 
@@ -70,5 +70,5 @@ Coordonne CPU, PPU, APU, cartouche et contrôleurs. Le modèle de timing doit ê
 5. Machine minimale et tests d'intégration.
 6. PPU et synchronisation.
 7. Compléter le pipeline PPU et le timing synchronisé.
-8. Ajouter l'APU, puis connecter les manettes à l'adaptateur hôte.
+8. Compléter l'APU (synthèse, DMC et timing exact), puis connecter les manettes à l'adaptateur hôte.
 9. Adapter le contrat EmulationCore et étendre la compatibilité.
