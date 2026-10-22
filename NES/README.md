@@ -3,6 +3,10 @@
 > Cœur d'émulation Nintendo Entertainment System (NES) pour l'application PeaceEmu existante.
 
 ## Objectif
+## Réutilisation du code existant
+
+Pour éviter de tout réimplémenter à la main, les références open source, leurs licences et les contraintes d'intégration sont suivies dans [la stratégie de réutilisation](docs/REFERENCE_IMPLEMENTATIONS.md). L'objectif est de porter des composants ciblés, de les adapter à l'architecture PeaceEmu et de vérifier chaque comportement par des tests — pas de copier un émulateur complet à l'aveugle.
+
 
 Développer un cœur NES réel, indépendant de l'interface graphique, intégrable à l'application principale [PeaceEmu](https://github.com/Likounsee/PeaceEmu). L'interface, la bibliothèque de jeux, les fenêtres et l'orchestration des sessions existent déjà dans le dépôt principal : ce dépôt ne doit pas recréer ces fonctionnalités.
 
