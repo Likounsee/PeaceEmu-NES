@@ -694,7 +694,7 @@ mod tests {
     #[test]
     fn unofficial_immediate_anc_alr_arr_and_axs_update_expected_state() {
         // ANC #$80: A=$80, N and C set. ALR #$03: A=$01, C set.
-        // ARR #$FF with C set rotates $01 to $80; AXS then computes ($80 & $03)-$01.
+        // ARR #$FF with C set rotates $01 to $80; reload A=$03 before testing AXS.
         let (mut cpu, mut bus) = setup(&[
             0xA9, 0xFF, // LDA #$FF
             0x0B, 0x80, // ANC #$80 -> A=$80, C=N=1
