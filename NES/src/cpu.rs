@@ -31,7 +31,12 @@ pub mod flags {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CpuError {
     /// Opcode has not been implemented.
-    UnsupportedOpcode { opcode: u8, pc: u16 },
+    UnsupportedOpcode {
+        /// Unimplemented opcode byte.
+        opcode: u8,
+        /// Address where the opcode was fetched.
+        pc: u16,
+    },
 }
 impl fmt::Display for CpuError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -240,6 +245,8 @@ mod tests {
     #[test] fn jsr_and_rts_round_trip() {
         let (mut c, mut b) = setup(&[0x20, 6, 6, 0xA9, 0x55, 0xEA, 0xA9, 0x77, 0x60]);
         c.step(&mut b).unwrap(); assert_eq!(c.state().pc, 0x0606);
-        c.step(&mut b).unwrap(); c.step(&mut b).unwrap(); assert_eq!(c.state().a, 0x55);
+        c.step(&mut b).unwrap(); c.step(&mut b).unwrap();
+        assert_eq!(c.state().pc, 0x0603);
+        c.step(&mut b).unwrap(); assert_eq!(c.state().a, 0x55);
     }
 }
