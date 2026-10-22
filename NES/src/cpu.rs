@@ -271,28 +271,8 @@ impl Cpu {
             0xB0 => self.branch(bus, self.flag(flags::CARRY)),
             0xD0 => self.branch(bus, !self.flag(flags::ZERO)),
             0xF0 => self.branch(bus, self.flag(flags::ZERO)),
-            0x10 => self.branch(bus, !self.flag(flags::NEGATIVE)),
-            0x30 => self.branch(bus, self.flag(flags::NEGATIVE)),
-            0x90 => self.branch(bus, !self.flag(flags::CARRY)),
-            0xB0 => self.branch(bus, self.flag(flags::CARRY)),
-            0x50 => self.branch(bus, !self.flag(flags::OVERFLOW)),
-            0x70 => self.branch(bus, self.flag(flags::OVERFLOW)),
-            0x18 => { self.set_flag(flags::CARRY, false); 2 }
-            0x38 => { self.set_flag(flags::CARRY, true); 2 }
-            0x58 => { self.set_flag(flags::INTERRUPT_DISABLE, false); 2 }
-            0x78 => { self.set_flag(flags::INTERRUPT_DISABLE, true); 2 }
-            0xB8 => { self.set_flag(flags::OVERFLOW, false); 2 }
-            0xD8 => { self.set_flag(flags::DECIMAL, false); 2 }
-            0xF8 => { self.set_flag(flags::DECIMAL, true); 2 }
             0x9A => { self.state.sp = self.state.x; 2 }
             0xBA => { self.state.x = self.state.sp; self.set_nz(self.state.x); 2 }
-            0x48 => { self.push(bus, self.state.a); 3 }
-            0x68 => { self.state.a = self.pop(bus); self.set_nz(self.state.a); 4 }
-            0x08 => { self.push(bus, self.state.status | flags::BREAK | flags::UNUSED); 3 }
-            0x28 => {
-                self.state.status = (self.pop(bus) & !flags::BREAK) | flags::UNUSED;
-                4
-            }
             0x00 => {
                 self.state.pc = self.state.pc.wrapping_add(1);
                 self.push(bus, (self.state.pc >> 8) as u8); self.push(bus, self.state.pc as u8);
@@ -318,10 +298,6 @@ impl Cpu {
         let lo = bus.read(pointer as u16) as u16;
         let hi = bus.read(pointer.wrapping_add(1) as u16) as u16;
         (hi << 8) | lo
-    }
-    fn pop(&mut self, bus: &mut CpuBus) -> u8 {
-        self.state.sp = self.state.sp.wrapping_add(1);
-        bus.read(0x0100 | self.state.sp as u16)
     }
     fn fetch(&mut self, bus: &mut CpuBus) -> u8 {
         let v = bus.read(self.state.pc); self.state.pc = self.state.pc.wrapping_add(1); v
