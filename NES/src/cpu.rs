@@ -151,6 +151,38 @@ impl Cpu {
                 let _ = bus.read(address);
                 4 + u8::from(base & 0xFF00 != address & 0xFF00)
             }
+            // Stable unofficial immediate operations, adapted to this interpreter's
+            // register/flag helpers from established 2A03 opcode tables.
+            0x0B | 0x2B => { // ANC #imm
+                self.state.a &= self.fetch(bus);
+                self.set_nz(self.state.a);
+                self.set_flag(flags::CARRY, self.state.a & 0x80 != 0);
+                2
+            }
+            0x4B => { // ALR #imm: AND followed by logical shift right.
+                self.state.a &= self.fetch(bus);
+                self.set_flag(flags::CARRY, self.state.a & 1 != 0);
+                self.state.a >>= 1;
+                self.set_nz(self.state.a);
+                2
+            }
+            0x6B => { // ARR #imm: AND followed by rotate right through carry.
+                self.state.a &= self.fetch(bus);
+                self.state.a = (self.state.a >> 1)
+                    | if self.flag(flags::CARRY) { 0x80 } else { 0 };
+                self.set_nz(self.state.a);
+                self.set_flag(flags::CARRY, self.state.a & 0x40 != 0);
+                self.set_flag(flags::OVERFLOW, ((self.state.a >> 6) ^ (self.state.a >> 5)) & 1 != 0);
+                2
+            }
+            0xCB => { // AXS #imm: X = (A & X) - imm.
+                let lhs = self.state.a & self.state.x;
+                let operand = self.fetch(bus);
+                self.set_flag(flags::CARRY, lhs >= operand);
+                self.state.x = lhs.wrapping_sub(operand);
+                self.set_nz(self.state.x);
+                2
+            }
             0xA9 => { let v = self.fetch(bus); self.state.a = v; self.set_nz(v); 2 }
             0xA5 => { let a = self.fetch(bus) as u16; let v = bus.read(a); self.state.a = v; self.set_nz(v); 3 }
             0xAD => { let a = self.fetch_word(bus); let v = bus.read(a); self.state.a = v; self.set_nz(v); 4 }
@@ -657,6 +689,42 @@ mod tests {
         assert_eq!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
         assert_ne!(cpu.state().status & flags::UNUSED, 0);
         assert_eq!(cpu.state().status & flags::BREAK, 0);
+    }
+
+    #[test]
+    fn unofficial_immediate_anc_alr_arr_and_axs_update_expected_state() {
+        // ANC #$80: A=$80, N and C set. ALR #$03: A=$01, C set.
+        // ARR #$FF with C set rotates $01 to $80; reload A=$03 before testing AXS.
+        let (mut cpu, mut bus) = setup(&[
+            0xA9, 0xFF, // LDA #$FF
+            0x0B, 0x80, // ANC #$80 -> A=$80, C=N=1
+            0xA9, 0x03, // LDA #$03
+            0x4B, 0x03, // ALR #$03 -> A=$01, C=1
+            0x6B, 0xFF, // ARR #$FF -> A=$80, C=0, N=1, V=0
+            0xA9, 0x03, // LDA #$03 (prepare A & X = $03 for AXS)
+            0xA2, 0x03, // LDX #$03
+            0xCB, 0x01, // AXS #$01 -> X=$02, C=1
+        ]);
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
+        assert_eq!(cpu.state().a, 0x80);
+        assert_ne!(cpu.state().status & flags::CARRY, 0);
+        assert_ne!(cpu.state().status & flags::NEGATIVE, 0);
+        cpu.step(&mut bus).unwrap();
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.state().a, 0x01);
+        assert_ne!(cpu.state().status & flags::CARRY, 0);
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.state().a, 0x80);
+        assert_eq!(cpu.state().status & flags::CARRY, 0);
+        assert_ne!(cpu.state().status & flags::NEGATIVE, 0);
+        assert_eq!(cpu.state().status & flags::OVERFLOW, 0);
+        cpu.step(&mut bus).unwrap();
+        cpu.step(&mut bus).unwrap();
+        cpu.step(&mut bus).unwrap(); // AXS #$01
+        assert_eq!(cpu.state().x, 0x02);
+        assert_ne!(cpu.state().status & flags::CARRY, 0);
+        assert_eq!(cpu.state().status & flags::ZERO, 0);
     }
 
     #[test] fn unknown_opcode_is_explicit() {

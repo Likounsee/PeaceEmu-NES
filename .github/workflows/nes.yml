@@ -2,12 +2,12 @@ name: NES core checks
 
 on:
   push:
-    branches: [main]
+    branches: [main, NES]
     paths:
       - "NES/**"
       - ".github/workflows/nes.yml"
   pull_request:
-    branches: [main]
+    branches: [main, NES]
     paths:
       - "NES/**"
       - ".github/workflows/nes.yml"
