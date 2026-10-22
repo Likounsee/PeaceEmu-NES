@@ -6,11 +6,11 @@ Le développement se trouve dans [NES/](NES/). Consultez le [README du module](N
 
 ## État du projet
 
-**Avancement estimé : 34 %.** Le crate Rust comprend un CPU Ricoh 2A03 partiel, un bus RAM miroir, un parseur iNES/NROM mapper 0, un wrapper `NesMachine` et une PPU avec registres CPU, mémoire graphique, OAM, VBlank/NMI et un rendu de fond par instantané et un compositing des sprites respectant la priorité OAM, avec détection approximative du sprite 0 et du dépassement de huit sprites par ligne, vers un framebuffer 256×240 d'indices de palette NES. Le DMA OAM copie 256 octets et ajoute 513/514 cycles de blocage.
+**Avancement estimé : 36 %.** Le crate Rust comprend un CPU Ricoh 2A03 partiel, un bus RAM miroir, un parseur iNES/NROM mapper 0, un wrapper `NesMachine` et une PPU avec registres CPU, mémoire graphique, OAM, VBlank/NMI et un rendu de fond par instantané et un compositing des sprites respectant la priorité OAM, avec détection approximative du sprite 0 et du dépassement de huit sprites par ligne, vers un framebuffer 256×240 d'indices de palette NES. Le DMA OAM copie 256 octets et ajoute 513/514 cycles de blocage ; les ports manette série $4016/$4017 sont implémentés avec latch et décalage des huit boutons.
 
-**Ce n'est pas encore un émulateur NES jouable.** Le rendu actuel est un instantané de fond, pas un rendu synchronisé dot par dot ; sprites, hit sprite 0, APU, manettes, timing matériel précis, instructions CPU restantes et adaptateur au contrat EmulationCore restent à implémenter. La stratégie de partage/versionnement du crate de contrat hôte doit être décidée avant l'intégration compilable.
+**Ce n'est pas encore un émulateur NES jouable.** Le rendu actuel est un instantané de fond, pas un rendu synchronisé dot par dot ; sprites, hit sprite 0, APU, timing matériel précis, instructions CPU restantes et adaptateur au contrat EmulationCore restent à implémenter. La stratégie de partage/versionnement du crate de contrat hôte doit être décidée avant l'intégration compilable.
 
-CI : le workflow a révélé deux tests PPU fragiles ; les fixtures ont été corrigées. Le résultat du workflow sur ces nouveaux commits reste à confirmer.
+CI : les tests ont révélé des régressions de fixture et de branchement, corrigées depuis ; la dernière exécution doit encore confirmer que tout passe.
 
 ## Développement local
 
