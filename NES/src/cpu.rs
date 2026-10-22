@@ -240,6 +240,8 @@ impl Cpu {
             0xD8 => { self.set_flag(flags::DECIMAL, false); 2 }
             0xF8 => { self.set_flag(flags::DECIMAL, true); 2 }
             0xB8 => { self.set_flag(flags::OVERFLOW, false); 2 }
+            0x24 => { let a = self.fetch(bus) as u16; let v = bus.read(a); self.set_flag(flags::ZERO, self.state.a & v == 0); self.set_flag(flags::OVERFLOW, v & 0x40 != 0); self.set_flag(flags::NEGATIVE, v & 0x80 != 0); 3 }
+            0x2C => { let a = self.fetch_word(bus); let v = bus.read(a); self.set_flag(flags::ZERO, self.state.a & v == 0); self.set_flag(flags::OVERFLOW, v & 0x40 != 0); self.set_flag(flags::NEGATIVE, v & 0x80 != 0); 4 }
             0x10 => self.branch(bus, !self.flag(flags::NEGATIVE)),
             0x30 => self.branch(bus, self.flag(flags::NEGATIVE)),
             0x50 => self.branch(bus, !self.flag(flags::OVERFLOW)),
