@@ -34,7 +34,7 @@ Centralise les accès CPU vers la RAM interne, les registres PPU/APU, les ports 
 
 ### Cartouche et mapper
 
-Valide les en-têtes iNES/NES 2.0, les tailles et les éventuels trainers avant d'exposer PRG-ROM, PRG-RAM, CHR-ROM/CHR-RAM et le mirroring. Commencer par NROM (mapper 0). Chaque mapper ultérieur doit disposer de tests spécifiques.
+Valide les en-têtes iNES legacy, les tailles et les éventuels trainers avant d'exposer PRG-ROM, PRG-RAM de 8 Kio, CHR-ROM/CHR-RAM et le mirroring. Les trainers iNES de 512 octets sont chargés à l'offset `$1000` de la PRG-RAM, correspondant à `$7000–$71FF`. Commencer par NROM (mapper 0). Chaque mapper ultérieur doit disposer de tests spécifiques.
 
 ### PPU
 
