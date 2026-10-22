@@ -123,8 +123,8 @@ impl Ppu {
     ///
     /// The framebuffer contains 6-bit NES palette indices (not host RGB pixels), so the
     /// frontend can apply its chosen NTSC/PAL palette without changing emulation state.
-    /// Background rendering is intentionally frame-based for now; per-dot fetch timing,
-    /// mid-frame scroll changes, sprites, and sprite priority are not implemented yet.
+    /// Background rendering is intentionally frame-based; per-dot fetch timing and
+    /// mid-frame scroll changes are not implemented yet.
     pub fn render_background(&mut self, cartridge: Option<&Nrom>) {
         const WIDTH: usize = 256;
         const HEIGHT: usize = 240;
@@ -185,6 +185,8 @@ impl Ppu {
         if self.mask & 0x10 == 0 { return; }
         let sprite_height: usize = if self.ctrl & 0x20 != 0 { 16 } else { 8 };
         let mut rows_per_scanline = [0u8; 240];
+        // The first opaque sprite in OAM owns each pixel, even if hidden behind BG.
+        let mut sprite_claimed = vec![false; 256 * 240];
         for sprite in 0..64usize {
             let base = sprite * 4;
             let top = (self.oam[base] as usize + 1) & 0xFF;
@@ -220,6 +222,10 @@ impl Ppu {
                     if sprite == 0 && self.background_opaque[index] && x < 255 {
                         self.status |= 0x40;
                     }
+                    // Lower OAM indices have priority. A sprite hidden by the background
+                    // still claims the pixel and must not let a later sprite show through.
+                    if sprite_claimed[index] { continue; }
+                    sprite_claimed[index] = true;
                     if !behind_background || !self.background_opaque[index] {
                         let palette_index = 0x10 + ((attributes as usize & 3) * 4) + pixel as usize;
                         self.framebuffer[index] = self.palette[Self::palette_index(0x3F00 + palette_index as u16)] & 0x3F;
@@ -391,6 +397,27 @@ mod tests {
         ppu.cpu_write_register(6, 0, Some(&mut cartridge));
         ppu.render_frame(Some(&cartridge));
         assert_ne!(ppu.status & 0x40, 0);
+        assert_eq!(ppu.framebuffer()[0], 0x30);
+    }
+
+    #[test]
+    fn sprite_priority_preserves_lower_oam_index() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Nrom::parse(&image).unwrap();
+
+        // Two opaque sprites overlap at (0, 0), with distinct sprite palettes.
+        ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x0020, 0x80, Some(&mut cartridge));
+        ppu.palette[0x11] = 0x30;
+        ppu.palette[0x15] = 0x27;
+        ppu.mask = 0x14; // Show sprites and the leftmost eight sprite pixels.
+        ppu.oam[0..8].copy_from_slice(&[255, 1, 0, 0, 255, 2, 1, 0]);
+
+        ppu.render_frame(Some(&cartridge));
+
         assert_eq!(ppu.framebuffer()[0], 0x30);
     }
 
