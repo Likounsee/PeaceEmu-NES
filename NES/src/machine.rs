@@ -62,7 +62,9 @@ impl NesMachine {
 
     /// Executes one CPU instruction.
     pub fn step(&mut self) -> Result<StepResult, MachineError> {
-        Ok(self.cpu.step(&mut self.bus)?)
+        let result = self.cpu.step(&mut self.bus)?;
+        self.bus.tick_ppu(u32::from(result.cycles) * 3);
+        Ok(result)
     }
 
     /// Reads a byte through the CPU address bus.
