@@ -5,8 +5,8 @@ use crate::ppu::Ppu;
 
 /// CPU bus with 2 KiB internal RAM and optional NROM cartridge.
 ///
-/// PPU registers, background/sprite frame rendering, NMI and OAM DMA are routed.
-/// APU and controller registers remain unimplemented; unmapped reads use open bus.
+/// PPU registers, frame rendering, NMI, OAM DMA and serial controller ports are routed.
+/// APU registers remain unimplemented; other unmapped reads use open bus.
 #[derive(Debug)]
 pub struct CpuBus {
     ram: [u8; 0x800],
@@ -14,9 +14,12 @@ pub struct CpuBus {
     open_bus: u8,
     ppu: Ppu,
     pending_oam_dma: Option<u8>,
+    controller_state: [u8; 2],
+    controller_shift: [u8; 2],
+    controller_strobe: bool,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), pending_oam_dma: None } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -28,6 +31,7 @@ impl CpuBus {
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x2000..=0x3FFF => self.ppu.cpu_read_register(address & 7, self.cartridge.as_ref()),
+            0x4016..=0x4017 => self.read_controller((address - 0x4016) as usize),
             0x8000..=0xFFFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
             _ => self.open_bus,
         };
@@ -41,9 +45,36 @@ impl CpuBus {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF] = value,
             0x2000..=0x3FFF => self.ppu.cpu_write_register(address & 7, value, self.cartridge.as_mut()),
             0x4014 => self.pending_oam_dma = Some(value),
+            0x4016 => {
+                let next_strobe = value & 1 != 0;
+                if next_strobe || self.controller_strobe {
+                    self.controller_shift = self.controller_state;
+                }
+                self.controller_strobe = next_strobe;
+            },
             _ => {}
         }
     }
+    /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
+    /// The values are latched by the next strobe write to $4016.
+    pub fn set_controller_state(&mut self, port: usize, buttons: u8) {
+        if let Some(state) = self.controller_state.get_mut(port) {
+            *state = buttons;
+            if self.controller_strobe {
+                self.controller_shift[port] = buttons;
+            }
+        }
+    }
+
+    fn read_controller(&mut self, port: usize) -> u8 {
+        if self.controller_strobe {
+            return 0x40 | (self.controller_state[port] & 1);
+        }
+        let value = self.controller_shift[port] & 1;
+        self.controller_shift[port] = (self.controller_shift[port] >> 1) | 0x80;
+        0x40 | value
+    }
+
     /// Rebuilds the background framebuffer from the attached cartridge and current VRAM scroll.
     pub fn render_background(&mut self) { self.ppu.render_background(self.cartridge.as_ref()); }
     /// Renders the background and composites visible sprites into the indexed framebuffer.
@@ -99,6 +130,32 @@ mod tests {
         }
         assert_eq!(bus.take_oam_dma_request(), None);
     }
+    #[test]
+    fn controllers_latch_and_shift_buttons_in_nes_order() {
+        let mut bus = CpuBus::new();
+        // A, Select and Up pressed: bit positions 0, 2 and 4.
+        bus.set_controller_state(0, 0b0001_0101);
+        bus.write(0x4016, 1);
+        assert_eq!(bus.read(0x4016) & 1, 1);
+        bus.write(0x4016, 0);
+        let bits: Vec<u8> = (0..8).map(|_| bus.read(0x4016) & 1).collect();
+        assert_eq!(bits, [1, 0, 1, 0, 1, 0, 0, 0]);
+        // Reads after the eighth button return 1 on the serial line.
+        assert_eq!(bus.read(0x4016) & 1, 1);
+    }
+
+    #[test]
+    fn second_controller_has_an_independent_shift_register() {
+        let mut bus = CpuBus::new();
+        bus.set_controller_state(0, 0b0000_0001);
+        bus.set_controller_state(1, 0b0000_0010);
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+        assert_eq!(bus.read(0x4016) & 1, 1);
+        assert_eq!(bus.read(0x4017) & 1, 0);
+        assert_eq!(bus.read(0x4017) & 1, 1);
+    }
+
     #[test] fn attaches_cartridge() {
         let mut image = vec![0; 16 + 16384]; image[0..4].copy_from_slice(b"NES\x1A"); image[4] = 1;
         let mut b = CpuBus::new(); b.insert_cartridge(Nrom::parse(&image).unwrap()); assert!(b.has_cartridge());
