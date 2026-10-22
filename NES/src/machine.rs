@@ -197,6 +197,18 @@ mod tests {
     }
 
     #[test]
+    fn consecutive_frame_steps_keep_advancing_and_return_frame_sized_cycle_counts() {
+        let image = nrom_with_program(&[0xEA, 0x4C, 0x00, 0x80]); // NOP; JMP $8000
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        let first = machine.step_frame().unwrap();
+        let second = machine.step_frame().unwrap();
+        assert!(first > 29_000 && first < 31_000);
+        assert!(second > 29_000 && second < 31_000);
+        assert_eq!(machine.total_cycles(), 7 + u64::from(first) + u64::from(second));
+        assert_eq!(machine.framebuffer().len(), 256 * 240);
+    }
+
+    #[test]
     fn machine_exposes_controller_input_to_cpu_reads() {
         let image = nrom_with_program(&[
             0xA9, 0x01,             // LDA #1: strobe high
