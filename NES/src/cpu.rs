@@ -791,7 +791,7 @@ mod tests {
         bus.write(0x0000, 0x02);
         bus.write(0x0001, 0x03);
         bus.write(0x0200, 0x5A);
-        bus.write(0x0301, 0xA5);
+        bus.write(0x0201, 0xA5);
 
         cpu.step(&mut bus).unwrap();
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 6);
