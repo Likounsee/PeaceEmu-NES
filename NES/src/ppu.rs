@@ -436,8 +436,7 @@ mod tests {
         ppu.mask = 0x08;
         ppu.v = 0x001F;
         ppu.tick(8);
-        assert_eq!(ppu.v & 0x041F, 0x0000);
-        assert_ne!(ppu.v & 0x0400, 0, "coarse X wrap toggles horizontal nametable bit");
+        assert_eq!(ppu.v & 0x041F, 0x0400, "coarse X wraps and toggles horizontal nametable bit");
     }
 
     #[test]
