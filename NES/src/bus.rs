@@ -166,7 +166,7 @@ mod tests {
         bus.write(0x4000, 0xBF);
         bus.write(0x4015, 0x0D);
         bus.write(0x4017, 0x80);
-        assert_eq!(bus.read(0x4000), 0xBF);
+        // Most APU registers are write-only; $4015 is the readable status register.
         assert_eq!(bus.read(0x4015), 0x0D);
         // Reading the second controller remains independent from APU frame-counter writes.
         bus.set_controller_state(1, 0x02);
