@@ -280,7 +280,7 @@ mod tests {
         let mut ppu = Ppu::new();
         // Use CHR-RAM so the test can construct a tiny tile.
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Nrom::parse(&image).unwrap();
         // Enable background and the leftmost eight pixels.
