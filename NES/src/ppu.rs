@@ -28,6 +28,7 @@ pub struct Ppu {
     nmi_pending: bool,
     /// Completed 256x240 background image, stored as 6-bit NES palette indices.
     framebuffer: Vec<u8>,
+    background_opaque: Vec<bool>,
 }
 
 impl Default for Ppu {
@@ -37,7 +38,7 @@ impl Default for Ppu {
             nametables: [0; 4096], palette: [0; 32], v: 0, t: 0,
             fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
             scanline: 261, dot: 0, odd_frame: false, nmi_pending: false,
-            framebuffer: vec![0; 256 * 240],
+            framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
         }
     }
 }
@@ -141,6 +142,7 @@ impl Ppu {
                 let output = y * WIDTH + x;
                 if !rendering_enabled || (x < 8 && !show_left) {
                     self.framebuffer[output] = self.palette[0] & 0x3F;
+                    self.background_opaque[output] = false;
                     continue;
                 }
                 let scroll_x = base_coarse_x * 8 + (self.fine_x as usize) + x;
@@ -159,6 +161,7 @@ impl Ppu {
                 let high = self.mem_read(pattern_addr + 8, cartridge);
                 let bit = 7 - col;
                 let pixel = ((low >> bit) & 1) | (((high >> bit) & 1) << 1);
+                self.background_opaque[output] = pixel != 0;
                 if pixel == 0 {
                     self.framebuffer[output] = self.palette[0] & 0x3F;
                 } else {
@@ -171,6 +174,62 @@ impl Ppu {
                 }
             }
         }
+    }
+
+    /// Renders a background snapshot and composites sprites in OAM priority order.
+    /// Sprite 0 hit and first-eight-per-scanline overflow are approximated; this is not
+    /// a dot-accurate sprite evaluator and does not model fetch contention.
+    pub fn render_frame(&mut self, cartridge: Option<&Nrom>) {
+        self.render_background(cartridge);
+        self.status &= !0x40;
+        if self.mask & 0x10 == 0 { return; }
+        let sprite_height: usize = if self.ctrl & 0x20 != 0 { 16 } else { 8 };
+        let mut rows_per_scanline = [0u8; 240];
+        let mut sprite_zero_visible = false;
+        for sprite in 0..64usize {
+            let base = sprite * 4;
+            let top = self.oam[base] as usize + 1;
+            let tile = self.oam[base + 1] as usize;
+            let attributes = self.oam[base + 2];
+            let left = self.oam[base + 3] as usize;
+            let flip_h = attributes & 0x40 != 0;
+            let flip_v = attributes & 0x80 != 0;
+            let behind_background = attributes & 0x20 != 0;
+            for sy in 0..sprite_height {
+                let y = top + sy;
+                if y >= 240 { continue; }
+                rows_per_scanline[y] = rows_per_scanline[y].saturating_add(1);
+                if rows_per_scanline[y] > 8 { self.status |= 0x20; continue; }
+                let source_y = if flip_v { sprite_height - 1 - sy } else { sy };
+                let (pattern_base, tile_index, row) = if sprite_height == 16 {
+                    let base_addr = if tile & 1 != 0 { 0x1000u16 } else { 0 };
+                    (base_addr, (tile & 0xFE) + source_y / 8, source_y % 8)
+                } else {
+                    (if self.ctrl & 0x08 != 0 { 0x1000u16 } else { 0 }, tile, source_y)
+                };
+                let address = pattern_base + (tile_index * 16 + row) as u16;
+                let low = self.mem_read(address, cartridge);
+                let high = self.mem_read(address + 8, cartridge);
+                for sx in 0..8usize {
+                    let x = left + sx;
+                    if x >= 256 || (x < 8 && self.mask & 0x04 == 0) { continue; }
+                    let source_x = if flip_h { sx } else { 7 - sx };
+                    let pixel = ((low >> source_x) & 1) | (((high >> source_x) & 1) << 1);
+                    if pixel == 0 { continue; }
+                    let index = y * 256 + x;
+                    if x < 8 && self.mask & 0x02 == 0 { continue; }
+                    if sprite == 0 && self.background_opaque[index] && x < 255 {
+                        self.status |= 0x40;
+                        sprite_zero_visible = true;
+                    }
+                    if !behind_background || !self.background_opaque[index] {
+                        let palette_index = 0x10 + ((attributes as usize & 3) * 4) + pixel as usize;
+                        self.framebuffer[index] = self.palette[Self::palette_index(0x3F00 + palette_index as u16)] & 0x3F;
+                    }
+                }
+            }
+        }
+        let _ = sprite_zero_visible;
     }
 
     /// Returns the most recently rendered 256x240 image as NES palette indices.
@@ -302,6 +361,40 @@ mod tests {
         assert_eq!(ppu.framebuffer()[0], 0x21);
         assert_eq!(ppu.framebuffer()[1], 0x0F);
         assert_eq!(ppu.framebuffer().len(), 256 * 240);
+    }
+
+    #[test]
+    fn sprite_renderer_composites_sprite_pixel_and_sets_zero_hit() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Nrom::parse(&image).unwrap();
+        // Background tile zero has an opaque pixel at (0,0).
+        ppu.cpu_write_register(1, 0x1E, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 0, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 0, Some(&mut cartridge));
+        ppu.cpu_write_register(7, 0x80, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 0x3F, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 1, Some(&mut cartridge));
+        ppu.cpu_write_register(7, 0x22, Some(&mut cartridge));
+        // Sprite tile 1: opaque pixel at its top-left; palette 0, OAM Y=255 => row 0.
+        ppu.cpu_write_register(6, 0x10, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 0, Some(&mut cartridge));
+        ppu.cpu_write_register(7, 0x80, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 0x3F, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 0x11, Some(&mut cartridge));
+        ppu.cpu_write_register(7, 0x30, Some(&mut cartridge));
+        ppu.cpu_write_register(3, 0, Some(&mut cartridge));
+        ppu.cpu_write_register(4, 255, Some(&mut cartridge));
+        ppu.cpu_write_register(4, 1, Some(&mut cartridge));
+        ppu.cpu_write_register(4, 0, Some(&mut cartridge));
+        ppu.cpu_write_register(4, 0, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 0x20, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 0, Some(&mut cartridge));
+        ppu.render_frame(Some(&cartridge));
+        assert_ne!(ppu.status & 0x40, 0);
+        assert_eq!(ppu.framebuffer()[0], 0x30);
     }
 
     #[test]
