@@ -93,6 +93,8 @@ impl Cpu {
     pub fn state(&self) -> CpuState { self.state }
     /// Returns accumulated nominal CPU cycles.
     pub fn total_cycles(&self) -> u64 { self.cycles }
+    /// Adds CPU stall cycles consumed by DMA or another bus-level device.
+    pub fn add_stall_cycles(&mut self, cycles: u16) { self.cycles = self.cycles.saturating_add(u64::from(cycles)); }
     /// Sets the program counter; useful for reset initialization and unit tests.
     pub fn set_pc(&mut self, pc: u16) { self.state.pc = pc; }
     /// Performs the hardware reset sequence and loads the reset vector at $FFFC.
