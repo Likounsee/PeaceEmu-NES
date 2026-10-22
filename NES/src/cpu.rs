@@ -219,6 +219,15 @@ impl Cpu {
             0xC4 => { let a = self.fetch(bus) as u16; self.compare(self.state.y, bus.read(a)); 3 }
             0xCC => { let a = self.fetch_word(bus); self.compare(self.state.y, bus.read(a)); 4 }
             0x4C => { self.state.pc = self.fetch_word(bus); 3 }
+            0x6C => {
+                let pointer = self.fetch_word(bus);
+                let lo = bus.read(pointer) as u16;
+                // The original 6502 wraps the high-byte read within the pointer's page.
+                let high_address = (pointer & 0xFF00) | (pointer.wrapping_add(1) & 0x00FF);
+                let hi = bus.read(high_address) as u16;
+                self.state.pc = (hi << 8) | lo;
+                5
+            }
             0x20 => {
                 let target = self.fetch_word(bus);
                 let ret = self.state.pc.wrapping_sub(1);
@@ -418,6 +427,15 @@ mod tests {
         b.write(0x21, 0x03);
         for _ in 0..6 { c.step(&mut b).unwrap(); }
         assert_eq!(c.state().a, 0x10);
+    }
+
+    #[test] fn indirect_jmp_preserves_original_6502_page_wrap_bug() {
+        let (mut cpu, mut bus) = setup(&[0x6C, 0xFF, 0x02]);
+        bus.write(0x02FF, 0x34);
+        bus.write(0x0200, 0x12);
+        bus.write(0x0300, 0x99);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(cpu.state().pc, 0x1234);
     }
 
     #[test] fn jsr_and_rts_round_trip() {
