@@ -112,6 +112,9 @@ impl Apu {
     /// Advances oscillator timers and the approximate frame sequencer.
     /// Exact regional timing and delayed $4017 reset are not modelled.
     pub fn tick_cpu_cycles(&mut self, cycles: u32) {
+        const FOUR_STEP_PERIOD: u32 = 14_915;
+        const FIVE_STEP_PERIOD: u32 = 18_641;
+        const HALF_FRAME_PERIOD: u32 = 7_457;
         const NOISE_PERIODS: [u16; 16] = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068];
         const DMC_PERIODS: [u16; 16] = [428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106,  85,  72,  54];
         if self.noise_shift == 0 { self.noise_shift = 1; }
@@ -161,80 +164,78 @@ impl Apu {
                 }
             } else { self.dmc_timer_counter -= 1; }
             self.cpu_cycle_odd = !self.cpu_cycle_odd;
-        }
-        const FOUR_STEP_PERIOD: u32 = 14_915;
-        const FIVE_STEP_PERIOD: u32 = 18_641;
-        const HALF_FRAME_PERIOD: u32 = 7_457;
-        self.frame_cycles = self.frame_cycles.saturating_add(cycles);
-        while self.frame_cycles >= if self.five_step_mode { FIVE_STEP_PERIOD } else { FOUR_STEP_PERIOD } {
-            self.frame_cycles -= if self.five_step_mode { FIVE_STEP_PERIOD } else { FOUR_STEP_PERIOD };
-            if !self.five_step_mode && !self.frame_irq_inhibit { self.frame_irq = true; }
-        }
-        self.quarter_frame_cycles = self.quarter_frame_cycles.saturating_add(cycles);
-        while self.quarter_frame_cycles >= 3_729 {
-            self.quarter_frame_cycles -= 3_729;
-            for channel in 0..2 {
-                let register = channel * 4;
-                let control = self.registers[register];
-                if self.pulse_envelope_start[channel] {
-                    self.pulse_envelope_start[channel] = false;
-                    self.pulse_envelope_decay[channel] = 15;
-                    self.pulse_envelope_divider[channel] = control & 0x0F;
-                } else if self.pulse_envelope_divider[channel] == 0 {
-                    self.pulse_envelope_divider[channel] = control & 0x0F;
-                    if self.pulse_envelope_decay[channel] > 0 {
-                        self.pulse_envelope_decay[channel] -= 1;
-                    } else if control & 0x20 != 0 {
+            self.frame_cycles = self.frame_cycles.saturating_add(1);
+            while self.frame_cycles >= if self.five_step_mode { FIVE_STEP_PERIOD } else { FOUR_STEP_PERIOD } {
+                self.frame_cycles -= if self.five_step_mode { FIVE_STEP_PERIOD } else { FOUR_STEP_PERIOD };
+                if !self.five_step_mode && !self.frame_irq_inhibit { self.frame_irq = true; }
+            }
+            self.quarter_frame_cycles = self.quarter_frame_cycles.saturating_add(1);
+            while self.quarter_frame_cycles >= 3_729 {
+                self.quarter_frame_cycles -= 3_729;
+                for channel in 0..2 {
+                    let register = channel * 4;
+                    let control = self.registers[register];
+                    if self.pulse_envelope_start[channel] {
+                        self.pulse_envelope_start[channel] = false;
                         self.pulse_envelope_decay[channel] = 15;
+                        self.pulse_envelope_divider[channel] = control & 0x0F;
+                    } else if self.pulse_envelope_divider[channel] == 0 {
+                        self.pulse_envelope_divider[channel] = control & 0x0F;
+                        if self.pulse_envelope_decay[channel] > 0 {
+                            self.pulse_envelope_decay[channel] -= 1;
+                        } else if control & 0x20 != 0 {
+                            self.pulse_envelope_decay[channel] = 15;
+                        }
+                    } else {
+                        self.pulse_envelope_divider[channel] -= 1;
                     }
-                } else {
-                    self.pulse_envelope_divider[channel] -= 1;
+                }
+                let triangle_control = self.registers[0x08];
+                if self.triangle_reload_flag {
+                    self.triangle_linear_counter = triangle_control & 0x7F;
+                } else if self.triangle_linear_counter > 0 {
+                    self.triangle_linear_counter -= 1;
+                }
+                if triangle_control & 0x80 == 0 { self.triangle_reload_flag = false; }
+            }
+            self.half_frame_cycles = self.half_frame_cycles.saturating_add(1);
+            while self.half_frame_cycles >= HALF_FRAME_PERIOD {
+                self.half_frame_cycles -= HALF_FRAME_PERIOD;
+                for channel in 0..4 {
+                    let halt = match channel {
+                        0 | 1 => self.registers[if channel == 0 { 0 } else { 4 }] & 0x20 != 0,
+                        2 => self.registers[0x08] & 0x80 != 0,
+                        _ => self.registers[0x0C] & 0x20 != 0,
+                    };
+                    if !halt && self.length_counters[channel] > 0 {
+                        self.length_counters[channel] -= 1;
+                    }
+                }
+                // Clock each pulse sweep divider and apply valid period updates.
+                for channel in 0..2 {
+                    let register = channel * 4;
+                    let sweep = self.registers[register + 1];
+                    let period = u16::from(self.registers[register + 2])
+                        | (u16::from(self.registers[register + 3] & 7) << 8);
+                    let shift = sweep & 7;
+                    let change = period >> shift;
+                    let target = if sweep & 0x08 != 0 {
+                        period.wrapping_sub(change).wrapping_sub(u16::from(channel == 0))
+                    } else { period.saturating_add(change) };
+                    if sweep & 0x80 != 0 && shift != 0 && self.pulse_sweep_divider[channel] == 0
+                        && period >= 8 && target <= 0x07FF {
+                        self.registers[register + 2] = target as u8;
+                        self.registers[register + 3] = (self.registers[register + 3] & 0xF8) | ((target >> 8) as u8 & 7);
+                    }
+                    if self.pulse_sweep_divider[channel] == 0 || self.pulse_sweep_reload[channel] {
+                        self.pulse_sweep_divider[channel] = (sweep >> 4) & 7;
+                        self.pulse_sweep_reload[channel] = false;
+                    } else {
+                        self.pulse_sweep_divider[channel] -= 1;
+                    }
                 }
             }
-            let triangle_control = self.registers[0x08];
-            if self.triangle_reload_flag {
-                self.triangle_linear_counter = triangle_control & 0x7F;
-            } else if self.triangle_linear_counter > 0 {
-                self.triangle_linear_counter -= 1;
-            }
-            if triangle_control & 0x80 == 0 { self.triangle_reload_flag = false; }
-        }
-        self.half_frame_cycles = self.half_frame_cycles.saturating_add(cycles);
-        while self.half_frame_cycles >= HALF_FRAME_PERIOD {
-            self.half_frame_cycles -= HALF_FRAME_PERIOD;
-            for channel in 0..4 {
-                let halt = match channel {
-                    0 | 1 => self.registers[if channel == 0 { 0 } else { 4 }] & 0x20 != 0,
-                    2 => self.registers[0x08] & 0x80 != 0,
-                    _ => self.registers[0x0C] & 0x20 != 0,
-                };
-                if !halt && self.length_counters[channel] > 0 {
-                    self.length_counters[channel] -= 1;
-                }
-            }
-            // Clock each pulse sweep divider and apply valid period updates.
-            for channel in 0..2 {
-                let register = channel * 4;
-                let sweep = self.registers[register + 1];
-                let period = u16::from(self.registers[register + 2])
-                    | (u16::from(self.registers[register + 3] & 7) << 8);
-                let shift = sweep & 7;
-                let change = period >> shift;
-                let target = if sweep & 0x08 != 0 {
-                    period.wrapping_sub(change).wrapping_sub(u16::from(channel == 0))
-                } else { period.saturating_add(change) };
-                if sweep & 0x80 != 0 && shift != 0 && self.pulse_sweep_divider[channel] == 0
-                    && period >= 8 && target <= 0x07FF {
-                    self.registers[register + 2] = target as u8;
-                    self.registers[register + 3] = (self.registers[register + 3] & 0xF8) | ((target >> 8) as u8 & 7);
-                }
-                if self.pulse_sweep_divider[channel] == 0 || self.pulse_sweep_reload[channel] {
-                    self.pulse_sweep_divider[channel] = (sweep >> 4) & 7;
-                    self.pulse_sweep_reload[channel] = false;
-                } else {
-                    self.pulse_sweep_divider[channel] -= 1;
-                }
-            }
+
         }
     }
 
