@@ -695,6 +695,7 @@ mod tests {
         let mut cartridge = Nrom::parse(&image).unwrap();
 
         ppu.mask = 0x14;
+        ppu.mem_write(0x3F00, 0x0F, Some(&mut cartridge));
         // Only row 7 has an opaque leftmost pixel; vertical flip moves it to output row 0.
         ppu.mem_write(0x0017, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x3F11, 0x2B, Some(&mut cartridge));
