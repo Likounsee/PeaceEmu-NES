@@ -1,0 +1,245 @@
+//! Initial Ricoh 2A03 CPU instruction interpreter.
+//!
+//! This milestone implements a tested subset of official 6502 instructions.
+//! Unsupported opcodes are errors, not silent NOPs. Cycle-level bus timing,
+//! interrupts beyond BRK, and the remaining instruction set are not complete.
+
+use crate::bus::CpuBus;
+use core::fmt;
+
+/// Processor status flag masks.
+pub mod flags {
+    /// Carry flag.
+    pub const CARRY: u8 = 0x01;
+    /// Zero flag.
+    pub const ZERO: u8 = 0x02;
+    /// Interrupt disable flag.
+    pub const INTERRUPT_DISABLE: u8 = 0x04;
+    /// Decimal mode flag; the 2A03 ignores decimal arithmetic.
+    pub const DECIMAL: u8 = 0x08;
+    /// Break bit in pushed status.
+    pub const BREAK: u8 = 0x10;
+    /// Unused status bit, kept set internally.
+    pub const UNUSED: u8 = 0x20;
+    /// Overflow flag.
+    pub const OVERFLOW: u8 = 0x40;
+    /// Negative flag.
+    pub const NEGATIVE: u8 = 0x80;
+}
+
+/// CPU execution error.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CpuError {
+    /// Opcode has not been implemented.
+    UnsupportedOpcode { opcode: u8, pc: u16 },
+}
+impl fmt::Display for CpuError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedOpcode { opcode, pc } => write!(f, "unsupported 2A03 opcode {opcode:#04X} at {pc:#06X}"),
+        }
+    }
+}
+impl std::error::Error for CpuError {}
+
+/// Public CPU register snapshot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CpuState {
+    /// Accumulator.
+    pub a: u8,
+    /// X index register.
+    pub x: u8,
+    /// Y index register.
+    pub y: u8,
+    /// Stack pointer.
+    pub sp: u8,
+    /// Program counter.
+    pub pc: u16,
+    /// Processor status.
+    pub status: u8,
+}
+
+/// Result of executing one instruction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StepResult {
+    /// Instruction address.
+    pub pc: u16,
+    /// Opcode byte.
+    pub opcode: u8,
+    /// Nominal CPU cycles consumed.
+    pub cycles: u8,
+}
+
+/// Ricoh 2A03 CPU state.
+#[derive(Debug)]
+pub struct Cpu {
+    state: CpuState,
+    cycles: u64,
+}
+impl Default for Cpu {
+    fn default() -> Self { Self::new() }
+}
+impl Cpu {
+    /// Creates CPU state before reset-vector initialization.
+    pub fn new() -> Self {
+        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED }, cycles: 0 }
+    }
+    /// Returns the current registers and flags.
+    pub fn state(&self) -> CpuState { self.state }
+    /// Returns accumulated nominal CPU cycles.
+    pub fn total_cycles(&self) -> u64 { self.cycles }
+    /// Sets the program counter; useful for reset initialization and unit tests.
+    pub fn set_pc(&mut self, pc: u16) { self.state.pc = pc; }
+
+    /// Executes one instruction. Unsupported opcodes return an error.
+    pub fn step(&mut self, bus: &mut CpuBus) -> Result<StepResult, CpuError> {
+        let pc = self.state.pc;
+        let opcode = self.fetch(bus);
+        let cycles = match opcode {
+            0xEA => 2,
+            0xA9 => { let v = self.fetch(bus); self.state.a = v; self.set_nz(v); 2 }
+            0xA5 => { let a = self.fetch(bus) as u16; let v = bus.read(a); self.state.a = v; self.set_nz(v); 3 }
+            0xAD => { let a = self.fetch_word(bus); let v = bus.read(a); self.state.a = v; self.set_nz(v); 4 }
+            0xA2 => { let v = self.fetch(bus); self.state.x = v; self.set_nz(v); 2 }
+            0xA0 => { let v = self.fetch(bus); self.state.y = v; self.set_nz(v); 2 }
+            0x85 => { let a = self.fetch(bus) as u16; bus.write(a, self.state.a); 3 }
+            0x8D => { let a = self.fetch_word(bus); bus.write(a, self.state.a); 4 }
+            0x86 => { let a = self.fetch(bus) as u16; bus.write(a, self.state.x); 3 }
+            0x84 => { let a = self.fetch(bus) as u16; bus.write(a, self.state.y); 3 }
+            0xAA => { self.state.x = self.state.a; self.set_nz(self.state.x); 2 }
+            0xA8 => { self.state.y = self.state.a; self.set_nz(self.state.y); 2 }
+            0x8A => { self.state.a = self.state.x; self.set_nz(self.state.a); 2 }
+            0x98 => { self.state.a = self.state.y; self.set_nz(self.state.a); 2 }
+            0xE8 => { self.state.x = self.state.x.wrapping_add(1); self.set_nz(self.state.x); 2 }
+            0xC8 => { self.state.y = self.state.y.wrapping_add(1); self.set_nz(self.state.y); 2 }
+            0xCA => { self.state.x = self.state.x.wrapping_sub(1); self.set_nz(self.state.x); 2 }
+            0x88 => { self.state.y = self.state.y.wrapping_sub(1); self.set_nz(self.state.y); 2 }
+            0x69 => { let v = self.fetch(bus); self.adc(v); 2 }
+            0xE9 | 0xEB => { let v = self.fetch(bus); self.adc(!v); 2 }
+            0x29 => { let v = self.fetch(bus); self.state.a &= v; self.set_nz(self.state.a); 2 }
+            0x09 => { let v = self.fetch(bus); self.state.a |= v; self.set_nz(self.state.a); 2 }
+            0x49 => { let v = self.fetch(bus); self.state.a ^= v; self.set_nz(self.state.a); 2 }
+            0xC9 => { let v = self.fetch(bus); self.compare(self.state.a, v); 2 }
+            0xE0 => { let v = self.fetch(bus); self.compare(self.state.x, v); 2 }
+            0xC0 => { let v = self.fetch(bus); self.compare(self.state.y, v); 2 }
+            0x4C => { self.state.pc = self.fetch_word(bus); 3 }
+            0x20 => {
+                let target = self.fetch_word(bus);
+                let ret = self.state.pc.wrapping_sub(1);
+                self.push(bus, (ret >> 8) as u8); self.push(bus, ret as u8);
+                self.state.pc = target; 6
+            }
+            0x60 => {
+                let lo = self.pop(bus) as u16; let hi = self.pop(bus) as u16;
+                self.state.pc = ((hi << 8) | lo).wrapping_add(1); 6
+            }
+            0x48 => { self.push(bus, self.state.a); 3 }
+            0x68 => { self.state.a = self.pop(bus); self.set_nz(self.state.a); 4 }
+            0x08 => { self.push(bus, self.state.status | flags::BREAK | flags::UNUSED); 3 }
+            0x28 => { self.state.status = (self.pop(bus) | flags::UNUSED) & !flags::BREAK; 4 }
+            0x18 => { self.set_flag(flags::CARRY, false); 2 }
+            0x38 => { self.set_flag(flags::CARRY, true); 2 }
+            0x58 => { self.set_flag(flags::INTERRUPT_DISABLE, false); 2 }
+            0x78 => { self.set_flag(flags::INTERRUPT_DISABLE, true); 2 }
+            0xD8 => { self.set_flag(flags::DECIMAL, false); 2 }
+            0xF8 => { self.set_flag(flags::DECIMAL, true); 2 }
+            0xB8 => { self.set_flag(flags::OVERFLOW, false); 2 }
+            0x10 => self.branch(bus, !self.flag(flags::NEGATIVE)),
+            0x30 => self.branch(bus, self.flag(flags::NEGATIVE)),
+            0x50 => self.branch(bus, !self.flag(flags::OVERFLOW)),
+            0x70 => self.branch(bus, self.flag(flags::OVERFLOW)),
+            0x90 => self.branch(bus, !self.flag(flags::CARRY)),
+            0xB0 => self.branch(bus, self.flag(flags::CARRY)),
+            0xD0 => self.branch(bus, !self.flag(flags::ZERO)),
+            0xF0 => self.branch(bus, self.flag(flags::ZERO)),
+            0x00 => {
+                self.state.pc = self.state.pc.wrapping_add(1);
+                self.push(bus, (self.state.pc >> 8) as u8); self.push(bus, self.state.pc as u8);
+                self.push(bus, self.state.status | flags::BREAK | flags::UNUSED);
+                self.set_flag(flags::INTERRUPT_DISABLE, true);
+                self.state.pc = self.read_word(bus, 0xFFFE); 7
+            }
+            _ => return Err(CpuError::UnsupportedOpcode { opcode, pc }),
+        };
+        self.state.status |= flags::UNUSED;
+        self.cycles += cycles as u64;
+        Ok(StepResult { pc, opcode, cycles })
+    }
+
+    fn fetch(&mut self, bus: &mut CpuBus) -> u8 {
+        let v = bus.read(self.state.pc); self.state.pc = self.state.pc.wrapping_add(1); v
+    }
+    fn fetch_word(&mut self, bus: &mut CpuBus) -> u16 {
+        let lo = self.fetch(bus) as u16; let hi = self.fetch(bus) as u16; (hi << 8) | lo
+    }
+    fn read_word(&mut self, bus: &mut CpuBus, a: u16) -> u16 {
+        let lo = bus.read(a) as u16; let hi = bus.read(a.wrapping_add(1)) as u16; (hi << 8) | lo
+    }
+    fn push(&mut self, bus: &mut CpuBus, v: u8) {
+        bus.write(0x0100 | self.state.sp as u16, v); self.state.sp = self.state.sp.wrapping_sub(1);
+    }
+    fn pop(&mut self, bus: &mut CpuBus) -> u8 {
+        self.state.sp = self.state.sp.wrapping_add(1); bus.read(0x0100 | self.state.sp as u16)
+    }
+    fn flag(&self, mask: u8) -> bool { self.state.status & mask != 0 }
+    fn set_flag(&mut self, mask: u8, on: bool) {
+        if on { self.state.status |= mask; } else { self.state.status &= !mask; }
+    }
+    fn set_nz(&mut self, v: u8) {
+        self.set_flag(flags::ZERO, v == 0); self.set_flag(flags::NEGATIVE, v & 0x80 != 0);
+    }
+    fn adc(&mut self, v: u8) {
+        let a = self.state.a; let sum = a as u16 + v as u16 + u16::from(self.flag(flags::CARRY));
+        let r = sum as u8;
+        self.set_flag(flags::CARRY, sum > 0xFF);
+        self.set_flag(flags::OVERFLOW, (!(a ^ v) & (a ^ r) & 0x80) != 0);
+        self.state.a = r; self.set_nz(r);
+    }
+    fn compare(&mut self, a: u8, b: u8) {
+        self.set_flag(flags::CARRY, a >= b); self.set_nz(a.wrapping_sub(b));
+    }
+    fn branch(&mut self, bus: &mut CpuBus, take: bool) -> u8 {
+        let offset = self.fetch(bus) as i8;
+        if !take { return 2; }
+        let before = self.state.pc;
+        self.state.pc = self.state.pc.wrapping_add_signed(offset as i16);
+        if before & 0xFF00 != self.state.pc & 0xFF00 { 4 } else { 3 }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn setup(program: &[u8]) -> (Cpu, CpuBus) {
+        let mut bus = CpuBus::new();
+        for (i, v) in program.iter().copied().enumerate() { bus.write(0x0600 + i as u16, v); }
+        let mut cpu = Cpu::new(); cpu.set_pc(0x0600); (cpu, bus)
+    }
+    #[test] fn lda_adc_sta_sets_flags_and_cycles() {
+        let (mut c, mut b) = setup(&[0xA9, 0x7F, 0x69, 1, 0x8D, 0, 2]);
+        assert_eq!(c.step(&mut b).unwrap().cycles, 2); c.step(&mut b).unwrap();
+        assert_eq!(c.state().a, 0x80); assert_ne!(c.state().status & flags::OVERFLOW, 0);
+        assert_ne!(c.state().status & flags::NEGATIVE, 0); c.step(&mut b).unwrap();
+        assert_eq!(b.read(0x0200), 0x80); assert_eq!(c.total_cycles(), 8);
+    }
+    #[test] fn compare_sets_zero_and_carry() {
+        let (mut c, mut b) = setup(&[0xA9, 0x10, 0xC9, 0x10]);
+        c.step(&mut b).unwrap(); c.step(&mut b).unwrap();
+        assert_ne!(c.state().status & flags::ZERO, 0); assert_ne!(c.state().status & flags::CARRY, 0);
+    }
+    #[test] fn branch_uses_signed_relative_offset() {
+        let (mut c, mut b) = setup(&[0xD0, 2, 0xEA, 0xEA, 0xA9, 0x44]);
+        c.step(&mut b).unwrap(); assert_eq!(c.state().pc, 0x0604);
+        c.step(&mut b).unwrap(); assert_eq!(c.state().a, 0x44);
+    }
+    #[test] fn unknown_opcode_is_explicit() {
+        let (mut c, mut b) = setup(&[0x02]);
+        assert_eq!(c.step(&mut b), Err(CpuError::UnsupportedOpcode { opcode: 2, pc: 0x0600 }));
+        assert_eq!(c.total_cycles(), 0);
+    }
+    #[test] fn jsr_and_rts_round_trip() {
+        let (mut c, mut b) = setup(&[0x20, 6, 6, 0xA9, 0x55, 0xEA, 0xA9, 0x77, 0x60]);
+        c.step(&mut b).unwrap(); assert_eq!(c.state().pc, 0x0606);
+        c.step(&mut b).unwrap(); c.step(&mut b).unwrap(); assert_eq!(c.state().a, 0x55);
+    }
+}
