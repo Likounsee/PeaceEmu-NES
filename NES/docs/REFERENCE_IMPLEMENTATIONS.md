@@ -49,3 +49,10 @@ La PPU possède désormais des tests explicites pour les quatre alias de palette
 ## Règle de compatibilité
 
 Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est complet. Vérifier d'abord la licence, la version minimale de Rust, la structure des dépendances, l'API publique, les tests disponibles et l'impact sur la frontière `EmulationCore`. Le cœur PeaceEmu doit rester indépendant du frontend.
+
+## Troisième adaptation réalisée : RMW composites non officiels
+
+- Référence de comportement : tables d'opcodes 2A03/NESdev et comparaison avec l'organisation des instructions d'émulateurs Rust permissifs comme TetaNES.
+- Adaptation locale : ajout des 42 formes stables des familles SLO, RLA, SRE, RRA, DCP et ISC/ISB, avec les sept modes d'adressage usuels et leurs cycles nominaux.
+- Les opérations réutilisent les helpers locaux `shift`, `adc`, `compare`, `indirect_x` et `indirect_y`, sans nouvelle dépendance et sans copier un cœur externe.
+- Une régression vérifie les effets mémoire, registres et flags pour les six familles. Les écritures factices et les effets de bus à chaque cycle restent hors périmètre : cette tranche n'est pas cycle-exacte.
