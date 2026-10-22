@@ -352,6 +352,22 @@ mod tests {
     }
 
     #[test]
+    fn dmc_disable_clears_remaining_bytes_and_write_acknowledges_irq() {
+        let mut apu = Apu::new();
+        apu.write(0x4010, 0x80); // Enable terminal DMC IRQ.
+        apu.write(0x4012, 0x01);
+        apu.write(0x4013, 0x02); // 33 bytes.
+        apu.write(0x4015, 0x10);
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xC040));
+        apu.supply_dmc_byte(0x55);
+        assert_eq!(apu.read(0x4015) & 0x10, 0x10);
+        apu.write(0x4015, 0x00);
+        assert_eq!(apu.read(0x4015) & 0x10, 0);
+        assert_eq!(apu.take_dmc_dma_request(), None);
+        assert!(!apu.irq_pending(), "writing $4015 acknowledges DMC IRQ");
+    }
+
+    #[test]
     fn dmc_stays_silent_until_a_sample_byte_reaches_the_shift_register() {
         let mut apu = Apu::new();
         apu.write(0x4011, 64);
