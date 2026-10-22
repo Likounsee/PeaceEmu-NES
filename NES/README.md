@@ -19,10 +19,11 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 ## Implémentation actuelle
 
-- **CPU :** interpréteur initial pour un sous-ensemble d'instructions officielles, registres, flags, branchements, opérations immédiates, pile, JSR/RTS et BRK. Les opcodes manquants renvoient une erreur explicite. Ce n'est pas encore un CPU complet ni cycle-exact.
+- **CPU :** sous-ensemble élargi des instructions officielles : chargements/stores, ADC/SBC, AND/ORA/EOR, comparaisons, BIT, shifts/rotates, incréments/décréments, branchements, pile, JSR/RTS et BRK. Les opcodes manquants renvoient une erreur explicite. Ce n'est pas encore un CPU complet ni cycle-exact.
 - **Bus :** 2 Kio de RAM interne avec miroirs dans l'espace CPU et latch open-bus minimal. Les registres PPU/APU et manettes ne sont pas encore routés.
 - **Cartouche :** parsing iNES legacy, validation des tailles, mirroring, PRG-ROM NROM (mapper 0), CHR-ROM ou CHR-RAM. NES 2.0 et les autres mappers ne sont pas pris en charge.
-- **Tests :** tests unitaires pour le CPU, le bus et le parseur de cartouche.
+- **Machine :** `NesMachine` charge une image iNES/NROM, initialise le CPU depuis le vecteur de reset et expose le pas d'instruction ainsi que les lectures/écritures CPU.
+- **Tests :** 20 tests couvrant CPU, bus, cartouche et exécution d'un petit programme depuis une cartouche NROM.
 - **CI :** workflow GitHub Actions ajouté pour formater les sources puis exécuter les tests et Clippy. Vérifier le dernier résultat dans GitHub Actions avant d'affirmer que la CI est verte.
 
 ## Ordre de développement
@@ -46,9 +47,9 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 ## Avancement
 
-**Avancement global estimé : 15 %.** Le CPU couvre maintenant davantage de modes d'adressage et d'opérations mémoire, et sait charger son vecteur de reset depuis une cartouche. Le bus RAM, le parseur NROM et les tests sont présents. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM complète n'est encore exécutable.
+**Avancement global estimé : 19 %.** Le CPU prend en charge davantage d'opcodes, la machine minimale charge une cartouche NROM et exécute des instructions après reset, et une suite de 20 tests couvre les composants de base. Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
 
-Dernière CI confirmée verte : commit `c1deaedc8b2d9372b902d96990f60e5342d11f30` — 16 tests réussis, formatage et Clippy réussis.
+Dernière CI confirmée verte : [run 39810911201](https://github.com/Likounsee/PeaceEmu-NES/actions/runs/39810911201) — 20 tests réussis, formatage et Clippy réussis.
 
 | Domaine | État |
 |---|---|
@@ -56,7 +57,7 @@ Dernière CI confirmée verte : commit `c1deaedc8b2d9372b902d96990f60e5342d11f30
 | CPU Ricoh 2A03 | Partiel — sous-ensemble d'opcodes |
 | Bus RAM | Première version, sans registres matériels |
 | Cartouche NROM / iNES legacy | Première version |
-| Machine et reset vector | À faire |
+| Machine et reset vector | Première version — charge NROM et exécute le CPU |
 | PPU | À faire |
 | APU | À faire |
 | Contrôleurs | À faire |
