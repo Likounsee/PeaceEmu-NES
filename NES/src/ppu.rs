@@ -26,6 +26,8 @@ pub struct Ppu {
     dot: u16,
     odd_frame: bool,
     nmi_pending: bool,
+    /// Completed 256x240 background image, stored as 6-bit NES palette indices.
+    framebuffer: Vec<u8>,
 }
 
 impl Default for Ppu {
@@ -35,6 +37,7 @@ impl Default for Ppu {
             nametables: [0; 4096], palette: [0; 32], v: 0, t: 0,
             fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
             scanline: 261, dot: 0, odd_frame: false, nmi_pending: false,
+            framebuffer: vec![0; 256 * 240],
         }
     }
 }
@@ -114,6 +117,64 @@ impl Ppu {
             }
         }
     }
+
+    /// Renders a complete background snapshot using the current VRAM scroll address.
+    ///
+    /// The framebuffer contains 6-bit NES palette indices (not host RGB pixels), so the
+    /// frontend can apply its chosen NTSC/PAL palette without changing emulation state.
+    /// Background rendering is intentionally frame-based for now; per-dot fetch timing,
+    /// mid-frame scroll changes, sprites, and sprite priority are not implemented yet.
+    pub fn render_background(&mut self, cartridge: Option<&Nrom>) {
+        const WIDTH: usize = 256;
+        const HEIGHT: usize = 240;
+        let rendering_enabled = self.mask & 0x08 != 0;
+        let show_left = self.mask & 0x02 != 0;
+        let pattern_base = if self.ctrl & 0x10 != 0 { 0x1000 } else { 0x0000 };
+        let base_nt_x = ((self.v >> 10) & 1) as usize;
+        let base_nt_y = ((self.v >> 11) & 1) as usize;
+        let base_coarse_x = (self.v & 0x1F) as usize;
+        let base_coarse_y = ((self.v >> 5) & 0x1F) as usize;
+        let fine_y = ((self.v >> 12) & 7) as usize;
+
+        for y in 0..HEIGHT {
+            for x in 0..WIDTH {
+                let output = y * WIDTH + x;
+                if !rendering_enabled || (x < 8 && !show_left) {
+                    self.framebuffer[output] = self.palette[0] & 0x3F;
+                    continue;
+                }
+                let scroll_x = base_coarse_x * 8 + (self.fine_x as usize) + x;
+                let scroll_y = base_coarse_y * 8 + fine_y + y;
+                let tile_x = scroll_x / 8;
+                let tile_y = scroll_y / 8;
+                let nt_x = base_nt_x ^ ((tile_x / 32) & 1);
+                let nt_y = base_nt_y ^ ((tile_y / 30) & 1);
+                let nametable = 0x2000u16 + ((nt_y * 2 + nt_x) as u16) * 0x400;
+                let tile_addr = nametable + ((tile_y % 30) * 32 + tile_x % 32) as u16;
+                let tile = self.mem_read(tile_addr, cartridge) as u16;
+                let row = (scroll_y % 8) as u16;
+                let col = (scroll_x % 8) as u16;
+                let pattern_addr = pattern_base + tile * 16 + row;
+                let low = self.mem_read(pattern_addr, cartridge);
+                let high = self.mem_read(pattern_addr + 8, cartridge);
+                let bit = 7 - col;
+                let pixel = ((low >> bit) & 1) | (((high >> bit) & 1) << 1);
+                if pixel == 0 {
+                    self.framebuffer[output] = self.palette[0] & 0x3F;
+                } else {
+                    let attr_addr = nametable + 0x3C0
+                        + (((tile_y % 30) / 4) * 8 + (tile_x % 32) / 4) as u16;
+                    let attr = self.mem_read(attr_addr, cartridge);
+                    let shift = (((tile_y % 4) / 2) * 4 + ((tile_x % 4) / 2) * 2) as u8;
+                    let palette_id = (attr >> shift) & 3;
+                    self.framebuffer[output] = self.palette[(palette_id * 4 + pixel) as usize] & 0x3F;
+                }
+            }
+        }
+    }
+
+    /// Returns the most recently rendered 256x240 image as NES palette indices.
+    pub fn framebuffer(&self) -> &[u8] { &self.framebuffer }
 
     /// Returns the current scanline and dot for diagnostics and tests.
     pub fn position(&self) -> (u16, u16) { (self.scanline, self.dot) }
@@ -212,6 +273,28 @@ mod tests {
         ppu.tick(243 * 341 + 1);
         ppu.cpu_write_register(0, 0x80, None);
         assert!(ppu.take_nmi_request());
+    }
+
+    #[test]
+    fn background_renderer_decodes_pattern_bits_and_palette() {
+        let mut ppu = Ppu::new();
+        // Enable background and the leftmost eight pixels.
+        ppu.cpu_write_register(1, 0x0A, None);
+        // Tile zero: first pixel is color 1 (bit 7 of low pattern plane).
+        ppu.cpu_write_register(6, 0x00, None);
+        ppu.cpu_write_register(6, 0x00, None);
+        ppu.cpu_write_register(7, 0x80, None);
+        // Universal background color and palette color 1.
+        ppu.cpu_write_register(6, 0x3F, None);
+        ppu.cpu_write_register(6, 0x00, None);
+        ppu.cpu_write_register(7, 0x0F, None);
+        ppu.cpu_write_register(6, 0x3F, None);
+        ppu.cpu_write_register(6, 0x01, None);
+        ppu.cpu_write_register(7, 0x21, None);
+        ppu.render_background(None);
+        assert_eq!(ppu.framebuffer()[0], 0x21);
+        assert_eq!(ppu.framebuffer()[1], 0x0F);
+        assert_eq!(ppu.framebuffer().len(), 256 * 240);
     }
 
     #[test]
