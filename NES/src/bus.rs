@@ -193,10 +193,10 @@ mod tests {
     fn dmc_sample_reads_from_cpu_bus_and_sets_status_irq() {
         let mut bus = CpuBus::new();
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
-        image[16 + 0x3FFA] = 0x11;
-        image[16 + 0x3FFA + 1] = 0x22;
+        image[16] = 0x11; // NROM-16K mirrors $8000 at $C000.
+        image[17] = 0x22;
         bus.insert_cartridge(Nrom::parse(&image).unwrap());
         bus.write(0x4010, 0x80); // Enable DMC IRQ, fastest-rate selection is not required for fetch.
         bus.write(0x4012, 0x00); // $C000 sample address.
