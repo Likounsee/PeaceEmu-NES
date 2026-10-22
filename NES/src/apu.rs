@@ -1,8 +1,10 @@
 //! Initial APU register, length-counter, and frame-sequencer model for the NES 2A03.
 //!
-//! This is an approximate CPU-cycle model, not an audio synthesizer. Pulse, triangle,
-//! and noise length counters and the frame IRQ status are modelled; DMC and audio output
-//! remain unimplemented.
+//! Approximate CPU-cycle APU model with pulse, triangle and noise sample generation.
+//!
+//! Envelope/sweep units, triangle linear-counter behavior, DMC playback, and exact regional
+//! timing remain incomplete; output is suitable for integration and smoke tests, not yet
+//! cycle-accurate audio.
 
 const LENGTH_TABLE: [u8; 32] = [
     10, 254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
@@ -20,6 +22,13 @@ pub struct Apu {
     frame_irq: bool,
     frame_irq_inhibit: bool,
     five_step_mode: bool,
+    pulse_timer_counter: [u16; 2],
+    pulse_sequence: [u8; 2],
+    triangle_timer_counter: u16,
+    triangle_sequence: u8,
+    noise_timer_counter: u16,
+    noise_shift: u16,
+    cpu_cycle_odd: bool,
 }
 
 impl Apu {
@@ -64,9 +73,39 @@ impl Apu {
         }
     }
 
-    /// Advances the approximate frame sequencer and clocks length counters at half-frame
-    /// boundaries. Exact regional timing and delayed $4017 reset are not modelled.
+    /// Advances oscillator timers and the approximate frame sequencer.
+    /// Exact regional timing and delayed $4017 reset are not modelled.
     pub fn tick_cpu_cycles(&mut self, cycles: u32) {
+        const NOISE_PERIODS: [u16; 16] = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068];
+        if self.noise_shift == 0 { self.noise_shift = 1; }
+        for _ in 0..cycles {
+            // Pulse/noise timers are clocked on alternating CPU cycles; triangle runs each cycle.
+            if !self.cpu_cycle_odd {
+                for channel in 0..2 {
+                    let register = channel * 4;
+                    let period = u16::from(self.registers[register + 2])
+                        | (u16::from(self.registers[register + 3] & 7) << 8);
+                    if self.pulse_timer_counter[channel] == 0 {
+                        self.pulse_timer_counter[channel] = period;
+                        self.pulse_sequence[channel] = (self.pulse_sequence[channel] + 1) & 7;
+                    } else { self.pulse_timer_counter[channel] -= 1; }
+                }
+                let noise_period = NOISE_PERIODS[(self.registers[0x0E] & 0x0F) as usize];
+                if self.noise_timer_counter == 0 {
+                    self.noise_timer_counter = noise_period.saturating_sub(1);
+                    let tap = if self.registers[0x0E] & 0x80 != 0 { 6 } else { 1 };
+                    let feedback = (self.noise_shift ^ (self.noise_shift >> tap)) & 1;
+                    self.noise_shift = (self.noise_shift >> 1) | (feedback << 14);
+                } else { self.noise_timer_counter -= 1; }
+            }
+            let triangle_period = u16::from(self.registers[0x0A])
+                | (u16::from(self.registers[0x0B] & 7) << 8);
+            if self.triangle_timer_counter == 0 {
+                self.triangle_timer_counter = triangle_period;
+                self.triangle_sequence = (self.triangle_sequence + 1) & 31;
+            } else { self.triangle_timer_counter -= 1; }
+            self.cpu_cycle_odd = !self.cpu_cycle_odd;
+        }
         const FOUR_STEP_PERIOD: u32 = 14_915;
         const FIVE_STEP_PERIOD: u32 = 18_641;
         const HALF_FRAME_PERIOD: u32 = 7_457;
@@ -107,6 +146,34 @@ impl Apu {
         } else {
             0
         }
+    }
+
+    /// Generates one normalized mono sample (0.0..1.0) from current channel states.
+    /// Pulse envelope/sweep and triangle linear-counter behavior are approximated; DMC is silent.
+    pub fn sample(&self) -> f32 {
+        const DUTY: [u8; 4] = [0b0000_0001, 0b0000_0011, 0b0000_1111, 0b1111_1100];
+        let mut pulse = 0.0f32;
+        for channel in 0..2 {
+            let register = channel * 4;
+            let period = u16::from(self.registers[register + 2])
+                | (u16::from(self.registers[register + 3] & 7) << 8);
+            let duty = usize::from(self.registers[register] >> 6);
+            let volume = f32::from(self.registers[register] & 0x0F);
+            if self.length_counters[channel] > 0 && period >= 8
+                && DUTY[duty] & (1 << self.pulse_sequence[channel]) != 0 {
+                pulse += volume;
+            }
+        }
+        let pulse_out = if pulse == 0.0 { 0.0 } else { 95.88 / (8128.0 / pulse + 100.0) };
+        let triangle_period = u16::from(self.registers[0x0A]) | (u16::from(self.registers[0x0B] & 7) << 8);
+        let triangle_value = if self.triangle_sequence < 16 { 15 - self.triangle_sequence } else { self.triangle_sequence - 16 };
+        let triangle = if self.length_counters[2] > 0 && triangle_period > 1 { f32::from(triangle_value) } else { 0.0 };
+        let noise = if self.length_counters[3] > 0 && self.noise_shift & 1 == 0 {
+            f32::from(self.registers[0x0C] & 0x0F)
+        } else { 0.0 };
+        let tnd_input = triangle / 8227.0 + noise / 12241.0;
+        let tnd_out = if tnd_input == 0.0 { 0.0 } else { 159.79 / (1.0 / tnd_input + 100.0) };
+        (pulse_out + tnd_out).clamp(0.0, 1.0)
     }
 
     /// Returns whether the approximate frame sequencer currently asserts frame IRQ.
@@ -181,6 +248,35 @@ mod tests {
         apu.write(0x4017, 0x80);
         apu.tick_cpu_cycles(18_641);
         assert!(!apu.frame_irq_pending());
+    }
+
+    #[test]
+    fn sample_is_silent_until_a_pulse_is_enabled_and_has_length() {
+        let mut apu = Apu::new();
+        assert_eq!(apu.sample(), 0.0);
+        apu.write(0x4015, 0x01);
+        apu.write(0x4000, 0x9F); // 50% duty, volume 15
+        apu.write(0x4002, 0x20);
+        apu.write(0x4003, 0xF8);
+        apu.tick_cpu_cycles(40);
+        assert!(apu.sample() > 0.0);
+        apu.write(0x4015, 0x00);
+        assert_eq!(apu.sample(), 0.0);
+    }
+
+    #[test]
+    fn triangle_and_noise_registers_contribute_to_audio_output() {
+        let mut apu = Apu::new();
+        apu.write(0x4015, 0x0C);
+        apu.write(0x400A, 0x40);
+        apu.write(0x400B, 0xF8);
+        apu.write(0x400C, 0x0F);
+        apu.write(0x400E, 0x00);
+        apu.write(0x400F, 0xF8);
+        apu.tick_cpu_cycles(200);
+        assert!(apu.sample() > 0.0);
+        apu.write(0x4015, 0x00);
+        assert_eq!(apu.sample(), 0.0);
     }
 
     #[test]
