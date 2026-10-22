@@ -1,8 +1,9 @@
 //! Initial Ricoh 2A03 CPU instruction interpreter.
 //!
-//! This milestone implements a tested subset of official 6502 instructions.
-//! Unsupported opcodes are errors, not silent NOPs. Cycle-level bus timing,
-//! interrupts beyond BRK, and the remaining instruction set are not complete.
+//! Implements a broad, tested subset of official Ricoh 2A03/6502 instructions.
+//! Unsupported opcodes are errors, not silent NOPs. IRQ/NMI entry and nominal
+//! instruction cycles are modeled; bus-cycle-exact execution and remaining opcodes
+//! are not complete.
 
 use crate::bus::CpuBus;
 use core::fmt;
@@ -777,4 +778,45 @@ mod tests {
         assert_eq!(c.state().pc, 0x0603);
         c.step(&mut b).unwrap(); assert_eq!(c.state().a, 0x55);
     }
+
+    #[test]
+    fn indirect_addressing_wraps_pointer_reads_inside_zero_page() {
+        let (mut cpu, mut bus) = setup(&[
+            0xA2, 0x01, // LDX #1
+            0xA1, 0xFE, // LDA ($FE,X): pointer wraps to $FF, high byte wraps to $00
+            0xA0, 0x01, // LDY #1
+            0xB1, 0xFF, // LDA ($FF),Y: high byte comes from $00
+        ]);
+        bus.write(0x00FF, 0x00);
+        bus.write(0x0000, 0x02);
+        bus.write(0x0001, 0x03);
+        bus.write(0x0200, 0x5A);
+        bus.write(0x0301, 0xA5);
+
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 6);
+        assert_eq!(cpu.state().a, 0x5A);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(cpu.state().a, 0xA5);
+    }
+
+    #[test]
+    fn taken_branches_charge_page_crossing_cycles_in_both_directions() {
+        let (mut cpu, mut bus) = setup(&[]);
+        // BNE at $06FD: after fetching its operand PC=$06FF, +2 crosses into $07xx.
+        bus.write(0x06FD, 0xD0);
+        bus.write(0x06FE, 0x02);
+        cpu.set_pc(0x06FD);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 3);
+        assert_eq!(cpu.state().pc, 0x06FF);
+
+        // Put the next branch at $0700 and use a negative offset to cross back to $06xx.
+        bus.write(0x0700, 0xD0);
+        bus.write(0x0701, 0xFC); // PC=$0702, -4 => $06FE
+        cpu.set_pc(0x0700);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 4);
+        assert_eq!(cpu.state().pc, 0x06FE);
+    }
+
 }
