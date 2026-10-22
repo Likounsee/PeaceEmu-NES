@@ -429,6 +429,31 @@ mod tests {
     }
 
     #[test]
+    fn nametable_indices_follow_horizontal_vertical_and_four_screen_mirroring() {
+        assert_eq!(Ppu::nametable_index(0x2000, Mirroring::Vertical), 0x000);
+        assert_eq!(Ppu::nametable_index(0x2400, Mirroring::Vertical), 0x400);
+        assert_eq!(Ppu::nametable_index(0x2800, Mirroring::Vertical), 0x000);
+        assert_eq!(Ppu::nametable_index(0x2C00, Mirroring::Vertical), 0x400);
+        assert_eq!(Ppu::nametable_index(0x2000, Mirroring::Horizontal), 0x000);
+        assert_eq!(Ppu::nametable_index(0x2400, Mirroring::Horizontal), 0x000);
+        assert_eq!(Ppu::nametable_index(0x2800, Mirroring::Horizontal), 0x400);
+        assert_eq!(Ppu::nametable_index(0x2C00, Mirroring::Horizontal), 0x400);
+        assert_eq!(Ppu::nametable_index(0x2C00, Mirroring::FourScreen), 0xC00);
+        assert_eq!(Ppu::nametable_index(0x3EFF, Mirroring::FourScreen), 0xFFF);
+    }
+
+    #[test]
+    fn palette_mirrors_repeat_every_32_bytes_and_alias_sprite_universal_colors() {
+        assert_eq!(Ppu::palette_index(0x3F00), 0);
+        assert_eq!(Ppu::palette_index(0x3F20), 0);
+        assert_eq!(Ppu::palette_index(0x3F30), 0);
+        assert_eq!(Ppu::palette_index(0x3F10), Ppu::palette_index(0x3F00));
+        assert_eq!(Ppu::palette_index(0x3F14), Ppu::palette_index(0x3F04));
+        assert_eq!(Ppu::palette_index(0x3F18), Ppu::palette_index(0x3F08));
+        assert_eq!(Ppu::palette_index(0x3F1C), Ppu::palette_index(0x3F0C));
+    }
+
+    #[test]
     fn oam_data_auto_increments_address() {
         let mut ppu = Ppu::new();
         ppu.cpu_write_register(3, 0xFE, None);
