@@ -278,20 +278,25 @@ mod tests {
     #[test]
     fn background_renderer_decodes_pattern_bits_and_palette() {
         let mut ppu = Ppu::new();
+        // Use CHR-RAM so the test can construct a tiny tile.
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Nrom::parse(&image).unwrap();
         // Enable background and the leftmost eight pixels.
-        ppu.cpu_write_register(1, 0x0A, None);
+        ppu.cpu_write_register(1, 0x0A, Some(&mut cartridge));
         // Tile zero: first pixel is color 1 (bit 7 of low pattern plane).
-        ppu.cpu_write_register(6, 0x00, None);
-        ppu.cpu_write_register(6, 0x00, None);
-        ppu.cpu_write_register(7, 0x80, None);
+        ppu.cpu_write_register(6, 0x00, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 0x00, Some(&mut cartridge));
+        ppu.cpu_write_register(7, 0x80, Some(&mut cartridge));
         // Universal background color and palette color 1.
-        ppu.cpu_write_register(6, 0x3F, None);
-        ppu.cpu_write_register(6, 0x00, None);
-        ppu.cpu_write_register(7, 0x0F, None);
-        ppu.cpu_write_register(6, 0x3F, None);
-        ppu.cpu_write_register(6, 0x01, None);
-        ppu.cpu_write_register(7, 0x21, None);
-        ppu.render_background(None);
+        ppu.cpu_write_register(6, 0x3F, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 0x00, Some(&mut cartridge));
+        ppu.cpu_write_register(7, 0x0F, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 0x3F, Some(&mut cartridge));
+        ppu.cpu_write_register(6, 0x01, Some(&mut cartridge));
+        ppu.cpu_write_register(7, 0x21, Some(&mut cartridge));
+        ppu.render_background(Some(&cartridge));
         assert_eq!(ppu.framebuffer()[0], 0x21);
         assert_eq!(ppu.framebuffer()[1], 0x0F);
         assert_eq!(ppu.framebuffer().len(), 256 * 240);
