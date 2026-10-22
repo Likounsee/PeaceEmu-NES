@@ -200,9 +200,9 @@ impl Cpu {
             0x2D => { let a = self.fetch_word(bus); self.state.a &= bus.read(a); self.set_nz(self.state.a); 4 }
             0x35 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; self.state.a &= bus.read(a); self.set_nz(self.state.a); 4 }
             0x3D => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.state.a &= bus.read(a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
-            0x39 => { let a = self.fetch_word(bus).wrapping_add(self.state.y as u16); self.state.a &= bus.read(a); self.set_nz(self.state.a); 4 }
+            0x39 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a &= bus.read(a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0x21 => { let a = self.indirect_x(bus); self.state.a &= bus.read(a); self.set_nz(self.state.a); 6 }
-            0x31 => { let a = self.indirect_y(bus).wrapping_add(self.state.y as u16); self.state.a &= bus.read(a); self.set_nz(self.state.a); 5 }
+            0x31 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a &= bus.read(a); self.set_nz(self.state.a); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0x05 => { let a = self.fetch(bus) as u16; self.state.a |= bus.read(a); self.set_nz(self.state.a); 3 }
             0x15 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; self.state.a |= bus.read(a); self.set_nz(self.state.a); 4 }
             0x19 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a |= bus.read(a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
@@ -530,6 +530,25 @@ mod tests {
         b.write(0x21, 0x03);
         for _ in 0..6 { c.step(&mut b).unwrap(); }
         assert_eq!(c.state().a, 0x10);
+    }
+
+    #[test]
+    fn and_absolute_y_and_indirect_y_apply_page_cross_penalty() {
+        let (mut cpu, mut bus) = setup(&[
+            0xA0, 0x01,             // LDY #1
+            0xA9, 0xFF,             // LDA #$FF
+            0x39, 0xFF, 0x02,       // AND $02FF,Y -> $0300 (cross)
+            0x31, 0x20,             // AND ($20),Y -> $0300 (cross)
+        ]);
+        bus.write(0x0300, 0x7F);
+        bus.write(0x20, 0xFF);
+        bus.write(0x21, 0x02);
+        cpu.step(&mut bus).unwrap();
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(cpu.state().a, 0x7F);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 6);
+        assert_eq!(cpu.state().a, 0x7F);
     }
 
     #[test]
