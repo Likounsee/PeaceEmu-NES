@@ -6,7 +6,7 @@
 
 Développer un cœur NES réel, indépendant de l'interface graphique, intégrable à l'application principale [PeaceEmu](https://github.com/Likounsee/PeaceEmu). L'interface, la bibliothèque de jeux, les fenêtres et l'orchestration des sessions existent déjà dans le dépôt principal : ce dépôt ne doit pas recréer ces fonctionnalités.
 
-**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES/NROM, un sous-ensemble élargi du CPU, un modèle de registres APU, compteurs de longueur et séquenceur de frame initial et le rendu snapshot de la PPU disposent de code et de tests. Le module n'est pas encore jouable et n'est pas encore branché au contrat hôte.
+**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES/NROM, un sous-ensemble élargi du CPU, un modèle de registres APU, compteurs de longueur, séquenceur de frame approximatif et un premier mélangeur audio pulse/triangle/bruit, ainsi que le rendu snapshot de la PPU disposent de code et de tests. Le module n'est pas encore jouable et n'est pas encore branché au contrat hôte.
 
 ## Langage et intégration
 
@@ -47,7 +47,7 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 ## Avancement
 
-**Avancement global estimé : 41 %.** La machine minimale charge une cartouche NROM, exécute un sous-ensemble du CPU, et la PPU expose les registres, la mémoire graphique, le timing VBlank/NMI ainsi qu'un rendu de fond par instantané. Une suite de tests couvre les composants de base, le transfert DMA des 256 octets, l'entrée NMI, le décodage des pixels, la priorité des sprites, le protocole série des manettes, les mirroring nametables/palettes et le saut de dot des images impaires. Le séquenceur APU utilise une approximation du timing 4/5 étapes ; vérifier la CI avant de déclarer ce lot validé ([workflow](https://github.com/Likounsee/PeaceEmu-NES/actions/runs/39832859985)). Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
+**Avancement global estimé : 44 %.** La machine minimale charge une cartouche NROM, exécute un sous-ensemble du CPU, et la PPU expose les registres, la mémoire graphique, le timing VBlank/NMI ainsi qu'un rendu de fond par instantané. Une suite de tests couvre les composants de base, le transfert DMA des 256 octets, l'entrée NMI, le décodage des pixels, la priorité des sprites, le protocole série des manettes, les mirroring nametables/palettes et le saut de dot des images impaires. Le séquenceur APU utilise une approximation du timing 4/5 étapes ; vérifier la CI avant de déclarer ce lot validé ([workflow](https://github.com/Likounsee/PeaceEmu-NES/actions/runs/39832859985)). Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
 
 CI : un test de mirroring a échoué à cause d'une valeur attendue incorrecte ; cette assertion a été corrigée. Vérifier la dernière exécution avant d'annoncer un résultat vert.
 
@@ -59,7 +59,7 @@ CI : un test de mirroring a échoué à cause d'une valeur attendue incorrecte ;
 | Cartouche NROM / iNES legacy | Première version |
 | Machine et reset vector | Première version — charge NROM et exécute le CPU |
 | PPU | Registres/mémoire/VBlank-NMI ; rendu de fond et sprites par instantané ; timing dot-par-dot à faire |
-| APU | Partiel — registres, compteurs de longueur pulse/triangle/bruit, séquenceur de frame et IRQ approximatifs ; synthèse audio/DMC à faire |
+| APU | Partiel — registres, compteurs, séquenceur/IRQ approximatifs et premier mélangeur mono pulse/triangle/bruit ; enveloppes, sweep, compteur linéaire, DMC et timing exact à faire |
 | Contrôleurs | Première version — ports série $4016/$4017, huit boutons et latch |
 | Timing complet | À faire |
 | Adaptateur EmulationCore | À faire — partage du contrat à définir |
