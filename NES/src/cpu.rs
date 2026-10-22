@@ -1101,4 +1101,37 @@ mod tests {
         assert_eq!(cpu.state().pc, 0x0605);
     }
 
-}
+}\n
+    #[test]
+    fn unofficial_rmw_slo_covers_all_seven_addressing_modes_and_nominal_cycles() {
+        let program = [
+            0xA2, 0x01,             // LDX #1
+            0xA0, 0x01,             // LDY #1
+            0x03, 0x20,             // SLO ($20,X) -> $0200
+            0x07, 0x24,             // SLO $24
+            0x0F, 0x01, 0x02,       // SLO $0201
+            0x13, 0x30,             // SLO ($30),Y -> $0201
+            0x17, 0x24,             // SLO $23,X -> $24
+            0x1B, 0x00, 0x02,       // SLO $01FF,Y -> $0200
+            0x1F, 0xFF, 0x01,       // SLO $01FF,X -> $0200
+        ];
+        let (mut cpu, mut bus) = setup(&program);
+        bus.write(0x0021, 0x00);
+        bus.write(0x0022, 0x02);
+        bus.write(0x0030, 0x00);
+        bus.write(0x0031, 0x02);
+        bus.write(0x0024, 0x01);
+        bus.write(0x0200, 0x01);
+        bus.write(0x0201, 0x01);
+
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2); // LDX
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2); // LDY
+        for expected_cycles in [8, 5, 6, 8, 6, 7, 7] {
+            let result = cpu.step(&mut bus).unwrap();
+            assert_eq!(result.cycles, expected_cycles, "opcode {:#04X}", result.opcode);
+        }
+        assert_eq!(bus.read(0x0200), 0x02);
+        assert_eq!(bus.read(0x0201), 0x02);
+        assert_eq!(bus.read(0x0024), 0x02);
+    }
+
