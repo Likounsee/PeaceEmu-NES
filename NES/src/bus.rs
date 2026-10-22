@@ -1,6 +1,7 @@
 //! CPU memory bus for the initial NROM machine.
 
 use crate::cartridge::Nrom;
+use crate::ppu::Ppu;
 
 /// CPU bus with 2 KiB internal RAM and optional NROM cartridge.
 ///
@@ -11,9 +12,10 @@ pub struct CpuBus {
     ram: [u8; 0x800],
     cartridge: Option<Nrom>,
     open_bus: u8,
+    ppu: Ppu,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0 } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new() } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -24,6 +26,7 @@ impl CpuBus {
     pub fn read(&mut self, address: u16) -> u8 {
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
+            0x2000..=0x3FFF => self.ppu.cpu_read_register(address & 7, self.cartridge.as_ref()),
             0x8000..=0xFFFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
             _ => self.open_bus,
         };
@@ -33,8 +36,14 @@ impl CpuBus {
     /// Writes a byte to the CPU address space. Cartridge ROM is not writable.
     pub fn write(&mut self, address: u16, value: u8) {
         self.open_bus = value;
-        if address <= 0x1FFF { self.ram[address as usize & 0x07FF] = value; }
+        match address {
+            0x0000..=0x1FFF => self.ram[address as usize & 0x07FF] = value,
+            0x2000..=0x3FFF => self.ppu.cpu_write_register(address & 7, value, self.cartridge.as_mut()),
+            _ => {}
+        }
     }
+    /// Advances the PPU by the specified number of dots.
+    pub fn tick_ppu(&mut self, dots: u32) { self.ppu.tick(dots); }
     /// Returns whether a cartridge is attached.
     pub fn has_cartridge(&self) -> bool { self.cartridge.is_some() }
 }
