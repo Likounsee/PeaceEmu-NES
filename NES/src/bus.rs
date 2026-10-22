@@ -200,16 +200,16 @@ mod tests {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\\x1A");
         image[4] = 1;
-        image[16 + 0x100] = 0xFF; // $8100, where sample address $04 points.
+        image[16 + 0x100] = 0xFF;
         image[16 + 0x101] = 0x00;
         bus.insert_cartridge(Nrom::parse(&image).unwrap());
         bus.write(0x4010, 0x0F);
-        bus.write(0x4012, 0x04); // $C100 (NROM mirrors $8100 here).
+        bus.write(0x4012, 0x04); // $C100, mirrored to $8100 by NROM.
         bus.write(0x4013, 0x01); // 17 bytes.
         bus.write(0x4015, 0x10);
         bus.tick_apu(1);
         assert_eq!(bus.read(0x4015) & 0x10, 0x10);
-        bus.tick_apu(8 * 54);
+        bus.tick_apu(16 * 54);
         assert!(bus.apu_sample() > 0.0);
     }
 
