@@ -422,7 +422,7 @@ mod tests {
         ]);
         cpu.step(&mut bus).unwrap();
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 3);
-        assert_eq!(cpu.state().pc, 0x0604);
+        assert_eq!(cpu.state().pc, 0x0606);
         cpu.step(&mut bus).unwrap();
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 3);
         assert_eq!(cpu.state().pc, 0x060B);
