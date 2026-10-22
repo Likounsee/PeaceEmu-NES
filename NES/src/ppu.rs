@@ -759,4 +759,32 @@ mod tests {
         assert_eq!(ppu.oam()[0xFE], 0xAB);
         assert_eq!(ppu.oam()[0xFF], 0xCD);
     }
+
+    #[test]
+    fn ppudata_increment_crosses_palette_boundary_without_wrapping_internal_v_early() {
+        let mut ppu = Ppu::new();
+        ppu.cpu_write_register(6, 0x3F, None);
+        ppu.cpu_write_register(6, 0xFF, None);
+        ppu.cpu_write_register(7, 0x2A, None);
+        assert_eq!(ppu.v, 0x4000, "v is a 15-bit internal address; CPU memory access masks to 14 bits");
+        ppu.cpu_write_register(6, 0x00, None);
+        ppu.cpu_write_register(6, 0x00, None);
+        ppu.cpu_write_register(7, 0x55, None);
+        assert_eq!(ppu.mem_read(0x0000, None), 0x55);
+    }
+
+    #[test]
+    fn vblank_flag_clears_at_prerender_start_and_does_not_stick_between_frames() {
+        let mut ppu = Ppu::new();
+        ppu.tick(241 * 341 + 1);
+        assert_ne!(ppu.status & 0x80, 0, "vblank starts at scanline 241 dot 1");
+        // Advance from scanline 241 dot 1 to pre-render scanline 261 dot 1.
+        ppu.tick(20 * 341);
+        assert_eq!(ppu.position(), (261, 1));
+        assert_eq!(ppu.status & 0x80, 0, "pre-render dot 1 clears vblank");
+        ppu.tick(341);
+        assert_eq!(ppu.position(), (0, 0));
+        assert_eq!(ppu.status & 0x80, 0);
+    }
+
 }
