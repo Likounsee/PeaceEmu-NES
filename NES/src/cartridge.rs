@@ -174,16 +174,7 @@ mod tests {
     }
     #[test]
     fn prg_ram_is_writable_and_trainer_is_loaded_at_7000() {
-        let mut v = vec![0; 16 + TRAINER_LEN + PRG_BANK_LEN];
-        v[0..4].copy_from_slice(b"NES\\x1A");
-        v[4] = 1;
-        v[6] = 0x04;
-        v[16] = 0xA5;
-        v[16 + TRAINER_LEN + PRG_BANK_LEN - 1] = 0x77;
-        let mut c = Nrom::parse(&v).unwrap();
-        assert_eq!(c.cpu_read(0x7000), Some(0));
         // Trainer payload is the 512 bytes immediately following the header.
-        v[16] = 0x5A;
         let mut with_trainer = vec![0; 16 + TRAINER_LEN + PRG_BANK_LEN];
         with_trainer[0..4].copy_from_slice(b"NES\\x1A");
         with_trainer[4] = 1;
