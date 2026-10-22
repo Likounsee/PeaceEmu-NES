@@ -92,10 +92,14 @@ impl CpuBus {
     /// Advances the APU by CPU cycles and services pending DMC sample reads.
     /// DMC fetches currently use the bus immediately; their CPU stall timing is approximate.
     pub fn tick_apu(&mut self, cycles: u32) {
-        self.apu.tick_cpu_cycles(cycles);
-        while let Some(address) = self.apu.take_dmc_dma_request() {
-            let value = self.read(address);
-            self.apu.supply_dmc_byte(value);
+        // Service fetch requests between CPU cycles so a DMC buffer refill can affect
+        // later timer clocks in the same batch. DMA stall/arbitration cycles are not yet modelled.
+        for _ in 0..cycles {
+            self.apu.tick_cpu_cycles(1);
+            if let Some(address) = self.apu.take_dmc_dma_request() {
+                let value = self.read(address);
+                self.apu.supply_dmc_byte(value);
+            }
         }
     }
     /// Returns one approximate normalized mono sample from the APU mixer.
@@ -188,6 +192,25 @@ mod tests {
         assert_ne!(status & 0x20, 0);
         assert_ne!(status & 0x40, 0);
         assert!(!bus.irq_pending());
+    }
+
+    #[test]
+    fn dmc_bus_fetches_follow_sample_address_register_and_buffer_refills() {
+        let mut bus = CpuBus::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x100] = 0xFF; // $8100, where sample address $04 points.
+        image[16 + 0x101] = 0x00;
+        bus.insert_cartridge(Nrom::parse(&image).unwrap());
+        bus.write(0x4010, 0x0F);
+        bus.write(0x4012, 0x04); // $C100 (NROM mirrors $8100 here).
+        bus.write(0x4013, 0x01); // 17 bytes.
+        bus.write(0x4015, 0x10);
+        bus.tick_apu(1);
+        assert_eq!(bus.read(0x4015) & 0x10, 0x10);
+        bus.tick_apu(8 * 54);
+        assert!(bus.apu_sample() > 0.0);
     }
 
     #[test]
