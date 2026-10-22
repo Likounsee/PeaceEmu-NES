@@ -28,6 +28,8 @@ Le crate `emulation-core` se trouve dans le workspace imbriqué du dépôt princ
 
 Exécute les instructions du 6502 modifié pour la NES. Le composant gère les registres, les modes d'adressage, les flags, les interruptions et le comportement temporel. Le comportement décimal spécifique au 2A03 doit être testé explicitement.
 
+Les instructions non officielles stables LAX/SAX sont maintenant prises en charge avec tests sur les registres, les flags, les adresses et les cycles. Leur comportement a été comparé à la table d'opcodes TetaNES ; voir [REFERENCE_IMPLEMENTATIONS.md](REFERENCE_IMPLEMENTATIONS.md) pour la provenance et la politique de réutilisation.
+
 ### Bus mémoire
 
 Centralise les accès CPU vers la RAM interne, les registres PPU/APU, les ports manette série ($4016/$4017) et la cartouche. Les manettes disposent d'un strobe, d'un latch des huit boutons et d'un registre à décalage ; l'entrée publique passe par `NesMachine::set_controller_state`. Le DMA OAM copie une page entière et ajoute un blocage CPU de 513/514 cycles. Le DMC peut demander des lectures d'échantillons dans l'espace CPU ; son arbitrage et ses cycles de blocage restent approximatifs.
