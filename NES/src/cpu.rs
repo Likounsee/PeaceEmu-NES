@@ -386,9 +386,8 @@ mod tests {
     #[test] fn adc_sbc_and_indexed_logical_ops_work() {
         let (mut c, mut b) = setup(&[0xA9, 0x10, 0x69, 0x05, 0xE9, 0x02, 0xA2, 1, 0x15, 0x20, 0x55, 0x20]);
         b.write(0x21, 0x03);
-        b.write(0x21, 0x03);
         for _ in 0..6 { c.step(&mut b).unwrap(); }
-        assert_eq!(c.state().a, 0x16);
+        assert_eq!(c.state().a, 0x10);
     }
 
     #[test] fn jsr_and_rts_round_trip() {
