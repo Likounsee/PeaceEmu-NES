@@ -47,7 +47,7 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 
 ## Avancement
 
-**Avancement global estimé : 41 %.** La machine minimale charge une cartouche NROM, exécute un sous-ensemble du CPU, et la PPU expose les registres, la mémoire graphique, le timing VBlank/NMI ainsi qu'un rendu de fond par instantané. Une suite de 55 tests couvre les composants de base, le transfert DMA des 256 octets, l'entrée NMI, le décodage des pixels, la priorité des sprites, le protocole série des manettes, les mirroring nametables/palettes et le saut de dot des images impaires. La dernière CI vérifiée est verte : 53 tests, formatage et Clippy réussis ([workflow](https://github.com/Likounsee/PeaceEmu-NES/actions/runs/39832859985)). Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
+**Avancement global estimé : 41 %.** La machine minimale charge une cartouche NROM, exécute un sous-ensemble du CPU, et la PPU expose les registres, la mémoire graphique, le timing VBlank/NMI ainsi qu'un rendu de fond par instantané. Une suite de tests couvre les composants de base, le transfert DMA des 256 octets, l'entrée NMI, le décodage des pixels, la priorité des sprites, le protocole série des manettes, les mirroring nametables/palettes et le saut de dot des images impaires. Le séquenceur APU utilise une approximation du timing 4/5 étapes ; vérifier la CI avant de déclarer ce lot validé ([workflow](https://github.com/Likounsee/PeaceEmu-NES/actions/runs/39832859985)). Ce pourcentage mesure l'avancement du développement, pas la compatibilité des jeux : aucune ROM commerciale ou homebrew complète n'est encore déclarée compatible.
 
 CI : un test de mirroring a échoué à cause d'une valeur attendue incorrecte ; cette assertion a été corrigée. Vérifier la dernière exécution avant d'annoncer un résultat vert.
 
@@ -59,7 +59,7 @@ CI : un test de mirroring a échoué à cause d'une valeur attendue incorrecte ;
 | Cartouche NROM / iNES legacy | Première version |
 | Machine et reset vector | Première version — charge NROM et exécute le CPU |
 | PPU | Registres/mémoire/VBlank-NMI ; rendu de fond et sprites par instantané ; timing dot-par-dot à faire |
-| APU | Débuté — stockage des registres et bits $4015 ; synthèse audio/timing IRQ à faire |
+| APU | Débuté — registre $4015 et séquenceur de frame 4/5 étapes avec drapeau IRQ ; synthèse audio à faire |
 | Contrôleurs | Première version — ports série $4016/$4017, huit boutons et latch |
 | Timing complet | À faire |
 | Adaptateur EmulationCore | À faire — partage du contrat à définir |
