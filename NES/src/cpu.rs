@@ -422,6 +422,7 @@ mod tests {
         bus.write(0x0300, 0x00);
         cpu.state.a = 0x11;
         cpu.state.x = 0x22;
+        cpu.state.y = 1;
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 3);
         assert_eq!((cpu.state.a, cpu.state.x), (0x80, 0x80));
         assert_ne!(cpu.state.status & flags::NEGATIVE, 0);
