@@ -572,7 +572,7 @@ mod tests {
     fn background_left_edge_mask_hides_only_the_first_eight_pixels() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Nrom::parse(&image).unwrap();
         ppu.mask = 0x08; // Background on, background's leftmost eight pixels hidden.
