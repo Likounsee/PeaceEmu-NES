@@ -630,7 +630,7 @@ mod tests {
     fn background_left_clip_does_not_hide_sprites_when_sprite_left_clip_is_enabled() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Nrom::parse(&image).unwrap();
         // Background is enabled but clipped on the left; sprites are enabled and visible there.
