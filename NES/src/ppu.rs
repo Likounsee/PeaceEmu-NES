@@ -517,6 +517,46 @@ mod tests {
     }
 
     #[test]
+    fn palette_mirroring_covers_all_universal_background_aliases() {
+        let mut ppu = Ppu::new();
+        for (alias, base) in [(0x3F10, 0x3F00), (0x3F14, 0x3F04), (0x3F18, 0x3F08), (0x3F1C, 0x3F0C)] {
+            ppu.mem_write(alias, 0x2A, None);
+            assert_eq!(ppu.mem_read(base, None), 0x2A, "alias {alias:#06X} must target {base:#06X}");
+            ppu.mem_write(base, 0x15, None);
+            assert_eq!(ppu.mem_read(alias, None), 0x15, "base {base:#06X} must be visible at {alias:#06X}");
+        }
+    }
+
+    #[test]
+    fn nametable_mirroring_maps_each_board_layout() {
+        // The four logical nametables map to physical CIRAM/extra RAM tables.
+        let horizontal = [0x000, 0x000, 0x400, 0x400];
+        let vertical = [0x000, 0x400, 0x000, 0x400];
+        let four_screen = [0x000, 0x400, 0x800, 0xC00];
+
+        for table in 0..4u16 {
+            let address = 0x2000 + table * 0x400 + 0x23;
+            assert_eq!(
+                Ppu::nametable_index(address, Mirroring::Horizontal),
+                horizontal[table as usize] + 0x23
+            );
+            assert_eq!(
+                Ppu::nametable_index(address, Mirroring::Vertical),
+                vertical[table as usize] + 0x23
+            );
+            assert_eq!(
+                Ppu::nametable_index(address, Mirroring::FourScreen),
+                four_screen[table as usize] + 0x23
+            );
+        }
+        // $3000-$3EFF mirrors $2000-$2EFF regardless of board mirroring.
+        assert_eq!(
+            Ppu::nametable_index(0x3000 + 0x123, Mirroring::Vertical),
+            Ppu::nametable_index(0x2000 + 0x123, Mirroring::Vertical)
+        );
+    }
+
+    #[test]
     fn vblank_requests_nmi_when_enabled() {
         let mut ppu = Ppu::new();
         ppu.cpu_write_register(0, 0x80, None);
