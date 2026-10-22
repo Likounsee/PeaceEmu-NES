@@ -1101,7 +1101,7 @@ mod tests {
         assert_eq!(cpu.state().pc, 0x0605);
     }
 
-}\n
+
     #[test]
     fn unofficial_rmw_slo_covers_all_seven_addressing_modes_and_nominal_cycles() {
         let program = [
@@ -1134,4 +1134,4 @@ mod tests {
         assert_eq!(bus.read(0x0201), 0x04); // Two RMW instructions target this byte.
         assert_eq!(bus.read(0x0024), 0x04); // Zero-page and zero-page,X forms.
     }
-
+}
