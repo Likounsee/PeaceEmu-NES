@@ -1111,8 +1111,8 @@ mod tests {
             0x07, 0x24,             // SLO $24
             0x0F, 0x01, 0x02,       // SLO $0201
             0x13, 0x30,             // SLO ($30),Y -> $0201
-            0x17, 0x24,             // SLO $23,X -> $24
-            0x1B, 0x00, 0x02,       // SLO $01FF,Y -> $0200
+            0x17, 0x23,             // SLO $23,X -> $24
+            0x1B, 0xFF, 0x01,       // SLO $01FF,Y -> $0200
             0x1F, 0xFF, 0x01,       // SLO $01FF,X -> $0200
         ];
         let (mut cpu, mut bus) = setup(&program);
@@ -1130,8 +1130,8 @@ mod tests {
             let result = cpu.step(&mut bus).unwrap();
             assert_eq!(result.cycles, expected_cycles, "opcode {:#04X}", result.opcode);
         }
-        assert_eq!(bus.read(0x0200), 0x02);
-        assert_eq!(bus.read(0x0201), 0x02);
-        assert_eq!(bus.read(0x0024), 0x02);
+        assert_eq!(bus.read(0x0200), 0x08); // Three RMW instructions target this byte.
+        assert_eq!(bus.read(0x0201), 0x04); // Two RMW instructions target this byte.
+        assert_eq!(bus.read(0x0024), 0x04); // Zero-page and zero-page,X forms.
     }
 
