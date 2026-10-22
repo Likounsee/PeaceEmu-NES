@@ -388,8 +388,8 @@ mod tests {
         // Two opaque sprites overlap at (0, 0), with distinct sprite palettes.
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x0020, 0x80, Some(&mut cartridge));
-        ppu.palette[0x11] = 0x30;
-        ppu.palette[0x15] = 0x27;
+        ppu.palette[0x01] = 0x30;
+        ppu.palette[0x05] = 0x27;
         ppu.mask = 0x14; // Show sprites and the leftmost eight sprite pixels.
         ppu.oam[0..8].copy_from_slice(&[255, 1, 0, 0, 255, 2, 1, 0]);
 
