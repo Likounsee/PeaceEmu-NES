@@ -689,6 +689,26 @@ mod tests {
     }
 
     #[test]
+    fn sprite_horizontal_flip_reverses_pattern_bits() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Nrom::parse(&image).unwrap();
+
+        ppu.mask = 0x14;
+        ppu.mem_write(0x0010, 0x01, Some(&mut cartridge)); // Only the source rightmost pixel is opaque.
+        ppu.mem_write(0x3F00, 0x0F, Some(&mut cartridge));
+        ppu.mem_write(0x3F11, 0x2C, Some(&mut cartridge));
+        ppu.oam[0..4].copy_from_slice(&[255, 1, 0x40, 16]);
+
+        ppu.render_frame(Some(&cartridge));
+
+        assert_eq!(ppu.framebuffer()[16], 0x2C, "horizontal flip moves the source rightmost pixel to the left");
+        assert_eq!(ppu.framebuffer()[23], 0x0F, "the opposite output edge remains transparent");
+    }
+
+    #[test]
     fn sprite_vertical_flip_reads_the_opposite_pattern_row() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
