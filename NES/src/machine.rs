@@ -35,8 +35,9 @@ impl From<CpuError> for MachineError {
 
 /// CPU plus the current minimal bus and an NROM cartridge.
 ///
-/// This wrapper is an instruction-stepping harness, not yet a playable emulator:
-/// PPU/APU/controller devices and CPU-to-PPU timing are not implemented.
+/// The wrapper supports instruction stepping, PPU register access and snapshot frame
+/// rendering, but is not yet a playable emulator: audio, controllers and precise timing
+/// remain incomplete.
 #[derive(Debug)]
 pub struct NesMachine {
     cpu: Cpu,
