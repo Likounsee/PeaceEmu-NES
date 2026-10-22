@@ -44,6 +44,10 @@ impl CpuBus {
             _ => {}
         }
     }
+    /// Rebuilds the background framebuffer from the attached cartridge and current VRAM scroll.
+    pub fn render_background(&mut self) { self.ppu.render_background(self.cartridge.as_ref()); }
+    /// Returns the most recently rendered background as 256x240 NES palette indices.
+    pub fn framebuffer(&self) -> &[u8] { self.ppu.framebuffer() }
     /// Advances the PPU by the specified number of dots.
     pub fn tick_ppu(&mut self, dots: u32) { self.ppu.tick(dots); }
     /// Takes a pending NMI edge raised by the PPU.
