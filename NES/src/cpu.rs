@@ -567,6 +567,37 @@ mod tests {
         assert_ne!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
     }
 
+    #[test]
+    fn status_flag_instructions_and_php_plp_round_trip_are_consistent() {
+        let (mut cpu, mut bus) = setup(&[
+            0x38, // SEC
+            0xF8, // SED (decimal flag is stored, arithmetic remains 2A03 binary)
+            0xB8, // CLV
+            0x58, // CLI
+            0x08, // PHP
+            0x18, // CLC
+            0xD8, // CLD
+            0x78, // SEI
+            0x28, // PLP
+        ]);
+        for _ in 0..5 { cpu.step(&mut bus).unwrap(); }
+        assert_ne!(cpu.state().status & flags::CARRY, 0);
+        assert_ne!(cpu.state().status & flags::DECIMAL, 0);
+        assert_eq!(cpu.state().status & flags::OVERFLOW, 0);
+        assert_eq!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
+
+        for _ in 0..3 { cpu.step(&mut bus).unwrap(); }
+        assert_eq!(cpu.state().status & flags::CARRY, 0);
+        assert_eq!(cpu.state().status & flags::DECIMAL, 0);
+        assert_ne!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
+        cpu.step(&mut bus).unwrap(); // PLP restores the status captured by PHP.
+        assert_ne!(cpu.state().status & flags::CARRY, 0);
+        assert_ne!(cpu.state().status & flags::DECIMAL, 0);
+        assert_eq!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
+        assert_ne!(cpu.state().status & flags::UNUSED, 0);
+        assert_eq!(cpu.state().status & flags::BREAK, 0);
+    }
+
     #[test] fn unknown_opcode_is_explicit() {
         let (mut c, mut b) = setup(&[0x02]);
         assert_eq!(c.step(&mut b), Err(CpuError::UnsupportedOpcode { opcode: 2, pc: 0x0600 }));
