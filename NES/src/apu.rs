@@ -51,7 +51,7 @@ pub struct Apu {
 
 impl Apu {
     /// Creates an APU register model with all channels disabled.
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self { Self { dmc_bits_remaining: 8, ..Self::default() } }
 
     /// Writes a register in the $4000-$4017 range.
     ///
@@ -377,6 +377,7 @@ mod tests {
         for _ in 0..64 {
             let address = apu.take_dmc_dma_request().unwrap();
             apu.supply_dmc_byte(0);
+            apu.tick_cpu_cycles(8 * 54); // Let the output unit consume the byte before refilling.
             if address == 0xFFFF { break; }
         }
         assert_eq!(apu.take_dmc_dma_request(), Some(0x8000));
