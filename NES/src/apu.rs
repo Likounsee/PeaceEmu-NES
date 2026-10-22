@@ -611,4 +611,26 @@ mod tests {
         assert_eq!(apu.read(0x4014), 0);
         assert_eq!(apu.read(0x4016), 0);
     }
+    #[test]
+    fn enabling_frame_irq_inhibit_clears_an_already_pending_irq() {
+        let mut apu = Apu::new();
+        apu.write(0x4017, 0x00);
+        apu.tick_cpu_cycles(14_915);
+        assert!(apu.frame_irq_pending());
+        apu.write(0x4017, 0x40);
+        assert!(!apu.frame_irq_pending());
+        assert_eq!(apu.read(0x4015) & 0x40, 0);
+    }
+
+    #[test]
+    fn frame_counter_can_switch_between_four_and_five_step_modes() {
+        let mut apu = Apu::new();
+        apu.write(0x4017, 0x80);
+        apu.tick_cpu_cycles(18_641);
+        assert!(!apu.frame_irq_pending(), "five-step mode must not assert frame IRQ");
+        apu.write(0x4017, 0x00);
+        apu.tick_cpu_cycles(14_915);
+        assert!(apu.frame_irq_pending(), "four-step mode should resume frame IRQ generation");
+    }
+
 }
