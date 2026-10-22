@@ -361,11 +361,60 @@ impl Cpu {
                 self.set_flag(flags::INTERRUPT_DISABLE, true);
                 self.state.pc = self.read_word(bus, 0xFFFE); 7
             }
+            // Stable composite unofficial RMW instructions adapted to local CPU helpers.
+            _ if Self::is_unofficial_rmw(opcode) => self.unofficial_rmw(bus, opcode),
             _ => return Err(CpuError::UnsupportedOpcode { opcode, pc }),
         };
         self.state.status |= flags::UNUSED;
         self.cycles += cycles as u64;
         Ok(StepResult { pc, opcode, cycles })
+    }
+
+    fn is_unofficial_rmw(opcode: u8) -> bool {
+        matches!(opcode,
+            0x03 | 0x07 | 0x0F | 0x13 | 0x17 | 0x1B | 0x1F |
+            0x23 | 0x27 | 0x2F | 0x33 | 0x37 | 0x3B | 0x3F |
+            0x43 | 0x47 | 0x4F | 0x53 | 0x57 | 0x5B | 0x5F |
+            0x63 | 0x67 | 0x6F | 0x73 | 0x77 | 0x7B | 0x7F |
+            0xC3 | 0xC7 | 0xCF | 0xD3 | 0xD7 | 0xDB | 0xDF |
+            0xE3 | 0xE7 | 0xEF | 0xF3 | 0xF7 | 0xFB | 0xFF)
+    }
+
+    /// Executes stable unofficial read-modify-write opcodes with nominal instruction timing.
+    /// Dummy bus writes and per-cycle address glitches are not yet modeled.
+    fn unofficial_rmw(&mut self, bus: &mut CpuBus, opcode: u8) -> u8 {
+        // (operation, addressing mode, nominal cycles)
+        // Modes: (indirect,X), zero page, absolute, (indirect),Y, zero page,X,
+        // absolute,Y and absolute,X.
+        let (operation, mode, cycles) = match opcode {
+            0x03 => (0, 0, 8), 0x07 => (0, 1, 5), 0x0F => (0, 2, 6), 0x13 => (0, 3, 8), 0x17 => (0, 4, 6), 0x1B => (0, 5, 7), 0x1F => (0, 6, 7),
+            0x23 => (1, 0, 8), 0x27 => (1, 1, 5), 0x2F => (1, 2, 6), 0x33 => (1, 3, 8), 0x37 => (1, 4, 6), 0x3B => (1, 5, 7), 0x3F => (1, 6, 7),
+            0x43 => (2, 0, 8), 0x47 => (2, 1, 5), 0x4F => (2, 2, 6), 0x53 => (2, 3, 8), 0x57 => (2, 4, 6), 0x5B => (2, 5, 7), 0x5F => (2, 6, 7),
+            0x63 => (3, 0, 8), 0x67 => (3, 1, 5), 0x6F => (3, 2, 6), 0x73 => (3, 3, 8), 0x77 => (3, 4, 6), 0x7B => (3, 5, 7), 0x7F => (3, 6, 7),
+            0xC3 => (4, 0, 8), 0xC7 => (4, 1, 5), 0xCF => (4, 2, 6), 0xD3 => (4, 3, 8), 0xD7 => (4, 4, 6), 0xDB => (4, 5, 7), 0xDF => (4, 6, 7),
+            0xE3 => (5, 0, 8), 0xE7 => (5, 1, 5), 0xEF => (5, 2, 6), 0xF3 => (5, 3, 8), 0xF7 => (5, 4, 6), 0xFB => (5, 5, 7), 0xFF => (5, 6, 7),
+            _ => unreachable!("guarded by is_unofficial_rmw"),
+        };
+        let address = match mode {
+            0 => self.indirect_x(bus),
+            1 => self.fetch(bus) as u16,
+            2 => self.fetch_word(bus),
+            3 => self.indirect_y(bus).wrapping_add(self.state.y as u16),
+            4 => self.fetch(bus).wrapping_add(self.state.x) as u16,
+            5 => self.fetch_word(bus).wrapping_add(self.state.y as u16),
+            _ => self.fetch_word(bus).wrapping_add(self.state.x as u16),
+        };
+        let value = bus.read(address);
+        let modified = match operation {
+            0 => { let v = self.shift(value, 0); self.state.a |= v; self.set_nz(self.state.a); v } // SLO
+            1 => { let v = self.shift(value, 1); self.state.a &= v; self.set_nz(self.state.a); v } // RLA
+            2 => { let v = self.shift(value, 2); self.state.a ^= v; self.set_nz(self.state.a); v } // SRE
+            3 => { let v = self.shift(value, 3); self.adc(v); v } // RRA: ROR carry feeds ADC
+            4 => { let v = value.wrapping_sub(1); self.compare(self.state.a, v); v } // DCP
+            _ => { let v = value.wrapping_add(1); self.adc(!v); v } // ISC/ISB
+        };
+        bus.write(address, modified);
+        cycles
     }
 
     fn indirect_x(&mut self, bus: &mut CpuBus) -> u16 {
@@ -692,6 +741,54 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn unofficial_composite_rmw_families_update_memory_registers_and_flags() {
+        let (mut cpu, mut bus) = setup(&[
+            0x07, 0x10, // SLO $10
+            0x27, 0x11, // RLA $11
+            0x47, 0x12, // SRE $12
+            0x67, 0x13, // RRA $13
+            0xC7, 0x14, // DCP $14
+            0xE7, 0x15, // ISC $15
+        ]);
+        for (address, value) in [(0x10, 0x40), (0x11, 0x03), (0x12, 0x03), (0x13, 0x02), (0x14, 0x05), (0x15, 0x01)] {
+            bus.write(address, value);
+        }
+        cpu.state.a = 0x01;
+        cpu.state.status |= flags::CARRY;
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(bus.read(0x10), 0x80);
+        assert_eq!(cpu.state.a, 0x81); // SLO
+        assert_ne!(cpu.state.status & flags::NEGATIVE, 0);
+
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(bus.read(0x11), 0x06);
+        assert_eq!(cpu.state.a, 0x00); // RLA
+        assert_ne!(cpu.state.status & flags::ZERO, 0);
+
+        cpu.state.a = 0xFF;
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(bus.read(0x12), 0x01);
+        assert_eq!(cpu.state.a, 0xFE); // SRE
+
+        cpu.state.a = 0x10;
+        cpu.state.status &= !flags::CARRY;
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(bus.read(0x13), 0x01);
+        assert_eq!(cpu.state.a, 0x11); // RRA
+
+        cpu.state.a = 0x04;
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(bus.read(0x14), 0x04);
+        assert_ne!(cpu.state.status & flags::ZERO, 0); // DCP compares equal
+
+        cpu.state.a = 0x10;
+        cpu.state.status |= flags::CARRY;
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(bus.read(0x15), 0x02);
+        assert_eq!(cpu.state.a, 0x0E); // ISC: $10 - $02
+    }
+
     fn unofficial_immediate_anc_alr_arr_and_axs_update_expected_state() {
         // ANC #$80: A=$80, N and C set. ALR #$03: A=$01, C set.
         // ARR #$FF with C set rotates $01 to $80; reload A=$03 before testing AXS.
