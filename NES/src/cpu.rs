@@ -523,6 +523,31 @@ mod tests {
         assert_eq!(cpu.state().pc, 0x0601);
     }
 
+    #[test]
+    fn nmi_takes_priority_over_a_pending_apu_irq() {
+        use crate::cartridge::Nrom;
+        let (mut cpu, mut bus) = setup(&[0x58, 0xEA]); // CLI; NOP
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFA] = 0x00;
+        image[16 + 0x3FFB] = 0x90;
+        image[16 + 0x3FFE] = 0x00;
+        image[16 + 0x3FFF] = 0x70;
+        image[16 + 0x1000] = 0xEA;
+        bus.insert_cartridge(Nrom::parse(&image).unwrap());
+        cpu.step(&mut bus).unwrap(); // Clear I before either interrupt.
+        bus.tick_ppu(243 * 341 + 1);
+        bus.write(0x2000, 0x80);
+        bus.tick_apu(14_915);
+        assert!(bus.irq_pending());
+        let result = cpu.step(&mut bus).unwrap();
+        assert_eq!(result.cycles, 7);
+        assert_eq!(result.opcode, 0xFF, "NMI must win over maskable IRQ");
+        assert_eq!(cpu.state().pc, 0x9000);
+        assert!(bus.irq_pending(), "servicing NMI must not acknowledge the APU IRQ");
+    }
+
     #[test] fn unknown_opcode_is_explicit() {
         let (mut c, mut b) = setup(&[0x02]);
         assert_eq!(c.step(&mut b), Err(CpuError::UnsupportedOpcode { opcode: 2, pc: 0x0600 }));
