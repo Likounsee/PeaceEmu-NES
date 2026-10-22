@@ -42,7 +42,7 @@ Gère les registres vidéo, motifs, nametables, palettes, sprites, NMI et timing
 
 ### APU
 
-L'APU modélise les registres, les compteurs de longueur, les enveloppes pulse, le sweep, le compteur linéaire triangle, le séquenceur de frame à 4/5 étapes, un mixage mono approximatif et un premier DMC (buffer d'échantillon, unité delta 7 bits, bouclage et IRQ). L'IRQ frame est acquittée à la lecture de $4015 ; l'IRQ DMC reste active jusqu'à son acquittement documenté. Restent notamment le blocage/arbitrage DMA DMC cycle-exact, les filtres audio, le resampling à fréquence hôte et le délai de reset précis de $4017.
+L'APU modélise les registres, les compteurs de longueur, les enveloppes pulse, le sweep, le compteur linéaire triangle, le séquenceur de frame à 4/5 étapes et ses compteurs avancés cycle CPU par cycle CPU (indépendamment de la taille des lots), un mixage mono approximatif et un premier DMC (buffer d'échantillon, unité delta 7 bits, bouclage et IRQ). L'IRQ frame est acquittée à la lecture de $4015 ; l'IRQ DMC reste active jusqu'à son acquittement documenté. Restent notamment le blocage/arbitrage DMA DMC cycle-exact, les filtres audio, le resampling à fréquence hôte et le délai de reset précis de $4017.
 
 ### Contrôleurs
 
