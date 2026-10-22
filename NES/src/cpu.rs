@@ -199,7 +199,7 @@ impl Cpu {
             0x25 => { let a = self.fetch(bus) as u16; self.state.a &= bus.read(a); self.set_nz(self.state.a); 3 }
             0x2D => { let a = self.fetch_word(bus); self.state.a &= bus.read(a); self.set_nz(self.state.a); 4 }
             0x35 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; self.state.a &= bus.read(a); self.set_nz(self.state.a); 4 }
-            0x3D => { let a = self.fetch_word(bus).wrapping_add(self.state.x as u16); self.state.a &= bus.read(a); self.set_nz(self.state.a); 4 }
+            0x3D => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.state.a &= bus.read(a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0x39 => { let a = self.fetch_word(bus).wrapping_add(self.state.y as u16); self.state.a &= bus.read(a); self.set_nz(self.state.a); 4 }
             0x21 => { let a = self.indirect_x(bus); self.state.a &= bus.read(a); self.set_nz(self.state.a); 6 }
             0x31 => { let a = self.indirect_y(bus).wrapping_add(self.state.y as u16); self.state.a &= bus.read(a); self.set_nz(self.state.a); 5 }
@@ -219,6 +219,9 @@ impl Cpu {
             0x4D => { let a = self.fetch_word(bus); self.state.a ^= bus.read(a); self.set_nz(self.state.a); 4 }
             0x09 => { let v = self.fetch(bus); self.state.a |= v; self.set_nz(self.state.a); 2 }
             0x49 => { let v = self.fetch(bus); self.state.a ^= v; self.set_nz(self.state.a); 2 }
+            0xC1 => { let a = self.indirect_x(bus); self.compare(self.state.a, bus.read(a)); 6 }
+            0xC5 => { let a = self.fetch(bus) as u16; self.compare(self.state.a, bus.read(a)); 3 }
+            0xD1 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); self.compare(self.state.a, bus.read(a)); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0xC9 => { let v = self.fetch(bus); self.compare(self.state.a, v); 2 }
             0xE0 => { let v = self.fetch(bus); self.compare(self.state.x, v); 2 }
             0xC0 => { let v = self.fetch(bus); self.compare(self.state.y, v); 2 }
@@ -520,6 +523,44 @@ mod tests {
         b.write(0x21, 0x03);
         for _ in 0..6 { c.step(&mut b).unwrap(); }
         assert_eq!(c.state().a, 0x10);
+    }
+
+    #[test]
+    fn cmp_zero_page_and_indirect_y_update_flags_and_cycles() {
+        let (mut cpu, mut bus) = setup(&[
+            0xA9, 0x80,       // LDA #$80
+            0xC5, 0x20,       // CMP $20
+            0xA0, 0x01,       // LDY #1
+            0xD1, 0x30,       // CMP ($30),Y
+        ]);
+        bus.write(0x20, 0x80);
+        bus.write(0x30, 0xFF);
+        bus.write(0x31, 0x02);
+        bus.write(0x0300, 0x7F);
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 3);
+        assert_ne!(cpu.state().status & flags::ZERO, 0);
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 6);
+        assert_ne!(cpu.state().status & flags::CARRY, 0);
+        assert_eq!(cpu.state().a, 0x80);
+    }
+
+    #[test]
+    fn bit_sets_zero_negative_and_overflow_from_memory() {
+        let (mut cpu, mut bus) = setup(&[0xA9, 0x40, 0x24, 0x10, 0xA9, 0x00, 0x2C, 0x10, 0x02]);
+        bus.write(0x10, 0xC0);
+        bus.write(0x0210, 0x80);
+        cpu.step(&mut bus).unwrap();
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.state().status & flags::ZERO, 0);
+        assert_ne!(cpu.state().status & flags::NEGATIVE, 0);
+        assert_ne!(cpu.state().status & flags::OVERFLOW, 0);
+        cpu.step(&mut bus).unwrap();
+        cpu.step(&mut bus).unwrap();
+        assert_ne!(cpu.state().status & flags::ZERO, 0);
+        assert_ne!(cpu.state().status & flags::NEGATIVE, 0);
+        assert_eq!(cpu.state().status & flags::OVERFLOW, 0);
     }
 
     #[test] fn indirect_jmp_preserves_original_6502_page_wrap_bug() {
