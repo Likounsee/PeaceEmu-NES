@@ -361,7 +361,9 @@ mod tests {
         apu.write(0x4015, 0x10);
         apu.supply_dmc_byte(0xFF);
         let before = apu.sample();
-        apu.tick_cpu_cycles(8 * 54);
+        // The first eight timer clocks finish the current (silent) shift unit;
+        // the following eight clocks consume the newly loaded sample byte.
+        apu.tick_cpu_cycles(16 * 54);
         let after = apu.sample();
         assert!(after > before, "eight one-bits should raise the 7-bit DMC DAC");
         assert!(after <= 1.0);
@@ -370,16 +372,13 @@ mod tests {
     #[test]
     fn dmc_address_wraps_from_ffff_to_8000() {
         let mut apu = Apu::new();
-        apu.write(0x4012, 0xFF);
-        apu.write(0x4013, 0xFF);
-        apu.write(0x4015, 0x10);
-        // The DMC sample starts at $FFC0 and can continue across the top of memory.
-        for _ in 0..64 {
-            let address = apu.take_dmc_dma_request().unwrap();
-            apu.supply_dmc_byte(0);
-            apu.tick_cpu_cycles(8 * 54); // Let the output unit consume the byte before refilling.
-            if address == 0xFFFF { break; }
-        }
+        apu.dmc_current_address = 0xFFFF;
+        apu.dmc_bytes_remaining = 2;
+        apu.supply_dmc_byte(0);
+        assert_eq!(apu.dmc_current_address, 0x8000);
+        assert_eq!(apu.dmc_bytes_remaining, 1);
+        assert_eq!(apu.take_dmc_dma_request(), None);
+        apu.dmc_sample_buffer = None;
         assert_eq!(apu.take_dmc_dma_request(), Some(0x8000));
     }
 
