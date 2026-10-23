@@ -371,6 +371,7 @@ impl Ppu {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cartridge::Nrom;
 
     #[test]
     fn status_read_clears_vblank_and_write_toggle() {
