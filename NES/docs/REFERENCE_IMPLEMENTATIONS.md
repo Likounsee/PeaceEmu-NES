@@ -111,3 +111,11 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - Adaptation PeaceEmu : nouveau type Rust `Mmc3` dans le dispatch statique `Cartridge`. Les registres R0–R7 commandent les banques PRG/CHR ; les bits de mode inversent les fenêtres attendues ; les écritures $A001 protègent/désactivent la RAM ; $A000 règle le mirroring sauf pour le four-screen ; $C000/$C001 et $E000/$E001 contrôlent le compteur et l'acquittement IRQ.
 - Tests ajoutés : fenêtres PRG commutables/fixes, mode PRG inversé, banques CHR 1/2 Kio, CHR-RAM, protection de RAM, mirroring four-screen, chargement/activation/effacement IRQ.
 - Limites : l'horloge IRQ est pour l'instant approximée à un changement de scanline de la PPU ; le filtre matériel sur A12, le timing précis des fetchs PPU, les variantes MMC3A/B/C et NES 2.0 restent à implémenter. Le comportement est adapté aux interfaces PeaceEmu ; aucun code source tiers n'a été copié.
+
+
+## Correction de synchronisation PPU/MMC3
+
+- La PPU renvoie maintenant le nombre de frontières de scanline traversées par chaque lot de dots, y compris le passage de fin de frame et le saut de pré-rendu des frames impaires.
+- `NesMachine::step` transmet chaque frontière au compteur IRQ MMC3. Avant cette correction, un seul appel CPU avançant plusieurs scanlines (notamment une pause DMA OAM) ne déclenchait qu'une seule clock IRQ.
+- Tests locaux couvrent le comptage multi-scanline, le retour de frame et le saut de dot NTSC impair.
+- Limite restante explicitement conservée : l'IRQ MMC3 est encore approximée par frontière de scanline, pas par fronts PPU A12 filtrés. Cette tranche corrige la perte de frontières sans prétendre rendre le pipeline PPU cycle-exact.
