@@ -1,4 +1,4 @@
-//! Small top-level NES machine wrapper for loading and stepping NROM programs.
+//! Small top-level NES machine wrapper for loading and stepping cartridge programs.
 
 use crate::bus::CpuBus;
 use crate::cartridge::{Cartridge, CartridgeError};
@@ -36,7 +36,7 @@ impl From<CpuError> for MachineError {
     fn from(value: CpuError) -> Self { Self::Cpu(value) }
 }
 
-/// CPU plus the current minimal bus and an NROM cartridge.
+/// CPU plus the current minimal bus and a mapper-selected cartridge.
 ///
 /// The wrapper supports instruction stepping, PPU register access, snapshot frame
 /// rendering and controller input, but is not yet a playable emulator: audio and precise
