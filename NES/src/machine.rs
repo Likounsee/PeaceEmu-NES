@@ -76,6 +76,18 @@ impl NesMachine {
     /// Returns the most recently rendered 256x240 background as 6-bit NES palette indices.
     pub fn framebuffer(&self) -> &[u8] { self.bus.framebuffer() }
 
+    /// Converts the indexed framebuffer to RGBA8 using a frontend-provided 64-color palette.
+    ///
+    /// Supplying the palette keeps regional/host palette choices outside the emulation core.
+    /// The returned buffer is tightly packed as R, G, B, A bytes for each of 256x240 pixels.
+    pub fn framebuffer_rgba(&self, palette: &[[u8; 4]; 64]) -> Vec<u8> {
+        let mut rgba = Vec::with_capacity(self.bus.framebuffer().len() * 4);
+        for &index in self.bus.framebuffer() {
+            rgba.extend_from_slice(&palette[(index & 0x3F) as usize]);
+        }
+        rgba
+    }
+
     /// Returns a snapshot of the CPU registers and flags.
     pub fn cpu_state(&self) -> CpuState { self.cpu.state() }
 
@@ -424,6 +436,11 @@ mod tests {
         assert_eq!(frame[0], 0x21, "tile pattern and palette must reach the output image");
         assert_eq!(frame[8 * 256 + 8], 0x21, "the rendered tile grid must fill the image");
         assert!(frame.iter().any(|&pixel| pixel != 0x0F), "framebuffer must not remain the blank backdrop");
+        let mut palette = [[0, 0, 0, 255]; 64];
+        palette[0x21] = [12, 34, 56, 255];
+        let rgba = machine.framebuffer_rgba(&palette);
+        assert_eq!(rgba.len(), 256 * 240 * 4);
+        assert_eq!(&rgba[0..4], &[12, 34, 56, 255]);
     }
 
     #[test]
