@@ -6,6 +6,11 @@
 //! DMC fetches are supplied by the bus without cycle-accurate DMA stalls. Exact regional
 //! timing and host-rate resampling remain incomplete.
 
+use std::collections::VecDeque;
+
+const CPU_CLOCK_HZ: u64 = 1_789_773;
+const AUDIO_QUEUE_LIMIT: usize = 8_192;
+
 const LENGTH_TABLE: [u8; 32] = [
     10, 254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
     12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
