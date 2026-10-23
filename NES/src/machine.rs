@@ -156,7 +156,7 @@ impl NesMachine {
     /// On a freshly reset machine, the initial pre-render-to-visible transition is skipped
     /// so this method advances a full frame instead of returning after startup scanline 261.
     /// Returns nominal CPU cycles consumed; instruction granularity means the boundary may
-    /// be crossed by a few dots. The current snapshot renderer runs once at the boundary.
+    /// be crossed by a few dots. Visible scanlines are rendered as the PPU advances.
     pub fn step_frame(&mut self) -> Result<u32, MachineError> {
         let start_cycles = self.cpu.total_cycles();
         let (start_scanline, _) = self.bus.ppu_position();
