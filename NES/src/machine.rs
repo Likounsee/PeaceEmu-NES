@@ -14,6 +14,10 @@ pub enum MachineError {
     Cpu(CpuError),
     /// A frame could not be reached within the safety instruction budget.
     FrameTimeout,
+    /// The loaded cartridge does not declare battery-backed save RAM.
+    NoBatteryRam,
+    /// Save RAM payload does not match the cartridge's exact RAM size.
+    InvalidSaveRamLength { expected: usize, actual: usize },
 }
 
 impl fmt::Display for MachineError {
@@ -22,6 +26,8 @@ impl fmt::Display for MachineError {
             Self::Cartridge(error) => write!(f, "invalid NES cartridge: {error}"),
             Self::Cpu(error) => write!(f, "NES CPU error: {error}"),
             Self::FrameTimeout => write!(f, "NES frame step exceeded its instruction budget"),
+            Self::NoBatteryRam => write!(f, "NES cartridge does not declare battery-backed RAM"),
+            Self::InvalidSaveRamLength { expected, actual } => write!(f, "invalid NES save RAM length: expected {expected} bytes, got {actual}"),
         }
     }
 }
@@ -45,17 +51,19 @@ impl From<CpuError> for MachineError {
 pub struct NesMachine {
     cpu: Cpu,
     bus: CpuBus,
+    battery_backed: bool,
 }
 
 impl NesMachine {
     /// Parses an iNES image, attaches its mapper-selected cartridge, and performs CPU reset.
     pub fn from_ines(image: &[u8]) -> Result<Self, MachineError> {
         let cartridge = Cartridge::parse(image)?;
+        let battery_backed = image.get(6).is_some_and(|flags| flags & 0x02 != 0);
         let mut bus = CpuBus::new();
         bus.insert_cartridge(cartridge);
         let mut cpu = Cpu::new();
         cpu.reset(&mut bus);
-        Ok(Self { cpu, bus })
+        Ok(Self { cpu, bus, battery_backed })
     }
 
     /// Updates controller 1 or 2 button state.
@@ -96,6 +104,31 @@ impl NesMachine {
 
     /// Returns one approximate normalized mono audio sample (0.0..1.0).
     pub fn audio_sample(&self) -> f32 { self.bus.apu_sample() }
+
+    /// Returns whether the loaded iNES image declares battery-backed save RAM.
+    pub fn has_battery_backed_ram(&self) -> bool { self.battery_backed }
+
+    /// Copies battery-backed PRG-RAM for persistence by the frontend.
+    ///
+    /// The returned payload is the raw RAM region, not a full emulator save state.
+    pub fn save_battery_ram(&self) -> Result<Vec<u8>, MachineError> {
+        if !self.battery_backed { return Err(MachineError::NoBatteryRam); }
+        self.bus.cartridge_prg_ram_snapshot().ok_or(MachineError::NoBatteryRam)
+    }
+
+    /// Restores battery-backed PRG-RAM after validating its entire payload.
+    pub fn load_battery_ram(&mut self, data: &[u8]) -> Result<(), MachineError> {
+        if !self.battery_backed { return Err(MachineError::NoBatteryRam); }
+        let expected = self.bus.cartridge_prg_ram_snapshot()
+            .ok_or(MachineError::NoBatteryRam)?.len();
+        if data.len() != expected {
+            return Err(MachineError::InvalidSaveRamLength { expected, actual: data.len() });
+        }
+        if !self.bus.restore_cartridge_prg_ram(data) {
+            return Err(MachineError::InvalidSaveRamLength { expected, actual: data.len() });
+        }
+        Ok(())
+    }
 
     /// Executes instructions until the next complete PPU frame boundary.
     ///
