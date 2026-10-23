@@ -47,11 +47,44 @@ pub struct Apu {
     dmc_silence: bool,
     dmc_timer_counter: u16,
     dmc_output_level: u8,
+    sample_rate: u32,
+    sample_phase: u64,
+    audio_samples: VecDeque<f32>,
 }
 
 impl Apu {
     /// Creates an APU register model with all channels disabled.
-    pub fn new() -> Self { Self { dmc_bits_remaining: 8, dmc_silence: true, ..Self::default() } }
+    pub fn new() -> Self {
+        Self {
+            dmc_bits_remaining: 8,
+            dmc_silence: true,
+            sample_rate: 44_100,
+            audio_samples: VecDeque::with_capacity(AUDIO_QUEUE_LIMIT),
+            ..Self::default()
+        }
+    }
+
+    /// Configures the PCM output rate; accepted rates are 8 kHz through 192 kHz.
+    ///
+    /// Changing the rate resets the fractional resampling phase and discards queued
+    /// samples so the next batch has one consistent rate.
+    pub fn set_sample_rate(&mut self, sample_rate: u32) -> bool {
+        if !(8_000..=192_000).contains(&sample_rate) {
+            return false;
+        }
+        self.sample_rate = sample_rate;
+        self.sample_phase = 0;
+        self.audio_samples.clear();
+        true
+    }
+
+    /// Returns the configured PCM output sample rate in samples per second.
+    pub fn sample_rate(&self) -> u32 { self.sample_rate }
+
+    /// Removes and returns all queued mono PCM samples in playback order.
+    pub fn drain_audio_samples(&mut self) -> Vec<f32> {
+        self.audio_samples.drain(..).collect()
+    }
 
     /// Writes a register in the $4000-$4017 range.
     ///
@@ -236,6 +269,17 @@ impl Apu {
                 }
             }
 
+            // Resample the running hardware mixer against the configured host PCM rate.
+            // The bounded queue prevents a frontend that temporarily stops consuming
+            // audio from allowing unbounded memory growth.
+            self.sample_phase += u64::from(self.sample_rate);
+            if self.sample_phase >= CPU_CLOCK_HZ {
+                self.sample_phase -= CPU_CLOCK_HZ;
+                if self.audio_samples.len() == AUDIO_QUEUE_LIMIT {
+                    self.audio_samples.pop_front();
+                }
+                self.audio_samples.push_back(self.sample());
+            }
         }
     }
 
@@ -687,4 +731,47 @@ mod tests {
         assert!(apu.frame_irq_pending(), "four-step mode should resume frame IRQ generation");
     }
 
+}
+
+
+#[cfg(test)]
+mod pcm_output_tests {
+    use super::*;
+
+    #[test]
+    fn pcm_resampling_produces_expected_frame_sized_batches() {
+        let mut apu = Apu::new();
+        assert_eq!(apu.sample_rate(), 44_100);
+        apu.tick_cpu_cycles(29_781);
+        let samples = apu.drain_audio_samples();
+        assert!((733..=735).contains(&samples.len()), "unexpected sample count: {}", samples.len());
+        assert!(samples.iter().all(|sample| sample.is_finite() && (0.0..=1.0).contains(sample)));
+        assert!(apu.drain_audio_samples().is_empty());
+    }
+
+    #[test]
+    fn pcm_resampling_is_independent_of_cycle_batching() {
+        let mut whole = Apu::new();
+        let mut chunked = Apu::new();
+        for apu in [&mut whole, &mut chunked] {
+            apu.write(0x4015, 0x01);
+            apu.write(0x4000, 0xDF);
+            apu.write(0x4002, 0x30);
+            apu.write(0x4003, 0xF8);
+        }
+        whole.tick_cpu_cycles(50_000);
+        for _ in 0..50 { chunked.tick_cpu_cycles(1_000); }
+        assert_eq!(whole.drain_audio_samples(), chunked.drain_audio_samples());
+    }
+
+    #[test]
+    fn pcm_rate_validation_and_queue_bound_are_safe() {
+        let mut apu = Apu::new();
+        assert!(!apu.set_sample_rate(0));
+        assert!(!apu.set_sample_rate(500_000));
+        assert!(apu.set_sample_rate(48_000));
+        apu.tick_cpu_cycles(1_789_773);
+        let samples = apu.drain_audio_samples();
+        assert_eq!(samples.len(), AUDIO_QUEUE_LIMIT);
+    }
 }
