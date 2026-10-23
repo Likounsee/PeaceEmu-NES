@@ -159,7 +159,7 @@ mod tests {
     fn machine_loads_uxrom_and_switches_prg_bank_through_cpu_bus() {
         const BANK_LEN: usize = 16 * 1024;
         let mut image = vec![0; 16 + 3 * BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 3;
         image[6] = 0x20; // Mapper 2 (UxROM).
         for bank in 0..3 {
