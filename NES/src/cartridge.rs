@@ -61,8 +61,8 @@ impl fmt::Display for CartridgeError {
             Self::InvalidMagic => f.write_str("cartridge image has an invalid iNES signature"),
             Self::Nes2NotSupported => f.write_str("NES 2.0 cartridge headers are not supported yet"),
             Self::UnsupportedMapper(m) => write!(f, "unsupported cartridge mapper: {m}"),
-            Self::InvalidPrgSize(n) => write!(f, "invalid NROM PRG-ROM size: {n} bytes"),
-            Self::InvalidChrSize(n) => write!(f, "invalid NROM CHR-ROM size: {n} bytes"),
+            Self::InvalidPrgSize(n) => write!(f, "invalid PRG-ROM size for selected mapper: {n} bytes"),
+            Self::InvalidChrSize(n) => write!(f, "invalid CHR-ROM size for selected mapper: {n} bytes"),
             Self::TruncatedImage { expected, actual } => write!(f, "truncated cartridge image: expected at least {expected} bytes, got {actual}"),
         }
     }
