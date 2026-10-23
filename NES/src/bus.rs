@@ -132,6 +132,26 @@ impl CpuBus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mmc3_mapper_irq_is_visible_on_the_cpu_irq_line() {
+        let mut image = vec![0; 16 + 2 * 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 2;
+        image[5] = 1;
+        image[6] = 0x40; // Mapper 4.
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0xC000, 0); // IRQ latch = 0.
+        bus.write(0xC001, 0); // Request reload.
+        bus.write(0xE001, 0); // Enable mapper IRQ.
+        assert!(!bus.irq_pending());
+        bus.clock_mapper_irq();
+        assert!(bus.irq_pending());
+        bus.write(0xE000, 0); // Disable and acknowledge.
+        assert!(!bus.irq_pending());
+    }
+
     #[test] fn ram_is_mirrored_every_0x800_bytes() {
         let mut b = CpuBus::new(); b.write(2, 0x5A);
         for a in [0x0002, 0x0802, 0x1002, 0x1802] { assert_eq!(b.read(a), 0x5A); }
