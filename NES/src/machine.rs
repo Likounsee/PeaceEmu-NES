@@ -49,9 +49,9 @@ impl From<CpuError> for MachineError {
 
 /// CPU plus the current minimal bus and a mapper-selected cartridge.
 ///
-/// The wrapper supports instruction stepping, PPU register access, snapshot frame
-/// rendering and controller input, but is not yet a playable emulator: audio and precise
-/// timing remain incomplete.
+/// The wrapper supports instruction stepping, frame execution, snapshot rendering, controller
+/// input, and queued PCM output. The PPU renderer and hardware timing remain approximate,
+/// so commercial-game compatibility is not yet established.
 #[derive(Debug)]
 pub struct NesMachine {
     cpu: Cpu,
