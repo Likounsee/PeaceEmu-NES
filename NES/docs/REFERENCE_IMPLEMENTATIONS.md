@@ -127,3 +127,11 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - La compatibilité de licence est vérifiée avant tout port de code. Les spécifications NESdev et les ROM de diagnostic dont la licence autorise l'usage restent les sources de vérité privilégiées ; une sortie d'émulateur peut servir d'oracle comparatif sans réutiliser son implémentation.
 - Le CPU local reconnaît désormais aussi LAS (`$BB`) : il charge A, X et le pointeur de pile depuis la valeur mémoire ET le pointeur de pile, avec pénalité de franchissement de page en mode absolu,Y. Le test couvre les deux cas, avec et sans changement de page.
 - Cette amélioration complète le groupe déjà présent d'opcodes non officiels stables (LAX/SAX et opérations composites), sans prétendre couvrir les opcodes instables ni rendre l'exécution cycle-exacte.
+
+
+## Dixième adaptation réalisée : Camerica (mapper 71)
+
+- Référence de comportement : documentation NESdev du mapper 71/Camerica et comparaison de la structure PRG avec le mapper UxROM déjà présent. Les références externes servent à vérifier les fenêtres mémoire et les cas limites ; aucun code source d'émulateur n'a été importé.
+- Adaptation locale : `Camerica` fournit une banque PRG de 16 Kio commutable dans $8000-$BFFF, une dernière banque fixe dans $C000-$FFFF, 8 Kio de CHR-RAM, PRG-RAM et la sélection one-screen sur les écritures de la zone $9000. Le chargement reste limité aux images iNES legacy, 2 à 16 banques PRG et CHR-RAM.
+- Tests : banque basse/fixe, bornes CPU, mirroring vertical initial et one-screen supérieur, lecture/écriture CHR-RAM, et rejet des tailles PRG/CHR non prises en charge.
+- Limites : les variantes de cartes Camerica et leurs décodages précis ne sont pas toutes modélisées ; le test valide notre sous-ensemble documenté, pas une compatibilité commerciale exhaustive.
