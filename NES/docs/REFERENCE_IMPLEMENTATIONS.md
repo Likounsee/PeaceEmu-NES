@@ -169,3 +169,11 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - Vérifications : tests dédiés aux deux formes AHX, au changement de SP par TAS, aux masques de données et au cas de franchissement de page. CI verte sur le commit `76521b9`.
 - Limite importante : les instructions dites instables dépendent de détails électriques du processeur et peuvent avoir des comportements moins uniformes selon les cas. Ce modèle vise les comportements documentés courants ; il ne constitue pas une exécution bus-cycle-exacte du 2A03.
 - Méthode : conserver le dispatch et les helpers de PeaceEmu, comparer les résultats aux tableaux matériels, puis verrouiller les cas connus avec des tests. Pas de dépendance d'émulateur ajoutée et pas de code tiers copié.
+
+
+## Quinzième adaptation réalisée : MMC2 (mapper 9)
+
+- Références de comportement : [NESdev — MMC2](https://www.nesdev.org/wiki/MMC2) et les règles de disposition PRG/CHR des cartouches iNES, comparées aux interfaces de commutation déjà implémentées dans PeaceEmu-NES.
+- Adaptation locale : une fenêtre PRG de 8 Kio sélectionnable en $8000-$9FFF et trois fenêtres fixes en $A000-$FFFF ; quatre registres CHR de 4 Kio commandés par deux latches FD/FE ; mirroring horizontal/vertical commutable, tout en préservant le four-screen déclaré dans l'en-tête. Les transitions de latch sont suivies avec `Cell` dans la lecture CHR afin de conserver la signature de lecture utilisée par le rendu PPU existant.
+- Tests : banques PRG sélectionnables/fixes, changement des deux latches par accès aux adresses de déclenchement, mirroring et protection four-screen, refus de PRG trop petit ou de CHR-ROM absente, et dispatch à travers `Cartridge`.
+- Limites : mapper MMC2 uniquement sur iNES legacy avec CHR-ROM ; NES 2.0, variantes matérielles et timing PPU par dot restent hors périmètre. Les références existantes ont guidé le comportement ; aucun fichier source d'émulateur n'a été copié.
