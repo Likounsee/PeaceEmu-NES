@@ -403,7 +403,10 @@ impl Axrom {
         match address {
             0x6000..=0x7FFF => { self.prg_ram[address as usize - 0x6000] = value; true }
             0x8000..=0xFFFF => {
-                self.selected_prg_bank = (value & 0x07) as usize;
+                // Keep the selected window inside the ROM image. Smaller legacy
+                // AxROM images can expose fewer than eight 32 KiB banks.
+                let bank_count = self.prg_rom.len() / (2 * PRG_BANK_LEN);
+                self.selected_prg_bank = (value & 0x07) as usize % bank_count;
                 self.upper_nametable = value & 0x10 != 0;
                 true
             }
@@ -516,6 +519,19 @@ mod axrom_tests {
         assert_eq!(cartridge.mirroring(), Mirroring::OneScreenUpper);
         assert!(cartridge.ppu_write(0x1FFF, 0xA5));
         assert_eq!(cartridge.ppu_read(0x1FFF), Some(0xA5));
+    }
+
+    #[test]
+    fn mapper_seven_masks_bank_register_to_available_rom_banks() {
+        let mut one_bank = Cartridge::parse(&axrom_image(2, 0)).unwrap();
+        assert!(one_bank.cpu_write(0x8000, 0x07));
+        assert_eq!(one_bank.cpu_read(0x8000), Some(0x40));
+        assert_eq!(one_bank.cpu_read(0xFFFF), Some(0x40));
+
+        let mut two_banks = Cartridge::parse(&axrom_image(4, 0)).unwrap();
+        assert!(two_banks.cpu_write(0x8000, 0x07));
+        assert_eq!(two_banks.cpu_read(0x8000), Some(0x41));
+        assert_eq!(two_banks.cpu_read(0xFFFF), Some(0x41));
     }
 
     #[test]
