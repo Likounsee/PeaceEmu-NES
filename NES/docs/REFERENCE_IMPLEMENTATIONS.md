@@ -152,3 +152,11 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - Tests : commutation de toute la fenêtre PRG, mirroring, accès aux deux extrémités CHR-RAM et rejet des tailles PRG/CHR non prises en charge.
 - Limite importante : le mapper 34 peut aussi désigner des cartes NINA-001 selon l'image et le sous-mapper. Cette implémentation ne prétend prendre en charge que BNROM ; NINA-001 n'est pas traité.
 - Aucun code source d'émulateur externe n'a été copié ; l'implémentation est écrite selon les conventions du crate PeaceEmu-NES.
+
+
+## Treizième adaptation réalisée : CPROM (mapper 13)
+
+- Référence de comportement : documentation matérielle publique NESdev sur les cartes CPROM/mapper 13, comparée à la gestion locale des banques CHR de CNROM et Color Dreams.
+- Adaptation « recette maison » : 32 Kio de PRG-ROM fixes, 16 Kio de CHR-RAM séparés en une zone basse fixe de 4 Kio et quatre banques commutables de 4 Kio dans la zone haute. Une écriture CPU dans $8000-$FFFF sélectionne la banque haute ; PRG-RAM, trainer et mirroring iNES suivent les conventions du crate.
+- Tests : PRG fixe sur les deux fenêtres, isolation et persistance des quatre banques CHR hautes, zone basse fixe, refus de CHR-ROM et de tailles PRG autres que 32 Kio.
+- Limites : uniquement l'organisation CPROM legacy iNES décrite ici ; NES 2.0 et variantes de cartes restent non pris en charge. Aucun code source d'un émulateur tiers n'a été copié ; les règles matérielles ont été réimplémentées dans l'enum de dispatch PeaceEmu.
