@@ -119,3 +119,11 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - `NesMachine::step` transmet chaque frontière au compteur IRQ MMC3. Avant cette correction, un seul appel CPU avançant plusieurs scanlines (notamment une pause DMA OAM) ne déclenchait qu'une seule clock IRQ.
 - Tests locaux couvrent le comptage multi-scanline, le retour de frame et le saut de dot NTSC impair.
 - Limite restante explicitement conservée : l'IRQ MMC3 est encore approximée par frontière de scanline, pas par fronts PPU A12 filtrés. Cette tranche corrige la perte de frontières sans prétendre rendre le pipeline PPU cycle-exact.
+
+
+## Politique de réutilisation et opcodes CPU supplémentaires
+
+- Les émulateurs Rust existants servent à identifier les comportements et les cas limites. RustyNES (`GPL-3.0-or-later`) et nesium (`GPL-3.0`) sont des références utiles pour leur architecture et leur stratégie de tests, mais leurs fichiers source ne sont pas copiés dans ce cœur.
+- La compatibilité de licence est vérifiée avant tout port de code. Les spécifications NESdev et les ROM de diagnostic dont la licence autorise l'usage restent les sources de vérité privilégiées ; une sortie d'émulateur peut servir d'oracle comparatif sans réutiliser son implémentation.
+- Le CPU local reconnaît désormais aussi LAS (`$BB`) : il charge A, X et le pointeur de pile depuis la valeur mémoire ET le pointeur de pile, avec pénalité de franchissement de page en mode absolu,Y. Le test couvre les deux cas, avec et sans changement de page.
+- Cette amélioration complète le groupe déjà présent d'opcodes non officiels stables (LAX/SAX et opérations composites), sans prétendre couvrir les opcodes instables ni rendre l'exécution cycle-exacte.
