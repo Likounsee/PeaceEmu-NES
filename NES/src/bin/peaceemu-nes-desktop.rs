@@ -379,6 +379,7 @@ mod win {
         let mut pixels = vec![0u8; 256 * 240 * 4];
         let frame_time = Duration::from_micros(16_639);
         let mut next_frame = Instant::now();
+        let mut last_save = Instant::now();
         let mut running = true;
         let mut runtime_error = None;
         while running {
@@ -421,6 +422,21 @@ mod win {
                         StretchDIBits(dc, 0, 0, client.right, client.bottom, 0, 0, 256, 240,
                             pixels.as_ptr().cast(), &bitmap, DIB_RGB_COLORS, SRCCOPY);
                         ReleaseDC(hwnd, dc);
+                    }
+                }
+            }
+            if machine.has_battery_backed_ram() && last_save.elapsed() >= Duration::from_secs(5) {
+                match machine.save_battery_ram() {
+                    Ok(save) => {
+                        if let Err(error) = fs::write(&save_path, save) {
+                            runtime_error = Some(format!("cannot autosave battery RAM: {error}"));
+                            break;
+                        }
+                        last_save = Instant::now();
+                    }
+                    Err(error) => {
+                        runtime_error = Some(format!("cannot autosave battery RAM: {error}"));
+                        break;
                     }
                 }
             }
