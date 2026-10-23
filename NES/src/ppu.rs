@@ -25,6 +25,9 @@ pub struct Ppu {
     scanline: u16,
     dot: u16,
     odd_frame: bool,
+    frame_scroll_v: u16,
+    frame_fine_x: u8,
+    frame_scroll_valid: bool,
     nmi_pending: bool,
     nmi_line: bool,
     /// Completed 256x240 background image, stored as 6-bit NES palette indices.
@@ -38,7 +41,8 @@ impl Default for Ppu {
             ctrl: 0, mask: 0, status: 0, oam_addr: 0, oam: [0; 256],
             nametables: [0; 4096], palette: [0; 32], v: 0, t: 0,
             fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
-            scanline: 261, dot: 0, odd_frame: false, nmi_pending: false, nmi_line: false,
+            scanline: 261, dot: 0, odd_frame: false, frame_scroll_v: 0, frame_fine_x: 0,
+            frame_scroll_valid: false, nmi_pending: false, nmi_line: false,
             framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
         }
     }
@@ -136,6 +140,14 @@ impl Ppu {
                 if self.scanline == 261 && (280..=304).contains(&self.dot) {
                     self.v = (self.v & !0x7BE0) | (self.t & 0x7BE0);
                 }
+                // Latch the scroll address established for the upcoming visible frame.
+                // The snapshot renderer runs at frame end, after live v has advanced
+                // through hundreds of coarse-X/fine-Y increments.
+                if self.scanline == 261 && self.dot == 304 {
+                    self.frame_scroll_v = self.v;
+                    self.frame_fine_x = self.fine_x;
+                    self.frame_scroll_valid = true;
+                }
             }
 
             if self.scanline == 241 && self.dot == 1 {
@@ -168,11 +180,15 @@ impl Ppu {
         let rendering_enabled = self.mask & 0x08 != 0;
         let show_left = self.mask & 0x02 != 0;
         let pattern_base = if self.ctrl & 0x10 != 0 { 0x1000 } else { 0x0000 };
-        let base_nt_x = ((self.v >> 10) & 1) as usize;
-        let base_nt_y = ((self.v >> 11) & 1) as usize;
-        let base_coarse_x = (self.v & 0x1F) as usize;
-        let base_coarse_y = ((self.v >> 5) & 0x1F) as usize;
-        let fine_y = ((self.v >> 12) & 7) as usize;
+        // Direct/manual snapshots before the first pre-render latch use live registers;
+        // normal frame rendering uses the captured start scroll rather than end-of-frame v.
+        let scroll_v = if self.frame_scroll_valid { self.frame_scroll_v } else { self.v };
+        let scroll_fine_x = if self.frame_scroll_valid { self.frame_fine_x } else { self.fine_x };
+        let base_nt_x = ((scroll_v >> 10) & 1) as usize;
+        let base_nt_y = ((scroll_v >> 11) & 1) as usize;
+        let base_coarse_x = (scroll_v & 0x1F) as usize;
+        let base_coarse_y = ((scroll_v >> 5) & 0x1F) as usize;
+        let fine_y = ((scroll_v >> 12) & 7) as usize;
 
         for y in 0..HEIGHT {
             // Vertical scroll is constant across a scanline; compute its wrapped
@@ -187,7 +203,7 @@ impl Ppu {
                     self.background_opaque[output] = false;
                     continue;
                 }
-                let scroll_x = base_coarse_x * 8 + (self.fine_x as usize) + x;
+                let scroll_x = base_coarse_x * 8 + (scroll_fine_x as usize) + x;
                 let tile_x = scroll_x / 8;
                 let nt_x = base_nt_x ^ ((tile_x / 32) & 1);
                 let nametable = 0x2000u16 + ((nt_y * 2 + nt_x) as u16) * 0x400;
@@ -469,6 +485,26 @@ mod tests {
         assert_eq!(ppu.cpu_read_register(7, None), 0);
         assert_eq!(ppu.cpu_read_register(7, None), 0xA7);
         assert_eq!(ppu.v & 0x3FFF, 0x2040);
+    }
+
+    #[test]
+    fn frame_renderer_latches_start_scroll_before_live_address_advances() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x08;
+        ppu.t = 0x7BE0 | 0x041F;
+        ppu.fine_x = 5;
+        // Reach pre-render dot 304, where horizontal and vertical scroll have transferred.
+        ppu.tick(304);
+        assert!(ppu.frame_scroll_valid);
+        assert_eq!(ppu.frame_scroll_v, 0x7FFF);
+        assert_eq!(ppu.frame_fine_x, 5);
+
+        // Later scroll changes must not move a frame snapshot back to end-of-frame v.
+        ppu.v = 0x0123;
+        ppu.fine_x = 1;
+        ppu.render_background(None);
+        assert_eq!(ppu.frame_scroll_v, 0x7FFF);
+        assert_eq!(ppu.frame_fine_x, 5);
     }
 
     #[test]
