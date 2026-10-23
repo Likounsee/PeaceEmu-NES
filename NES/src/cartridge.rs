@@ -2301,6 +2301,11 @@ mod unrom512_tests {
         assert_eq!(c.cpu_read(0xBFFF), Some(7));
         assert_eq!(c.cpu_read(0xC000), Some(15));
         assert_eq!(c.cpu_read(0xFFFF), Some(15));
+
+        let mut full = Cartridge::parse(&image(32, 0)).unwrap();
+        full.cpu_write(0x8000, 0x1F);
+        assert_eq!(full.cpu_read(0x8000), Some(31), "bit 4 selects the upper PRG bank range");
+        assert_eq!(full.cpu_read(0xC000), Some(31), "the final bank remains hardwired");
     }
 
     #[test]
