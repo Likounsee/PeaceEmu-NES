@@ -295,11 +295,14 @@ impl Mmc1 {
             _ => Mirroring::Horizontal,
         }
     }
+    /// Returns true when this cartridge uses writable CHR-RAM.
     pub fn chr_is_ram(&self) -> bool { self.chr_is_ram }
+    /// Reads the selected 4-KiB CHR bank from the PPU pattern address space.
     pub fn ppu_read(&self, address: u16) -> Option<u8> {
         if address >= 0x2000 { return None; }
         Some(self.chr[self.chr_index(address)])
     }
+    /// Writes pattern memory when the cartridge uses CHR-RAM.
     pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
         if address >= 0x2000 || !self.chr_is_ram { return false; }
         let index = self.chr_index(address);
