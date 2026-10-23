@@ -184,6 +184,18 @@ impl NesMachine {
         }
     }
 
+    /// Executes several complete frames for frontend loops and returns total CPU cycles.
+    ///
+    /// Each frame is rendered before continuing. A zero frame count is a no-op; if a
+    /// later frame fails, earlier frames remain executed and the error is returned.
+    pub fn run_frames(&mut self, frames: usize) -> Result<u64, MachineError> {
+        let mut total_cycles = 0u64;
+        for _ in 0..frames {
+            total_cycles = total_cycles.saturating_add(u64::from(self.step_frame()?));
+        }
+        Ok(total_cycles)
+    }
+
     /// Executes one CPU instruction and services any OAM DMA it requests.
     pub fn step(&mut self) -> Result<StepResult, MachineError> {
         let result = self.cpu.step(&mut self.bus)?;
@@ -380,6 +392,19 @@ mod tests {
         assert_eq!(machine.total_cycles() - before, u64::from(elapsed));
         assert_eq!(machine.framebuffer().len(), 256 * 240);
         assert_eq!(machine.framebuffer()[0], 0);
+    }
+
+    #[test]
+    fn run_frames_batches_rendered_frames_and_reports_total_cycles() {
+        let image = nrom_with_program(&[0xEA, 0x4C, 0x00, 0x80]);
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        let before = machine.total_cycles();
+        assert_eq!(machine.run_frames(0).unwrap(), 0);
+        let elapsed = machine.run_frames(3).unwrap();
+        assert!(elapsed > 89_000 && elapsed < 93_000, "three NTSC frames should take about 89.4k cycles");
+        assert_eq!(machine.total_cycles() - before, elapsed);
+        assert_eq!(machine.framebuffer().len(), 256 * 240);
+        assert!(machine.drain_audio_samples().len() > 2_000);
     }
 
     #[test]
