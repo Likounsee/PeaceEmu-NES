@@ -1284,6 +1284,22 @@ mod tests {
     }
 
     #[test]
+    fn indexed_inc_performs_dummy_read_before_target_access() {
+        let (mut cpu, mut bus) = setup(&[
+            0xA2, 0x17,             // LDX #$17
+            0xFE, 0xFF, 0x40,       // INC $40FF,X: dummy read $4016, target $4116
+            0xAD, 0x16, 0x40,       // LDA $4016: should now read controller B
+        ]);
+        bus.set_controller_state(0, 0b0000_0010);
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 7);
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.state().a & 1, 1, "indexed INC must consume controller A during its dummy read");
+    }
+
+    #[test]
     fn unofficial_rmw_updates_memory_accumulator_and_carry() {
         let (mut cpu, mut bus) = setup(&[
             0xA9, 0x01,       // LDA #$01
