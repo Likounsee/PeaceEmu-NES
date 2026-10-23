@@ -107,6 +107,7 @@ mod win {
         fn ReleaseDC(hwnd: Hwnd, dc: Hdc) -> i32;
         fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> Bool;
         fn GetAsyncKeyState(key: i32) -> i16;
+        fn GetForegroundWindow() -> Hwnd;
         fn AdjustWindowRect(rect: *mut Rect, style: u32, menu: Bool) -> Bool;
     }
     #[link(name = "gdi32")]
@@ -142,7 +143,8 @@ mod win {
         unsafe { GetAsyncKeyState(key) < 0 }
     }
 
-    fn controller_state(keys: &[i32; 8]) -> u8 {
+    fn controller_state(focused: bool, keys: &[i32; 8]) -> u8 {
+        if !focused { return 0; }
         let mut state = 0u8;
         for (button, key) in keys.iter().copied().enumerate() {
             if key_down(key) {
@@ -251,11 +253,12 @@ mod win {
     pub fn run() -> Result<(), String> {
         let mut args = std::env::args_os().skip(1);
         let path = args.next().ok_or_else(|| {
-            "usage: peaceemu-nes-desktop <game.nes> [--scale 1..6] [--audio-rate 8000..192000] [--keys A,B,SELECT,START,UP,DOWN,LEFT,RIGHT]".to_owned()
+            "usage: peaceemu-nes-desktop <game.nes> [--scale 1..6] [--audio-rate 8000..192000] [--keys A,B,SELECT,START,UP,DOWN,LEFT,RIGHT] [--keys2 A,B,SELECT,START,UP,DOWN,LEFT,RIGHT]".to_owned()
         })?;
         let mut scale = 3i32;
         let mut audio_rate = 44_100u32;
         let mut keys = [0x5A, 0x58, 0x10, 0x0D, 0x26, 0x28, 0x25, 0x27];
+        let mut keys2 = [0x61, 0x62, 0x60, 0x65, 0x68, 0x62, 0x64, 0x66];
         while let Some(argument) = args.next() {
             let value = args.next().ok_or_else(|| format!("missing value for {}", argument.to_string_lossy()))?;
             match argument.to_string_lossy().as_ref() {
@@ -274,6 +277,14 @@ mod win {
                         return Err("--keys needs eight virtual-key codes from 0 to 255 in A,B,Select,Start,Up,Down,Left,Right order".into());
                     }
                     keys.copy_from_slice(&parsed);
+                }
+                "--keys2" => {
+                    let parsed: Result<Vec<i32>, _> = value.to_string_lossy().split(',').map(str::parse).collect();
+                    let parsed = parsed.map_err(|_| "--keys2 must contain eight comma-separated virtual-key codes".to_owned())?;
+                    if parsed.len() != 8 || parsed.iter().any(|key| !(0..=255).contains(key)) {
+                        return Err("--keys2 needs eight virtual-key codes from 0 to 255 in A,B,Select,Start,Up,Down,Left,Right order".into());
+                    }
+                    keys2.copy_from_slice(&parsed);
                 }
                 _ => return Err(format!("unknown option: {}", argument.to_string_lossy())),
             }
@@ -333,7 +344,9 @@ mod win {
             }
             if !running { break; }
 
-            machine.set_controller_state(0, controller_state(&keys));
+            let focused = unsafe { GetForegroundWindow() == hwnd };
+            machine.set_controller_state(0, controller_state(focused, &keys));
+            machine.set_controller_state(1, controller_state(focused, &keys2));
             if let Err(error) = machine.step_frame() {
                 runtime_error = Some(format!("emulation stopped: {error}"));
                 break;
