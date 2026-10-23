@@ -103,3 +103,11 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - Adaptation PeaceEmu : nouveau type Rust `Gxrom` intégré à l'enum `Cartridge`. Les bits 4–5 sélectionnent une fenêtre PRG de 32 Kio et les bits 0–1 une banque CHR de 8 Kio ; le nombre réel de banques borne les valeurs sélectionnées. La RAM PRG, le mirroring iNES et les trainers sont traités par le chargeur commun au mapper.
 - Tests ajoutés : commutation PRG/CHR indépendante, limites de banques sur les petites images, mirroring horizontal/vertical, refus d'écriture CHR-ROM, tailles invalides et image tronquée.
 - Limites : prise en charge iNES legacy seulement, CHR-ROM obligatoire, sans modélisation des variantes matérielles ni NES 2.0. Le comportement est adapté aux interfaces locales PeaceEmu ; aucun code source tiers n'a été copié.
+
+
+## Neuvième adaptation réalisée : MMC3 / TxROM (mapper 4)
+
+- Référence comportementale : [NESdev — MMC3](https://www.nesdev.org/wiki/MMC3) et [NESdev — mapper 004](https://www.nesdev.org/wiki/INES_Mapper_004), pour l'organisation des fenêtres PRG de 8 Kio, des registres CHR, de la protection PRG-RAM, du mirroring et du compteur IRQ.
+- Adaptation PeaceEmu : nouveau type Rust `Mmc3` dans le dispatch statique `Cartridge`. Les registres R0–R7 commandent les banques PRG/CHR ; les bits de mode inversent les fenêtres attendues ; les écritures $A001 protègent/désactivent la RAM ; $A000 règle le mirroring sauf pour le four-screen ; $C000/$C001 et $E000/$E001 contrôlent le compteur et l'acquittement IRQ.
+- Tests ajoutés : fenêtres PRG commutables/fixes, mode PRG inversé, banques CHR 1/2 Kio, CHR-RAM, protection de RAM, mirroring four-screen, chargement/activation/effacement IRQ.
+- Limites : l'horloge IRQ est pour l'instant approximée à un changement de scanline de la PPU ; le filtre matériel sur A12, le timing précis des fetchs PPU, les variantes MMC3A/B/C et NES 2.0 restent à implémenter. Le comportement est adapté aux interfaces PeaceEmu ; aucun code source tiers n'a été copié.
