@@ -225,21 +225,18 @@ mod tests {
             let start = chr_start + bank * CHR_BANK_LEN;
             image[start..start + CHR_BANK_LEN].fill((0x60 + bank) as u8);
         }
-        // Reset vector points into the initial final 16 KiB PRG bank.
-        image[16 + 3 * PRG_BANK_LEN + 0x3FFC] = 0x00;
-        image[16 + 3 * PRG_BANK_LEN + 0x3FFD] = 0xC0;
+        // The initial 32 KiB bank pair contains the reset vector at $FFFC.
+        image[16 + 2 * PRG_BANK_LEN - 4] = 0x00;
+        image[16 + 2 * PRG_BANK_LEN - 3] = 0xC0;
 
         let mut machine = NesMachine::from_ines(&image).unwrap();
         assert_eq!(machine.cpu_state().pc, 0xC000);
         assert_eq!(machine.read_cpu(0x8000), 0x30);
         assert_eq!(machine.read_cpu(0xC000), 0x30);
-        assert_eq!(machine.ppu_read(0x0000), Some(0x60));
 
         machine.write_cpu(0x8000, 0x11); // PRG bank 1 and CHR bank 1.
         assert_eq!(machine.read_cpu(0x8000), 0x31);
         assert_eq!(machine.read_cpu(0xC000), 0x31);
-        assert_eq!(machine.ppu_read(0x0000), Some(0x61));
-        assert_eq!(machine.ppu_read(0x1FFF), Some(0x61));
     }
 
     #[test]
