@@ -978,4 +978,13 @@ mod tests {
         assert_eq!(ppu.status & 0x80, 0);
     }
 
+    #[test]
+    fn snapshot_scroll_uses_hardware_coarse_y_rollover_rules() {
+        assert_eq!(Ppu::scroll_coarse_y(29, 0, 1), (0, 1));
+        assert_eq!(Ppu::scroll_coarse_y(31, 0, 1), (0, 0));
+        assert_eq!(Ppu::scroll_coarse_y(30, 0, 1), (31, 0));
+        assert_eq!(Ppu::scroll_coarse_y(30, 0, 2), (0, 0));
+        assert_eq!(Ppu::scroll_coarse_y(28, 1, 2), (0, 0));
+    }
+
 }
