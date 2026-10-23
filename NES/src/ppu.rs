@@ -116,6 +116,11 @@ impl Ppu {
 
     /// Advances the PPU by a number of dots and updates vblank timing.
     pub fn tick(&mut self, dots: u32) -> u32 {
+        self.tick_with_cartridge(dots, None)
+    }
+
+    /// Advances the PPU while allowing visible scanlines to fetch cartridge pattern data.
+    pub(crate) fn tick_with_cartridge(&mut self, dots: u32, cartridge: Option<&Cartridge>) -> u32 {
         let mut crossed_scanlines = 0;
         for _ in 0..dots {
             // NTSC skips pre-render dot 340 on odd frames while rendering is active.
@@ -138,6 +143,9 @@ impl Ppu {
                     self.increment_coarse_x();
                 }
                 if self.dot == 256 {
+                    if self.scanline < 240 {
+                        self.render_scanline(self.scanline as usize, cartridge);
+                    }
                     self.increment_y();
                 }
                 if self.dot == 257 {
@@ -176,6 +184,106 @@ impl Ppu {
             }
         }
         crossed_scanlines
+    }
+
+    /// Renders one visible scanline as the PPU reaches dot 256. This lets software
+    /// observe events such as sprite-0 hit before the end-of-frame snapshot is composed.
+    /// Pixel fetch timing is still approximated: the full line is calculated at once.
+    fn render_scanline(&mut self, y: usize, cartridge: Option<&Cartridge>) {
+        if y >= 240 { return; }
+        let bg_enabled = self.mask & 0x08 != 0;
+        let sprites_enabled = self.mask & 0x10 != 0;
+        let show_bg_left = self.mask & 0x02 != 0;
+        let show_sprites_left = self.mask & 0x04 != 0;
+        let scroll_v = if self.frame_scroll_valid { self.frame_scroll_v } else { self.v };
+        let fine_x = if self.frame_scroll_valid { self.frame_fine_x as usize } else { self.fine_x as usize };
+        let base_nt_x = ((scroll_v >> 10) & 1) as usize;
+        let base_nt_y = ((scroll_v >> 11) & 1) as usize;
+        let base_coarse_x = (scroll_v & 0x1F) as usize;
+        let base_coarse_y = ((scroll_v >> 5) & 0x1F) as usize;
+        let fine_y = ((scroll_v >> 12) & 7) as usize;
+        let scroll_y = base_coarse_y * 8 + fine_y + y;
+        let tile_y = scroll_y / 8;
+        let (coarse_y, nt_y) = Self::scroll_coarse_y(base_coarse_y, base_nt_y, tile_y - base_coarse_y);
+        let pattern_base = if self.ctrl & 0x10 != 0 { 0x1000u16 } else { 0 };
+        let universal = self.output_color(self.palette[0]);
+        for x in 0..256usize {
+            let index = y * 256 + x;
+            if !bg_enabled || (x < 8 && !show_bg_left) {
+                self.framebuffer[index] = universal;
+                self.background_opaque[index] = false;
+                continue;
+            }
+            let scroll_x = base_coarse_x * 8 + fine_x + x;
+            let tile_x = scroll_x / 8;
+            let nt_x = base_nt_x ^ ((tile_x / 32) & 1);
+            let nametable = 0x2000u16 + ((nt_y * 2 + nt_x) as u16) * 0x400;
+            let coarse_x = tile_x % 32;
+            let tile_addr = nametable + (coarse_y * 32 + coarse_x) as u16;
+            let tile = self.mem_read(tile_addr, cartridge) as u16;
+            let row = (scroll_y % 8) as u16;
+            let col = (scroll_x % 8) as u16;
+            let pattern_addr = pattern_base + tile * 16 + row;
+            let low = self.mem_read(pattern_addr, cartridge);
+            let high = self.mem_read(pattern_addr + 8, cartridge);
+            let pixel = ((low >> (7 - col)) & 1) | (((high >> (7 - col)) & 1) << 1);
+            self.background_opaque[index] = pixel != 0;
+            if pixel == 0 {
+                self.framebuffer[index] = universal;
+            } else {
+                let attr_addr = nametable + 0x3C0 + ((coarse_y / 4) * 8 + coarse_x / 4) as u16;
+                let attr = self.mem_read(attr_addr, cartridge);
+                let shift = (((coarse_y % 4) / 2) * 4 + ((coarse_x % 4) / 2) * 2) as u8;
+                let palette_id = (attr >> shift) & 3;
+                self.framebuffer[index] = self.output_color(self.palette[(palette_id * 4 + pixel) as usize]);
+            }
+        }
+
+        // Evaluate the eight-sprites-per-line limit and composite the line in OAM order.
+        if !sprites_enabled { return; }
+        let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
+        let mut count = 0usize;
+        let mut claimed = [false; 256];
+        for sprite in 0..64usize {
+            let base = sprite * 4;
+            let top = (self.oam[base] as usize + 1) & 0xFF;
+            if y < top || y >= top + height { continue; }
+            count += 1;
+            if count > 8 { self.status |= 0x20; continue; }
+            let tile = self.oam[base + 1] as usize;
+            let attr = self.oam[base + 2];
+            let left = self.oam[base + 3] as usize;
+            let row_in_sprite = y - top;
+            let source_y = if attr & 0x80 != 0 { height - 1 - row_in_sprite } else { row_in_sprite };
+            let (table, tile_index, row) = if height == 16 {
+                (if tile & 1 != 0 { 0x1000u16 } else { 0 }, (tile & 0xFE) + source_y / 8, source_y % 8)
+            } else {
+                (if self.ctrl & 0x08 != 0 { 0x1000u16 } else { 0 }, tile, source_y)
+            };
+            let addr = table + (tile_index * 16 + row) as u16;
+            let low = self.mem_read(addr, cartridge);
+            let high = self.mem_read(addr + 8, cartridge);
+            for sx in 0..8usize {
+                let x = left + sx;
+                if x >= 256 || (x < 8 && !show_sprites_left) { continue; }
+                let bit = if attr & 0x40 != 0 { sx } else { 7 - sx };
+                let pixel = ((low >> bit) & 1) | (((high >> bit) & 1) << 1);
+                if pixel == 0 { continue; }
+                if sprite == 0 && bg_enabled && self.background_opaque[y * 256 + x] && x < 255
+                    && (x >= 8 || (show_bg_left && show_sprites_left))
+                {
+                    self.status |= 0x40;
+                }
+                if claimed[x] { continue; }
+                claimed[x] = true;
+                if attr & 0x20 == 0 || !self.background_opaque[y * 256 + x] {
+                    let palette_index = 0x10 + ((attr as usize & 3) * 4) + pixel as usize;
+                    self.framebuffer[y * 256 + x] = self.output_color(
+                        self.palette[Self::palette_index(0x3F00 + palette_index as u16)]
+                    );
+                }
+            }
+        }
     }
 
     /// Renders a complete background snapshot using the current VRAM scroll address.
