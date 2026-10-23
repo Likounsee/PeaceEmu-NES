@@ -161,12 +161,12 @@ mod win {
     }
 
     impl AudioOutput {
-        fn open() -> Result<Self, String> {
+        fn open(sample_rate: u32) -> Result<Self, String> {
             let format = WaveFormatEx {
                 format_tag: WAVE_FORMAT_PCM,
                 channels: 1,
-                samples_per_sec: 44_100,
-                avg_bytes_per_sec: 88_200,
+                samples_per_sec: sample_rate,
+                avg_bytes_per_sec: sample_rate.saturating_mul(2),
                 block_align: 2,
                 bits_per_sample: 16,
                 cb_size: 0,
@@ -209,7 +209,7 @@ mod win {
                 return Err(format!("waveOutWrite failed ({written})"));
             }
             // Keep the PCM allocation alive until Windows has consumed the whole buffer.
-            while header.flags & WHDR_DONE == 0 {
+            while unsafe { std::ptr::read_volatile(&header.flags) } & WHDR_DONE == 0 {
                 unsafe { Sleep(1); }
             }
             let unprepared = unsafe { waveOutUnprepareHeader(self.handle, &mut header, header_size) };
@@ -228,10 +228,32 @@ mod win {
     }
 
     pub fn run() -> Result<(), String> {
-        let path = std::env::args_os().nth(1)
-            .ok_or_else(|| "usage: peaceemu-nes-desktop <game.nes>".to_owned())?;
+        let mut args = std::env::args_os().skip(1);
+        let path = args.next().ok_or_else(|| {
+            "usage: peaceemu-nes-desktop <game.nes> [--scale 1..6] [--audio-rate 8000..192000]".to_owned()
+        })?;
+        let mut scale = 3i32;
+        let mut audio_rate = 44_100u32;
+        while let Some(argument) = args.next() {
+            let value = args.next().ok_or_else(|| format!("missing value for {}", argument.to_string_lossy()))?;
+            match argument.to_string_lossy().as_ref() {
+                "--scale" => {
+                    scale = value.to_string_lossy().parse().map_err(|_| "invalid --scale value".to_owned())?;
+                    if !(1..=6).contains(&scale) { return Err("--scale must be between 1 and 6".into()); }
+                }
+                "--audio-rate" => {
+                    audio_rate = value.to_string_lossy().parse().map_err(|_| "invalid --audio-rate value".to_owned())?;
+                    if !(8_000..=192_000).contains(&audio_rate) { return Err("--audio-rate must be between 8000 and 192000".into()); }
+                }
+                _ => return Err(format!("unknown option: {}", argument.to_string_lossy())),
+            }
+        }
         let image = fs::read(&path).map_err(|e| format!("cannot read ROM: {e}"))?;
-        let mut machine = NesMachine::from_ines(&image).map_err(|e| e.to_string())?;\n        let mut audio = AudioOutput::open()?;
+        let mut machine = NesMachine::from_ines(&image).map_err(|e| e.to_string())?;
+        if !machine.set_audio_sample_rate(audio_rate) {
+            return Err(format!("unsupported audio sample rate: {audio_rate}"));
+        }
+        let mut audio = AudioOutput::open(audio_rate)?;
         let mut save_path = std::path::PathBuf::from(&path);
         save_path.set_extension("sav");
         if machine.has_battery_backed_ram() && save_path.exists() {
@@ -251,7 +273,7 @@ mod win {
         if unsafe { RegisterClassW(&class) } == 0 {
             return Err("RegisterClassW failed".into());
         }
-        let mut rect = Rect { left: 0, top: 0, right: 256 * 3, bottom: 240 * 3 };
+        let mut rect = Rect { left: 0, top: 0, right: 256 * scale, bottom: 240 * scale };
         unsafe { AdjustWindowRect(&mut rect, WS_OVERLAPPEDWINDOW, 0); }
         let hwnd = unsafe {
             CreateWindowExW(0, class_name.as_ptr(), title.as_ptr(), WS_OVERLAPPEDWINDOW,
@@ -278,6 +300,11 @@ mod win {
             machine.set_controller_state(0, controller_state());
             if let Err(error) = machine.step_frame() {
                 runtime_error = Some(format!("emulation stopped: {error}"));
+                break;
+            }
+            let audio_samples = machine.drain_audio_samples();
+            if let Err(error) = audio.play(&audio_samples) {
+                runtime_error = Some(format!("audio output failed: {error}"));
                 break;
             }
             for (i, &index) in machine.framebuffer().iter().enumerate() {
