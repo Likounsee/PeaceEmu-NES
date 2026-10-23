@@ -1,7 +1,7 @@
 //! Small top-level NES machine wrapper for loading and stepping NROM programs.
 
 use crate::bus::CpuBus;
-use crate::cartridge::{CartridgeError, Nrom};
+use crate::cartridge::{Cartridge, CartridgeError};
 use crate::cpu::{Cpu, CpuError, CpuState, StepResult};
 use core::fmt;
 
@@ -48,9 +48,9 @@ pub struct NesMachine {
 }
 
 impl NesMachine {
-    /// Parses an iNES image, attaches its NROM cartridge, and performs CPU reset.
+    /// Parses an iNES image, attaches its mapper-selected cartridge, and performs CPU reset.
     pub fn from_ines(image: &[u8]) -> Result<Self, MachineError> {
-        let cartridge = Nrom::parse(image)?;
+        let cartridge = Cartridge::parse(image)?;
         let mut bus = CpuBus::new();
         bus.insert_cartridge(cartridge);
         let mut cpu = Cpu::new();
