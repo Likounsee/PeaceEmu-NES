@@ -194,6 +194,9 @@ impl Cpu {
             0xA3 => { let a = self.indirect_x(bus); let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 6 }
             0xB3 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0xA2 => { let v = self.fetch(bus); self.state.x = v; self.set_nz(v); 2 }
+            // LAX immediate ($AB) is unstable on NMOS 6502 revisions, but is used
+            // by real NES software; model the common observed A=X=operand behavior.
+            0xAB => { let v = self.fetch(bus); self.state.a = v; self.state.x = v; self.set_nz(v); 2 }
             0xA0 => { let v = self.fetch(bus); self.state.y = v; self.set_nz(v); 2 }
             0xA6 => { let a = self.fetch(bus) as u16; let v = bus.read(a); self.state.x = v; self.set_nz(v); 3 }
             0xAE => { let a = self.fetch_word(bus); let v = bus.read(a); self.state.x = v; self.set_nz(v); 4 }
@@ -574,6 +577,17 @@ mod tests {
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5, "LAX absolute,Y adds a cycle on page crossing");
         assert_eq!((cpu.state.a, cpu.state.x), (0x00, 0x00));
         assert_ne!(cpu.state.status & flags::ZERO, 0);
+    }
+
+    #[test]
+    fn unofficial_lax_immediate_loads_both_registers_and_updates_flags() {
+        let (mut cpu, mut bus) = setup(&[0xAB, 0x80, 0xAB, 0x00]);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
+        assert_eq!((cpu.state().a, cpu.state().x), (0x80, 0x80));
+        assert_ne!(cpu.state().status & flags::NEGATIVE, 0);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
+        assert_eq!((cpu.state().a, cpu.state().x), (0x00, 0x00));
+        assert_ne!(cpu.state().status & flags::ZERO, 0);
     }
 
     #[test]
