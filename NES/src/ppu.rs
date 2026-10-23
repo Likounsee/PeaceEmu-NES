@@ -508,6 +508,30 @@ mod tests {
     }
 
     #[test]
+    fn frame_snapshot_reads_pixels_from_latched_nametable_scroll() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b\"NES\\x1A\");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap(); // CHR-RAM
+        for row in 0..8u16 {
+            cartridge.ppu_write(16 + row, 0xFF);
+            cartridge.ppu_write(16 + row + 8, 0x00);
+        }
+
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x0A; // Background enabled, including the leftmost eight pixels.
+        ppu.nametables[0x400] = 1; // Nametable 1 points at opaque tile 1.
+        ppu.palette[1] = 0x21;
+        ppu.frame_scroll_v = 0x0400; // The frame began in horizontal nametable 1.
+        ppu.frame_fine_x = 0;
+        ppu.frame_scroll_valid = true;
+        ppu.v = 0; // Live v later advanced into nametable 0; it must not override the latch.
+
+        ppu.render_background(Some(&cartridge));
+        assert_eq!(ppu.framebuffer[0], 0x21);
+    }
+
+    #[test]
     fn rendering_pipeline_increments_coarse_x_and_wraps_nametable() {
         let mut ppu = Ppu::new();
         ppu.mask = 0x08;
