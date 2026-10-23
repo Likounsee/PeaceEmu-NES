@@ -1139,8 +1139,8 @@ mod gxrom_tests {
         image[0..4].copy_from_slice(b"NES\\x1A");
         image[4] = prg_banks;
         image[5] = chr_banks;
-        image[6] = 0x40; // Mapper 66 low mapper nibble, horizontal mirroring.
-        image[7] = 0x20; // Mapper 66 high mapper nibble.
+        image[6] = 0x20; // Mapper 66 low mapper nibble, horizontal mirroring.
+        image[7] = 0x40; // Mapper 66 high mapper nibble.
         for bank in 0..(prg_banks as usize / 2) {
             let start = INES_HEADER_LEN + bank * 2 * PRG_BANK_LEN;
             image[start..start + 2 * PRG_BANK_LEN].fill((0x20 + bank) as u8);
