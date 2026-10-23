@@ -1091,7 +1091,7 @@ impl Cprom {
     /// Parses a legacy iNES CPROM image (exactly 32 KiB PRG-ROM, no CHR-ROM).
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
         if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
         let mapper = ((image[6] >> 4) as u16)
             | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
@@ -1200,7 +1200,8 @@ impl Cartridge {
             66 => Gxrom::parse(image).map(Self::Gxrom),
             71 => Camerica::parse(image).map(Self::Camerica),
             11 => ColorDreams::parse(image).map(Self::ColorDreams),
-            34 => Bnrom::parse(image).map(Self::Bnrom),\n            13 => Cprom::parse(image).map(Self::Cprom),
+            34 => Bnrom::parse(image).map(Self::Bnrom),
+            13 => Cprom::parse(image).map(Self::Cprom),
             other => Err(CartridgeError::UnsupportedMapper(other)),
         }
     }
@@ -1920,3 +1921,49 @@ mod bnrom_tests {
     }
 }
 
+
+#[cfg(test)]
+mod cprom_tests {
+    use super::*;
+
+    fn cprom_image() -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 2;
+        image[6] = 0xD0;
+        image[7] = 0;
+        image[16..16 + PRG_BANK_LEN].fill(0x31);
+        image[16 + PRG_BANK_LEN..].fill(0x32);
+        image
+    }
+
+    #[test]
+    fn mapper_13_keeps_prg_fixed_and_switches_only_upper_chr_4k() {
+        let mut cart = Cartridge::parse(&cprom_image()).unwrap();
+        assert_eq!(cart.cpu_read(0x8000), Some(0x31));
+        assert_eq!(cart.cpu_read(0xC000), Some(0x32));
+        assert!(cart.chr_is_ram());
+        cart.ppu_write(0x0000, 0xA1);
+        cart.ppu_write(0x1000, 0xB1);
+        assert_eq!(cart.ppu_read(0x0000), Some(0xA1));
+        assert_eq!(cart.ppu_read(0x1000), Some(0xB1));
+        cart.cpu_write(0x8000, 2);
+        cart.ppu_write(0x1000, 0xB2);
+        assert_eq!(cart.ppu_read(0x1000), Some(0xB2));
+        assert_eq!(cart.ppu_read(0x0000), Some(0xA1), "lower 4 KiB stays fixed");
+        cart.cpu_write(0x8000, 0);
+        assert_eq!(cart.ppu_read(0x1000), Some(0xB1), "each upper bank keeps its own RAM");
+    }
+
+    #[test]
+    fn mapper_13_rejects_chr_rom_and_non_32k_prg() {
+        let mut invalid = cprom_image();
+        invalid[4] = 1;
+        invalid.truncate(16 + PRG_BANK_LEN);
+        assert!(matches!(Cartridge::parse(&invalid), Err(CartridgeError::InvalidPrgSize(_))));
+        let mut invalid = cprom_image();
+        invalid[5] = 1;
+        invalid.extend(vec![0; CHR_BANK_LEN]);
+        assert!(matches!(Cartridge::parse(&invalid), Err(CartridgeError::InvalidChrSize(_))));
+    }
+}
