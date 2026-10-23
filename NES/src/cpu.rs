@@ -1258,6 +1258,21 @@ mod tests {
         assert_eq!(bus.read(0x0201), 0x04); // Two RMW instructions target this byte.
         assert_eq!(bus.read(0x0024), 0x04); // Zero-page and zero-page,X forms.
     }
+    #[test]
+    fn ahx_indirect_indexed_uses_pointer_base_for_mask_and_page_corruption() {
+        let (mut cpu, mut bus) = setup(&[
+            0xA9, 0xFF, // LDA #$FF
+            0xA2, 0x0F, // LDX #$0F
+            0xA0, 0x02, // LDY #$02
+            0x93, 0x10, // AHX ($10),Y
+        ]);
+        bus.write(0x0010, 0xFF);
+        bus.write(0x0011, 0x20);
+        for _ in 0..3 { cpu.step(&mut bus).unwrap(); }
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 6);
+        assert_eq!(bus.read(0x0101), 0x01);
+    }
+
 } 
     #[test]
     fn unstable_indexed_stores_mask_data_and_model_page_cross_corruption() {
