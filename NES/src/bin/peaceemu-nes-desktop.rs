@@ -19,6 +19,7 @@ mod win {
     use std::time::{Duration, Instant};
 
     type Handle = *mut c_void;
+    type HWaveOut = Handle;
     type Hwnd = Handle;
     type Hdc = Handle;
     type Hinstance = Handle;
@@ -320,7 +321,7 @@ mod win {
         if hwnd.is_null() { return Err("CreateWindowExW failed".into()); }
         unsafe { ShowWindow(hwnd, SW_SHOW); UpdateWindow(hwnd); }
 
-        let mut bitmap = make_bitmap();
+        let bitmap = make_bitmap();
         let mut pixels = vec![0u8; 256 * 240 * 4];
         let frame_time = Duration::from_micros(16_639);
         let mut next_frame = Instant::now();
