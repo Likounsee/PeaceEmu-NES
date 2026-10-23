@@ -2,38 +2,17 @@
 
 > Cœur d'émulation Nintendo Entertainment System (NES) destiné à être intégré dans l'application PeaceEmu existante.
 
-## Architecture cible : PeaceEmu contrôle, fenêtre de jeu dédiée
+## Architecture : le module est lancé exclusivement par PeaceEmu
 
-PeaceEmu reste le centre de contrôle : il choisit la ROM, les touches, la mise à l'échelle et les options audio, puis lance le module avec ces réglages. Le module ouvre **une fenêtre séparée qui ne contient que l'image du jeu** (HUD original inclus s'il fait partie du jeu), sans barre d'outils ni HUD ajouté par l'émulateur. Le frontend Windows natif actuel sert de chemin de jeu immédiat ; l'API `NesSession` permet aussi l'intégration future au contrat partagé `EmulationCore`.
+PeaceEmu est le seul point d'entrée utilisateur. Il importe et affiche les ROMs dans sa bibliothèque, puis crée une session NES lorsqu'on lance un jeu depuis cette bibliothèque. Le cœur NES ne fournit **aucun lanceur autonome, aucune fenêtre et aucun accès direct aux fichiers de sauvegarde** : l'application hôte possède le cycle de vie, les entrées, la présentation vidéo/audio et la persistance.
 
-### Lancement depuis PeaceEmu (chemin utilisateur prévu)
+Le dépôt principal PeaceEmu contient l'adaptateur vers le contrat partagé `EmulationCore`, l'enregistrement du système `nes`, la détection des ROMs iNES et le filtre NES de la bibliothèque. La session `NesSession` de ce dépôt reste indépendante de l'interface et fournit une frame 256×240, le PCM mono, les commandes de manette et l'accès à la RAM batterie.
 
-Le chemin utilisateur prévu est **exclusivement la bibliothèque de l'application PeaceEmu** : importer une ROM `.nes`, la sélectionner dans la bibliothèque, puis cliquer sur **Lancer**. PeaceEmu charge ce module NES, ouvre la fenêtre dédiée à l'image du jeu et conserve les commandes, la configuration et les sauvegardes sous le contrôle de l'application principale.
+Le parcours visé est strictement : **bibliothèque PeaceEmu → sélectionner une ROM NES → Lancer → session NES intégrée**. Le module ne doit pas être lancé directement par l'utilisateur. La fenêtre de jeu dédiée et sans interface ajoutée reste à finaliser dans l'hôte ; elle devra afficher uniquement l'image du jeu, HUD original compris.
 
-Le binaire Windows natif décrit ci-dessous est un banc d'essai de développement pour le module ; ce n'est pas le parcours utilisateur normal et il ne remplace pas l'intégration dans la bibliothèque PeaceEmu.
+### Contrat d'intégration
 
-### Lancement direct sur Windows
-
-Depuis le dossier `NES`, avec Rust installé :
-
-```powershell
-cargo run --release --bin peaceemu-nes-desktop -- "C:\chemin\vers\jeu.nes" --scale 3 --audio-rate 44100 --keys 90,88,16,13,38,40,37,39 --keys2 97,99,96,110,104,98,100,102
-```
-
-- `--scale 1..6` règle l'agrandissement entier de l'image (défaut : 3×).
-- `--audio-rate 8000..192000` règle le taux PCM (défaut : 44 100 Hz).
-- `--keys A,B,SELECT,START,UP,DOWN,LEFT,RIGHT` configure la manette 1 (défaut : `90,88,16,13,38,40,37,39`).
-- `--keys2 A,B,SELECT,START,UP,DOWN,LEFT,RIGHT` configure la manette 2 (défaut : `97,99,96,110,104,98,100,102`, pavé numérique).
-- Les manettes Xbox/XInput 1 et 2 sont détectées automatiquement ; A/B, Back/Start, la croix directionnelle et le stick gauche sont pris en charge. Les entrées sont ignorées quand la fenêtre de jeu n'est pas au premier plan.
-- Flèches : directions ; **Z** : A ; **X** : B ; **Maj droite** : Select ; **Entrée** : Start.
-- Les sauvegardes RAM des cartouches avec batterie sont chargées depuis un fichier `.sav` à côté de la ROM, autosauvegardées toutes les 5 secondes pendant le jeu et réécrites à la fermeture.
-- Le son utilise la sortie PCM Windows ; si aucun périphérique audio n'est disponible, le jeu continue en silence.
-
-PeaceEmu pourra transmettre ses réglages au lancement en construisant ces arguments ; l'UI de configuration reste dans PeaceEmu, jamais dans la fenêtre de jeu.
-
-### API d'intégration du cœur
-
-Dans `src/session.rs`, `NesSession::load(rom, config)` charge une ROM, `set_controller_state(...)` transmet les entrées, `advance_frame()` renvoie les pixels NES indexés (256×240) et les échantillons audio PCM, et les méthodes de RAM batterie laissent l'hôte gérer le stockage. L'adaptateur vers le contrat partagé `EmulationCore` reste à brancher.
+L'adaptateur hôte convertit les indices de palette NES en RGBA, les échantillons audio en PCM signé, les commandes génériques en boutons NES et la RAM batterie en sauvegarde persistante gérée par PeaceEmu. Les états de sauvegarde complets ne sont pas encore annoncés comme pris en charge.
 
 ## Objectif
 ## Réutilisation du code existant
@@ -43,7 +22,7 @@ Pour éviter de tout réimplémenter à la main, les références open source, l
 
 Développer un cœur NES réel, indépendant de l'interface graphique, intégrable à l'application principale [PeaceEmu](https://github.com/Likounsee/PeaceEmu). L'interface, la bibliothèque de jeux, les fenêtres et l'orchestration des sessions existent déjà dans le dépôt principal : ce dépôt ne doit pas recréer ces fonctionnalités.
 
-**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES et les mappers NROM, MMC1, UxROM, CNROM, MMC3, MMC2, AxROM, GxROM, CPROM et UNROM-512, un sous-ensemble élargi du CPU, un modèle de registres APU, compteurs de longueur, séquenceur de frame approximatif et un mélangeur audio pulse/triangle/bruit/DMC à mixage non linéaire approximatif avec enveloppes, sweep et compteur linéaire triangle approximatifs, un premier canal DMC avec lecture d'échantillons par le bus et IRQ, ainsi que le rendu par ligne de la PPU synchronisé sur la progression du faisceau disposent de code et de tests. Le comptage des frontières de scanline est désormais retourné par la PPU afin que les longues pauses DMA ne perdent pas les clocks IRQ MMC3 traversées. Le séquenceur APU fait avancer ses horloges frame à chaque cycle CPU pour garder un état déterministe quelle que soit la taille des lots passés à `tick_cpu_cycles`. Les accès DMC provoquent maintenant un blocage nominal de quatre cycles par rechargement du buffer, et ces cycles supplémentaires avancent aussi le CPU, la PPU et l'APU. L'API de session intégrée est exposée et testée dans ce dépôt, mais le branchement compilable au contrat hôte et la compatibilité des jeux ne sont pas encore établis.
+**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES et les mappers NROM, MMC1, UxROM, CNROM, MMC3, MMC2, AxROM, GxROM, CPROM et UNROM-512, un sous-ensemble élargi du CPU, un modèle de registres APU, compteurs de longueur, séquenceur de frame approximatif et un mélangeur audio pulse/triangle/bruit/DMC à mixage non linéaire approximatif avec enveloppes, sweep et compteur linéaire triangle approximatifs, un premier canal DMC avec lecture d'échantillons par le bus et IRQ, ainsi que le rendu par ligne de la PPU synchronisé sur la progression du faisceau disposent de code et de tests. Le comptage des frontières de scanline est désormais retourné par la PPU afin que les longues pauses DMA ne perdent pas les clocks IRQ MMC3 traversées. Le séquenceur APU fait avancer ses horloges frame à chaque cycle CPU pour garder un état déterministe quelle que soit la taille des lots passés à `tick_cpu_cycles`. Les accès DMC provoquent maintenant un blocage nominal de quatre cycles par rechargement du buffer, et ces cycles supplémentaires avancent aussi le CPU, la PPU et l'APU. L'API de session intégrée est exposée et testée dans ce dépôt. L'adaptateur et l'enregistrement du cœur ont été ajoutés au dépôt hôte ; la CI doit encore valider le branchement complet et la compatibilité des jeux reste à mesurer.
 
 ## Langage et intégration
 
@@ -104,7 +83,7 @@ Le dernier lot ajoute BNROM (mapper 34, variante BNROM uniquement), en plus de C
 | Contrôleurs | Première version — ports série $4016/$4017, huit boutons et latch |
 | Timing complet | À faire |
 | API de session hôte | En place — chargement ROM, configuration audio, commandes manettes, framebuffer et PCM par frame, accès à la RAM batterie ; tests automatisés |
-| Adaptateur EmulationCore | À faire — branchement au contrat partagé de PeaceEmu et conversion vers ses types vidéo/audio |
+| Adaptateur EmulationCore | Première intégration — adaptateur dans PeaceEmu, détection iNES et enregistrement du système ; validation CI en cours |
 | Tests de compatibilité | À faire |
 
 
@@ -115,7 +94,7 @@ Le dernier lot ajoute BNROM (mapper 34, variante BNROM uniquement), en plus de C
 - **PPU : 62 %** — rendu des lignes visible pendant la frame, scroll capturé à chaque ligne et indicateurs sprite-0 hit/overflow consultables avant la fin de frame ; fetchs pixel/dot et effets de registre en milieu de ligne encore approximatifs.
 - **APU : 58 %** — canaux principaux, mixage approximatif, sortie PCM configurable et blocage CPU/horloges PPU lors des rechargements DMC ; filtrage et arbitrage DMA précis restent incomplets.
 - **Cartouches et mappers : 97 %** — nombreuses familles iNES legacy et premiers cas NES 2.0 pris en charge ; variantes et plusieurs mappers restent absents.
-- **Intégration / lancement jouable : 68 %** — fenêtre de jeu sans HUD ajouté, sortie audio PCM Windows, mise à l'échelle, taux audio et mapping clavier configurables, deux joueurs clavier/XInput, autosauvegarde RAM batterie et artefact Windows release téléchargeable depuis Actions ; le lancement orchestré par PeaceEmu et le contrat EmulationCore partagé restent à raccorder.
+- **Intégration / lancement jouable : 72 %** — adaptateur `EmulationCore`, enregistrement du système NES et filtre de bibliothèque ajoutés dans PeaceEmu ; les tests de bout en bout, la fenêtre de jeu dédiée et la validation de compatibilité restent à faire.
 
 
 UNROM-512 (mapper 30) prend en charge les images iNES legacy à 256/512 Kio de PRG-ROM et sans CHR-ROM : banque PRG de 16 Kio sélectionnable (bits 0–4), banque finale fixe, quatre banques CHR-RAM de 8 Kio (bits 5–6) et bit 7 de sélection one-screen lorsque l'en-tête indique cette configuration. La variante ajoutée n'émule pas le flash interne, les sous-mappers NES 2.0 ni les conflits de bus des cartes physiques ; elle n'expose pas de PRG-RAM, conformément à la fiche de carte documentée.
