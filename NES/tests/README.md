@@ -15,7 +15,8 @@ Les tests se trouvent près des modules dans les blocs cfg(test) de la biblioth�
 - **Bus :** registres PPU/APU, manettes, open bus matériel et interaction cartouche/bus.
 - **Cartouches :** bits de mirroring, trainer, tailles extrêmes, distinction entre RAM volatile et batterie, tailles de RAM spécifiques aux cartouches et validation plus stricte.
 - **PPU :** registres, vblank/NMI, rendu snapshot, priorité des sprites et rollover vertical coarse-Y (ligne 29 bascule le nametable, ligne 31 non).
-- **APU :** registres, timing, interruptions et sortie audio déterministe approximative.
+- **APU :** registres, timing, interruptions, mixage déterministe approximatif, sortie PCM à fréquence configurable et file audio bornée.
+- **Machine/frontend :** exécution d'une ou plusieurs frames, cycles consommés, framebuffer et récupération des lots audio.
 - **PPU vblank/NMI :** activation tardive du NMI, acquittement via PPUSTATUS et transitions du signal NMI (NES/tests/ppu_nmi_timing.rs).
 - **Mapper 30 :** limites du trainer/image (mapper30_boundaries.rs), banques PRG/CHR-RAM, mirroring One-Screen et mode quatre écrans (mapper30_banking.rs).
 - **Intégration :** démarrage avec ROM homebrew redistribuable et suites de validation dont la licence autorise l'utilisation.
