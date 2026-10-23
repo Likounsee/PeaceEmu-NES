@@ -338,6 +338,94 @@ impl Cnrom {
     pub fn ppu_write(&mut self, _address: u16, _value: u8) -> bool { false }
 }
 
+/// AxROM (mapper 7): switchable 32 KiB PRG-ROM and bank-controlled one-screen mirroring.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Axrom {
+    prg_rom: Vec<u8>,
+    prg_ram: Vec<u8>,
+    chr_ram: Vec<u8>,
+    selected_prg_bank: usize,
+    upper_nametable: bool,
+}
+
+impl Axrom {
+    /// Parses a legacy iNES mapper-7 image with 2-32 16 KiB PRG units and CHR-RAM.
+    pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
+        if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
+        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
+        let mapper = ((image[6] >> 4) as u16)
+            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        if mapper != 7 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
+        let prg_len = image[4] as usize * PRG_BANK_LEN;
+        if image[4] < 2 || image[4] > 32 || image[4] % 2 != 0 {
+            return Err(CartridgeError::InvalidPrgSize(prg_len));
+        }
+        let chr_len = image[5] as usize * CHR_BANK_LEN;
+        if chr_len != 0 { return Err(CartridgeError::InvalidChrSize(chr_len)); }
+        let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
+        let expected = INES_HEADER_LEN + trainer_len + prg_len;
+        if image.len() < expected {
+            return Err(CartridgeError::TruncatedImage { expected, actual: image.len() });
+        }
+        let prg_start = INES_HEADER_LEN + trainer_len;
+        let mut prg_ram = vec![0; PRG_RAM_LEN];
+        if trainer_len != 0 {
+            prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
+        }
+        Ok(Self {
+            prg_rom: image[prg_start..prg_start + prg_len].to_vec(),
+            prg_ram,
+            chr_ram: vec![0; CHR_BANK_LEN],
+            selected_prg_bank: 0,
+            upper_nametable: false,
+        })
+    }
+
+    /// Reads PRG-RAM or the selected 32 KiB PRG-ROM window.
+    pub fn cpu_read(&self, address: u16) -> Option<u8> {
+        match address {
+            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+            0x8000..=0xFFFF => {
+                let index = self.selected_prg_bank * 2 * PRG_BANK_LEN + address as usize - 0x8000;
+                Some(self.prg_rom[index])
+            }
+            _ => None,
+        }
+    }
+
+    /// Writes PRG-RAM or selects the PRG bank and one-screen nametable page.
+    pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
+        match address {
+            0x6000..=0x7FFF => { self.prg_ram[address as usize - 0x6000] = value; true }
+            0x8000..=0xFFFF => {
+                self.selected_prg_bank = (value & 0x0F) as usize;
+                self.upper_nametable = value & 0x10 != 0;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns the currently selected one-screen nametable page.
+    pub fn mirroring(&self) -> Mirroring {
+        if self.upper_nametable { Mirroring::OneScreenUpper } else { Mirroring::OneScreenLower }
+    }
+    /// AxROM uses 8 KiB of CHR-RAM.
+    pub fn chr_is_ram(&self) -> bool { true }
+    /// Reads CHR-RAM from the PPU pattern address space.
+    pub fn ppu_read(&self, address: u16) -> Option<u8> {
+        if address >= 0x2000 { return None; }
+        Some(self.chr_ram[address as usize])
+    }
+    /// Writes CHR-RAM from the PPU pattern address space.
+    pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
+        if address >= 0x2000 { return false; }
+        self.chr_ram[address as usize] = value;
+        true
+    }
+}
+
 /// Supported cartridge mapper implementations.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Cartridge {
