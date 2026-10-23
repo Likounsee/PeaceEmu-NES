@@ -125,6 +125,17 @@ impl CpuBus {
             self.ppu.cpu_write_register(4, value, self.cartridge.as_mut());
         }
     }
+
+    /// Copies cartridge PRG-RAM without applying mapper runtime enable gates.
+    pub fn cartridge_prg_ram_snapshot(&self) -> Option<Vec<u8>> {
+        self.cartridge.as_ref().and_then(Cartridge::prg_ram_snapshot)
+    }
+
+    /// Restores a previously validated cartridge PRG-RAM payload.
+    pub fn restore_cartridge_prg_ram(&mut self, data: &[u8]) -> bool {
+        self.cartridge.as_mut().is_some_and(|cartridge| cartridge.restore_prg_ram(data))
+    }
+
     /// Returns whether a cartridge is attached.
     pub fn has_cartridge(&self) -> bool { self.cartridge.is_some() }
 }
