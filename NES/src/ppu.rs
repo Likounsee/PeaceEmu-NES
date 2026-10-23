@@ -1,6 +1,6 @@
 //! NES picture processing unit registers, video memory, timing, and snapshot renderer.
 
-use crate::cartridge::{Mirroring, Nrom};
+use crate::cartridge::{Cartridge, Mirroring};
 
 /// Minimal PPU register and memory state.
 ///
@@ -49,7 +49,7 @@ impl Ppu {
     pub fn new() -> Self { Self::default() }
 
     /// Reads one CPU-visible PPU register (register address is mirrored to 0..7).
-    pub fn cpu_read_register(&mut self, register: u16, cartridge: Option<&Nrom>) -> u8 {
+    pub fn cpu_read_register(&mut self, register: u16, cartridge: Option<&Cartridge>) -> u8 {
         let value = match register & 7 {
             2 => {
                 let value = (self.status & 0xE0) | (self.open_bus & 0x1F);
@@ -74,7 +74,7 @@ impl Ppu {
     }
 
     /// Writes one CPU-visible PPU register (register address is mirrored to 0..7).
-    pub fn cpu_write_register(&mut self, register: u16, value: u8, cartridge: Option<&mut Nrom>) {
+    pub fn cpu_write_register(&mut self, register: u16, value: u8, cartridge: Option<&mut Cartridge>) {
         self.open_bus = value;
         match register & 7 {
             0 => {
