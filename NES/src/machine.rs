@@ -389,7 +389,7 @@ mod tests {
         const PRG_LEN: usize = 16 * 1024;
         const CHR_LEN: usize = 8 * 1024;
         let mut image = vec![0; 16 + PRG_LEN + CHR_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[5] = 1; // One 8 KiB CHR-ROM bank.
 
