@@ -172,7 +172,8 @@ impl NesMachine {
                 if skipped_initial_prerender {
                     skipped_initial_prerender = false;
                 } else {
-                    self.bus.render_frame();
+                    // The PPU has already produced each visible line during the frame.
+                    // Re-rendering a snapshot here would erase mid-frame scroll and palette effects.
                     return Ok(self.cpu.total_cycles().saturating_sub(start_cycles) as u32);
                 }
             }
