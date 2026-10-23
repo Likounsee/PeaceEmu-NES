@@ -37,8 +37,8 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
 
-  windows-game-window:
-    name: Windows game window and PCM build
+  windows-module-build:
+    name: Windows NES module compatibility
     runs-on: windows-latest
     defaults:
       run:
@@ -52,12 +52,3 @@ jobs:
           components: rustfmt, clippy
       - name: Check Windows frontend
         run: cargo check --all-targets --locked
-      - name: Build playable Windows executable
-        run: cargo build --release --locked --bin peaceemu-nes-desktop
-      - name: Publish Windows game launcher artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: PeaceEmu-NES-Windows-x64
-          path: NES/target/release/peaceemu-nes-desktop.exe
-          if-no-files-found: error
-          retention-days: 14
