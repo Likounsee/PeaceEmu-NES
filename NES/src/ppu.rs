@@ -371,7 +371,6 @@ impl Ppu {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cartridge::Nrom;
 
     #[test]
     fn status_read_clears_vblank_and_write_toggle() {
@@ -597,7 +596,7 @@ mod tests {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
-        let mut cartridge = Nrom::parse(&image).unwrap();
+        let mut cartridge = Cartridge::parse(&image).unwrap();
         // Build known video memory directly; register-latch behavior is tested separately.
         ppu.mask = 0x0A;
         ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
@@ -616,7 +615,7 @@ mod tests {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
-        let mut cartridge = Nrom::parse(&image).unwrap();
+        let mut cartridge = Cartridge::parse(&image).unwrap();
         ppu.mask = 0x08; // Background on, background's leftmost eight pixels hidden.
         ppu.mem_write(0x0000, 0xFF, Some(&mut cartridge));
         ppu.mem_write(0x3F00, 0x0F, Some(&mut cartridge));
@@ -635,7 +634,7 @@ mod tests {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
-        let mut cartridge = Nrom::parse(&image).unwrap();
+        let mut cartridge = Cartridge::parse(&image).unwrap();
         ppu.mask = 0x1F; // Background, sprites, both left columns and grayscale.
         ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
@@ -653,7 +652,7 @@ mod tests {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
-        let mut cartridge = Nrom::parse(&image).unwrap();
+        let mut cartridge = Cartridge::parse(&image).unwrap();
         // Build the pattern/palette fixture directly; OAM Y=255 wraps to row zero.
         ppu.mask = 0x1E;
         ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
@@ -673,7 +672,7 @@ mod tests {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
-        let mut cartridge = Nrom::parse(&image).unwrap();
+        let mut cartridge = Cartridge::parse(&image).unwrap();
 
         ppu.ctrl = 0x20; // 8x16 sprites: tile bit 0 selects the pattern table.
         ppu.mask = 0x14;
@@ -695,7 +694,7 @@ mod tests {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
-        let mut cartridge = Nrom::parse(&image).unwrap();
+        let mut cartridge = Cartridge::parse(&image).unwrap();
 
         ppu.mask = 0x14;
         ppu.mem_write(0x0010, 0x01, Some(&mut cartridge)); // Only the source rightmost pixel is opaque.
@@ -715,7 +714,7 @@ mod tests {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
-        let mut cartridge = Nrom::parse(&image).unwrap();
+        let mut cartridge = Cartridge::parse(&image).unwrap();
 
         ppu.mask = 0x14;
         ppu.mem_write(0x3F00, 0x0F, Some(&mut cartridge));
@@ -736,7 +735,7 @@ mod tests {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
-        let mut cartridge = Nrom::parse(&image).unwrap();
+        let mut cartridge = Cartridge::parse(&image).unwrap();
         // Background is enabled but clipped on the left; sprites are enabled and visible there.
         ppu.mask = 0x1C;
         ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
@@ -759,7 +758,7 @@ mod tests {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
-        let mut cartridge = Nrom::parse(&image).unwrap();
+        let mut cartridge = Cartridge::parse(&image).unwrap();
 
         // Two opaque sprites overlap at (0, 0), with distinct sprite palettes.
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
@@ -793,7 +792,7 @@ mod tests {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
-        let mut cartridge = Nrom::parse(&image).unwrap();
+        let mut cartridge = Cartridge::parse(&image).unwrap();
         ppu.mask = 0x1E;
         ppu.mem_write(0x0000, 0x80, Some(&mut cartridge)); // Background tile zero.
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge)); // Sprite tile one.
