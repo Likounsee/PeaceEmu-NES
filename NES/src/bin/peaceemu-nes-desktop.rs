@@ -48,6 +48,28 @@ mod win {
     const WHDR_DONE: u32 = 0x0000_0001;
 
     #[repr(C)]
+    struct WaveFormatEx {
+        format_tag: u16,
+        channels: u16,
+        samples_per_sec: u32,
+        avg_bytes_per_sec: u32,
+        block_align: u16,
+        bits_per_sample: u16,
+        cb_size: u16,
+    }
+    #[repr(C)]
+    struct WaveHdr {
+        data: *mut i8,
+        buffer_length: u32,
+        bytes_recorded: u32,
+        user: usize,
+        flags: u32,
+        loops: u32,
+        next: *mut WaveHdr,
+        reserved: usize,
+    }
+
+    #[repr(C)]
     struct Point { x: i32, y: i32 }
     #[repr(C)]
     struct Msg {
@@ -99,6 +121,15 @@ mod win {
         fn StretchDIBits(dc: Hdc, x_dest: i32, y_dest: i32, dest_width: i32, dest_height: i32,
             x_src: i32, y_src: i32, src_width: i32, src_height: i32, bits: *const c_void,
             info: *const BitmapInfo, usage: u32, raster_op: u32) -> i32;
+    }
+    #[link(name = "winmm")]
+    extern "system" {
+        fn waveOutOpen(output: *mut Handle, device_id: u32, format: *const WaveFormatEx, callback: usize, instance: usize, flags: u32) -> u32;
+        fn waveOutPrepareHeader(output: Handle, header: *mut WaveHdr, size: u32) -> u32;
+        fn waveOutWrite(output: Handle, header: *mut WaveHdr, size: u32) -> u32;
+        fn waveOutUnprepareHeader(output: Handle, header: *mut WaveHdr, size: u32) -> u32;
+        fn waveOutReset(output: Handle) -> u32;
+        fn waveOutClose(output: Handle) -> u32;
     }
     #[link(name = "kernel32")]
     extern "system" {
