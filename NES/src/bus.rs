@@ -1,7 +1,7 @@
 //! CPU memory bus for the initial NROM machine.
 
 use crate::apu::Apu;
-use crate::cartridge::Nrom;
+use crate::cartridge::Cartridge;
 use crate::ppu::Ppu;
 
 /// CPU bus with 2 KiB internal RAM and optional NROM cartridge.
@@ -12,7 +12,7 @@ use crate::ppu::Ppu;
 #[derive(Debug)]
 pub struct CpuBus {
     ram: [u8; 0x800],
-    cartridge: Option<Nrom>,
+    cartridge: Option<Cartridge>,
     open_bus: u8,
     ppu: Ppu,
     apu: Apu,
@@ -27,8 +27,8 @@ impl Default for CpuBus {
 impl CpuBus {
     /// Creates a bus without a cartridge.
     pub fn new() -> Self { Self::default() }
-    /// Attaches a parsed NROM cartridge.
-    pub fn insert_cartridge(&mut self, cartridge: Nrom) { self.cartridge = Some(cartridge); }
+    /// Attaches a parsed cartridge.
+    pub fn insert_cartridge(&mut self, cartridge: Cartridge) { self.cartridge = Some(cartridge); }
     /// Reads a byte from the CPU address space.
     pub fn read(&mut self, address: u16) -> u8 {
         let value = match address {
@@ -53,6 +53,7 @@ impl CpuBus {
             0x2000..=0x3FFF => self.ppu.cpu_write_register(address & 7, value, self.cartridge.as_mut()),
             0x4000..=0x4013 | 0x4015 | 0x4017 => self.apu.write(address, value),
             0x4014 => self.pending_oam_dma = Some(value),
+            0x8000..=0xFFFF => { if let Some(cartridge) = self.cartridge.as_mut() { cartridge.cpu_write(address, value); } },
             0x4016 => {
                 let next_strobe = value & 1 != 0;
                 if next_strobe || self.controller_strobe {
