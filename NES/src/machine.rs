@@ -560,6 +560,33 @@ mod tests {
         assert!(matches!(NesMachine::from_ines(&[0; 8]), Err(MachineError::Cartridge(CartridgeError::TruncatedHeader))));
     }
     #[test]
+    fn machine_runs_a_frame_from_cartridge_and_renders_programmed_chr_nametable_and_palette() {
+        let image = nrom_with_program(&[0x4C, 0x00, 0x80]); // JMP $8000
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+
+        // Program a visible background tile using the CPU-visible PPU registers.
+        machine.write_cpu(0x2006, 0x3F);
+        machine.write_cpu(0x2006, 0x00);
+        machine.write_cpu(0x2007, 0x0F); // universal background color
+        machine.write_cpu(0x2007, 0x21); // background palette 0, color 1
+        machine.write_cpu(0x2006, 0x20);
+        machine.write_cpu(0x2006, 0x00);
+        machine.write_cpu(0x2007, 0x01); // nametable tile 0 -> pattern tile 1
+        machine.write_cpu(0x2006, 0x00);
+        machine.write_cpu(0x2006, 0x10); // pattern tile 1, row 0
+        machine.write_cpu(0x2007, 0x80); // leftmost pixel uses palette color 1
+        machine.write_cpu(0x2006, 0x20);
+        machine.write_cpu(0x2006, 0x00); // restore the intended scroll address
+        machine.write_cpu(0x2001, 0x0A); // enable background and its leftmost 8 pixels
+
+        let cycles = machine.step_frame().unwrap();
+        assert!(cycles > 0);
+        assert_eq!(machine.framebuffer().len(), 256 * 240);
+        assert_eq!(machine.framebuffer()[0], 0x21);
+        assert!(machine.framebuffer().iter().any(|&pixel| pixel == 0x21));
+    }
+
+    #[test]
     fn machine_controller_api_latches_both_ports() {
         let image = nrom_with_program(&[0xEA, 0x4C, 0x00, 0x80]);
         let mut machine = NesMachine::from_ines(&image).unwrap();
