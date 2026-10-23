@@ -533,6 +533,20 @@ mod tests {
     }
 
     #[test]
+    fn status_read_clears_frame_irq_but_preserves_dmc_irq_and_channel_state() {
+        let mut apu = Apu::new();
+        apu.length_counters[0] = 1;
+        apu.dmc_bytes_remaining = 1;
+        apu.frame_irq = true;
+        apu.dmc_irq = true;
+
+        assert_eq!(apu.read(0x4015), 0xD1);
+        assert!(!apu.frame_irq_pending());
+        assert!(apu.irq_pending(), "DMC IRQ must survive a $4015 status read");
+        assert_eq!(apu.read(0x4015) & 0xC0, 0x80);
+    }
+
+    #[test]
     fn five_step_mode_does_not_raise_frame_irq() {
         let mut apu = Apu::new();
         apu.write(0x4017, 0x80);
