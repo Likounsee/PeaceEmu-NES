@@ -471,10 +471,29 @@ impl Cpu {
             0 => self.indirect_x(bus),
             1 => self.fetch(bus) as u16,
             2 => self.fetch_word(bus),
-            3 => self.indirect_y(bus).wrapping_add(self.state.y as u16),
-            4 => self.fetch(bus).wrapping_add(self.state.x) as u16,
-            5 => self.fetch_word(bus).wrapping_add(self.state.y as u16),
-            _ => self.fetch_word(bus).wrapping_add(self.state.x as u16),
+            3 => {
+                let base = self.indirect_y(bus);
+                let address = base.wrapping_add(self.state.y as u16);
+                Self::dummy_indexed_store_read(bus, base, address);
+                address
+            }
+            4 => {
+                let base = self.fetch(bus);
+                let _ = bus.read(base as u16);
+                base.wrapping_add(self.state.x) as u16
+            }
+            5 => {
+                let base = self.fetch_word(bus);
+                let address = base.wrapping_add(self.state.y as u16);
+                Self::dummy_indexed_store_read(bus, base, address);
+                address
+            }
+            _ => {
+                let base = self.fetch_word(bus);
+                let address = base.wrapping_add(self.state.x as u16);
+                Self::dummy_indexed_store_read(bus, base, address);
+                address
+            }
         };
         let value = bus.read(address);
         let modified = match operation {
@@ -485,6 +504,9 @@ impl Cpu {
             4 => { let v = value.wrapping_sub(1); self.compare(self.state.a, v); v } // DCP
             _ => { let v = value.wrapping_add(1); self.adc(!v); v } // ISC/ISB
         };
+        // NMOS 6502 RMW instructions write the original byte before the result.
+        // The first write can trigger memory-mapped register and mapper side effects.
+        bus.write(address, value);
         bus.write(address, modified);
         cycles
     }
@@ -1262,6 +1284,20 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn unofficial_rmw_updates_memory_accumulator_and_carry() {
+        let (mut cpu, mut bus) = setup(&[
+            0xA9, 0x01,       // LDA #$01
+            0x07, 0x20,       // SLO $20: ASL memory, then ORA into A
+        ]);
+        bus.write(0x20, 0x81);
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(bus.read(0x20), 0x02);
+        assert_eq!(cpu.state().a, 0x03);
+        assert_ne!(cpu.state().status & flags::CARRY, 0);
+    }
+
     fn indirect_addressing_wraps_pointer_reads_inside_zero_page() {
         let (mut cpu, mut bus) = setup(&[
             0xA2, 0x01, // LDX #1
