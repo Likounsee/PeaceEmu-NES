@@ -709,6 +709,28 @@ mod tests {
     }
 
     #[test]
+    fn adc_and_sbc_remain_binary_when_decimal_flag_is_set_on_the_2a03() {
+        let (mut cpu, mut bus) = setup(&[
+            0xF8,       // SED: the 2A03 stores D but ignores decimal arithmetic.
+            0xA9, 0x09, // LDA #$09
+            0x18,       // CLC
+            0x69, 0x01, // ADC #$01 -> $0A, not BCD $10
+            0x38,       // SEC
+            0xE9, 0x01, // SBC #$01 -> $09, not BCD $09 via decimal correction
+        ]);
+
+        for _ in 0..4 {
+            cpu.step(&mut bus).unwrap();
+        }
+        assert_eq!(cpu.state().a, 0x0A);
+        assert_ne!(cpu.state().status & flags::DECIMAL, 0);
+        cpu.step(&mut bus).unwrap();
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.state().a, 0x09);
+        assert_ne!(cpu.state().status & flags::DECIMAL, 0);
+    }
+
+    #[test]
     fn status_flag_instructions_and_php_plp_round_trip_are_consistent() {
         let (mut cpu, mut bus) = setup(&[
             0x38, // SEC
