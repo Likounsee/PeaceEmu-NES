@@ -140,14 +140,15 @@ impl Ppu {
                 if self.scanline == 261 && (280..=304).contains(&self.dot) {
                     self.v = (self.v & !0x7BE0) | (self.t & 0x7BE0);
                 }
-                // Latch the scroll address established for the upcoming visible frame.
-                // The snapshot renderer runs at frame end, after live v has advanced
-                // through hundreds of coarse-X/fine-Y increments.
-                if self.scanline == 261 && self.dot == 304 {
-                    self.frame_scroll_v = self.v;
-                    self.frame_fine_x = self.fine_x;
-                    self.frame_scroll_valid = true;
-                }
+            }
+
+            // Preserve the upcoming frame's starting scroll even when rendering is
+            // disabled during pre-render. In that case hardware does not copy t into v,
+            // so latch the current v rather than retaining a stale prior-frame snapshot.
+            if self.scanline == 261 && self.dot == 304 {
+                self.frame_scroll_v = self.v;
+                self.frame_fine_x = self.fine_x;
+                self.frame_scroll_valid = true;
             }
 
             if self.scanline == 241 && self.dot == 1 {
@@ -1036,6 +1037,25 @@ mod tests {
         ppu.tick(340);
         assert_eq!(ppu.position(), (0, 0));
         assert_eq!(ppu.status & 0x80, 0);
+    }
+
+    #[test]
+    fn frame_scroll_latches_even_when_rendering_is_disabled_during_prerender() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 261;
+        ppu.dot = 303;
+        ppu.mask = 0;
+        ppu.frame_scroll_valid = true;
+        ppu.frame_scroll_v = 0x0412;
+        ppu.frame_fine_x = 1;
+        ppu.v = 0x2C35;
+        ppu.fine_x = 6;
+
+        ppu.tick(1);
+
+        assert_eq!(ppu.frame_scroll_v, 0x2C35);
+        assert_eq!(ppu.frame_fine_x, 6);
+        assert!(ppu.frame_scroll_valid);
     }
 
     #[test]
