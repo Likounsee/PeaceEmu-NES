@@ -246,6 +246,35 @@ mod tests {
         assert_eq!(machine.read_cpu(0xC000), 0x31);
     }
 
+
+    #[test]
+    fn machine_loads_mmc3_and_routes_prg_bank_registers() {
+        const PRG_BANK_LEN: usize = 16 * 1024;
+        let mut image = vec![0; 16 + 4 * PRG_BANK_LEN + 8 * 1024];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 4;
+        image[5] = 1;
+        image[6] = 0x40; // Mapper 4 (MMC3).
+        for bank in 0..8 {
+            let start = 16 + bank * 8 * 1024;
+            image[start..start + 8 * 1024].fill(bank as u8);
+        }
+        // Reset vector must live in the fixed final 8 KiB bank.
+        image[16 + 4 * PRG_BANK_LEN - 4] = 0x00;
+        image[16 + 4 * PRG_BANK_LEN - 3] = 0xE0;
+
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        assert_eq!(machine.cpu_state().pc, 0xE000);
+        assert_eq!(machine.read_cpu(0x8000), 0);
+        assert_eq!(machine.read_cpu(0xC000), 6);
+        assert_eq!(machine.read_cpu(0xE000), 7);
+        machine.write_cpu(0x8000, 6);
+        machine.write_cpu(0x8001, 3);
+        assert_eq!(machine.read_cpu(0x8000), 3);
+        assert_eq!(machine.read_cpu(0xC000), 6);
+        assert_eq!(machine.read_cpu(0xE000), 7);
+    }
+
     #[test]
     fn machine_loads_reset_vector_and_executes_program() {
         let image = nrom_with_program(&[0xA9, 0x42, 0x8D, 0x00, 0x02, 0xEA]);
