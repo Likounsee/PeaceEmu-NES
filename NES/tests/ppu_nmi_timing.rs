@@ -23,8 +23,9 @@ fn enabling_nmi_during_vblank_generates_a_rising_edge() {
     let mut ppu = Ppu::new();
     advance_to_vblank(&mut ppu);
 
-    assert_ne!(ppu.cpu_read_register(2, None) & 0x80, 0);
-    // Status reads clear vblank, so re-enter vblank before testing the late enable.
+    // Move beyond the vblank edge, then wait for the next frame's vblank.
+    // Do not read status here: that would clear the flag being tested.
+    ppu.tick(1);
     advance_to_vblank(&mut ppu);
     assert!(!ppu.take_nmi_request());
 
