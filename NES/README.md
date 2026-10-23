@@ -76,8 +76,8 @@ Le dernier lot ajoute BNROM (mapper 34, variante BNROM uniquement), en plus de C
 
 ### Estimation de complétion
 
-- **Cœur global : 68 %** — estimation d’ingénierie, pas un pourcentage de jeux compatibles ; le cœur progresse, mais l'absence d'interface jouable intégrée et le rendu PPU approximatif restent des blocages majeurs.
-- **CPU : 70 %** — ajout des lectures factices des branchements pris et de l'alias SBC immédiat non officiel `$EB`, avec tests ; la plupart des instructions restent exécutées au niveau instruction et non cycle par cycle.
+- **Cœur global : 69 %** — estimation d’ingénierie, pas un pourcentage de jeux compatibles ; le cœur progresse, mais l'absence d'interface jouable intégrée et le rendu PPU approximatif restent des blocages majeurs.
+- **CPU : 71 %** — lectures factices de branchements et lectures de mauvaise page pour les lectures indexées avec franchissement, plus alias SBC immédiat non officiel `$EB` ; la plupart des instructions restent exécutées au niveau instruction et non cycle par cycle.
 - **PPU : 55 %** — scroll de début de frame rafraîchi même lorsque le rendu est désactivé au pré-rendu, suppression du VBlank/NMI à la lecture de `$2002` au dot de course ; le rendu pixel par pixel reste à construire.
 - **APU : 56 %** — canaux principaux, mixage approximatif et sortie PCM à fréquence configurable ; filtrage et timing précis restent incomplets.
 - **Cartouches et mappers : 97 %** — nombreuses familles iNES legacy et premiers cas NES 2.0 pris en charge ; variantes et plusieurs mappers restent absents.
