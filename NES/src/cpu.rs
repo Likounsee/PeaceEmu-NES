@@ -742,6 +742,21 @@ mod tests {
     }
 
     #[test]
+    fn indexed_read_performs_wrong_page_bus_access_on_page_crossing() {
+        let (mut cpu, mut bus) = setup(&[0xA2, 0x17, 0xBD, 0xFF, 0x40]); // LDX #$17; LDA $40FF,X
+        bus.set_controller_state(0, 1);
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+        cpu.step(&mut bus).unwrap();
+        let result = cpu.step(&mut bus).unwrap();
+        assert_eq!(result.cycles, 5);
+        // The intermediate read hits $4016, consuming A from the controller and
+        // leaving its value on the open bus subsequently read from unmapped $4116.
+        assert_eq!(cpu.state().a, 0x41);
+        assert_eq!(bus.read(0x4016) & 1, 0);
+    }
+
+    #[test]
     fn branch_page_crossing_adds_cycle_in_both_directions() {
         let mut bus = CpuBus::new();
         bus.write(0x06FD, 0xD0); // BNE from $06FD; offset is at $06FE, next PC=$06FF
