@@ -17,7 +17,12 @@ pub enum MachineError {
     /// The loaded cartridge does not declare battery-backed save RAM.
     NoBatteryRam,
     /// Save RAM payload does not match the cartridge's exact RAM size.
-    InvalidSaveRamLength { expected: usize, actual: usize },
+    InvalidSaveRamLength {
+        /// Number of bytes required by this cartridge.
+        expected: usize,
+        /// Number of bytes supplied by the caller.
+        actual: usize,
+    },
 }
 
 impl fmt::Display for MachineError {
