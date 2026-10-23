@@ -25,6 +25,16 @@ pub enum Mirroring {
     OneScreenUpper,
 }
 
+/// Decodes a NES 2.0 ROM size field. When the high nibble is 0xF, the low byte uses exponent/multiplier encoding; otherwise it is a linear bank count.fn nes2_rom_size(lsb: u8, msb_nibble: u8, unit: usize) -> usize {
+    if msb_nibble == 0x0F {
+        let exponent = (lsb >> 2) as u32;
+        let multiplier = ((lsb & 0x03) as usize) * 2 + 1;
+        1usize.checked_shl(exponent).unwrap_or(usize::MAX).saturating_mul(multiplier)
+    } else {
+        (((msb_nibble as usize) << 8) | lsb as usize).saturating_mul(unit)
+    }
+}
+
 /// Parsed NROM cartridge.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Nrom {
@@ -79,17 +89,33 @@ impl Nrom {
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
         if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
-        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
-
-        let mapper = ((image[6] >> 4) as u16)
-            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        let nes2 = image[7] & 0x0C == 0x08;
+        let mapper = if nes2 {
+            ((image[6] >> 4) as u16)
+                | (image[7] & 0xF0) as u16
+                | (((image[8] & 0x0F) as u16) << 8)
+        } else {
+            ((image[6] >> 4) as u16)
+                | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
+        };
         if mapper != 0 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
 
-        let prg_len = image[4] as usize * PRG_BANK_LEN;
+        // NROM has only 16/32 KiB of PRG-ROM and 0/8 KiB of CHR-ROM. Decode
+        // both the legacy iNES count fields and NES 2.0's extended linear or
+        // exponent/multiplier sizes before applying those board limits.
+        let prg_len = if nes2 {
+            nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN)
+        } else {
+            image[4] as usize * PRG_BANK_LEN
+        };
         if prg_len != PRG_BANK_LEN && prg_len != 2 * PRG_BANK_LEN {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
-        let chr_len = image[5] as usize * CHR_BANK_LEN;
+        let chr_len = if nes2 {
+            nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN)
+        } else {
+            image[5] as usize * CHR_BANK_LEN
+        };
         if chr_len != 0 && chr_len != CHR_BANK_LEN {
             return Err(CartridgeError::InvalidChrSize(chr_len));
         }
@@ -1412,9 +1438,21 @@ impl Cartridge {
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
         if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
-        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
-        let mapper = ((image[6] >> 4) as u16)
-            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        let nes2 = image[7] & 0x0C == 0x08;
+        if nes2 {
+            let mapper = ((image[6] >> 4) as u16)
+                | (image[7] & 0xF0) as u16
+                | (((image[8] & 0x0F) as u16) << 8);
+            if mapper != 0 { return Err(CartridgeError::Nes2NotSupported); }
+        }
+        let mapper = if nes2 {
+            ((image[6] >> 4) as u16)
+                | (image[7] & 0xF0) as u16
+                | (((image[8] & 0x0F) as u16) << 8)
+        } else {
+            ((image[6] >> 4) as u16)
+                | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
+        };
         match mapper {
             0 => Nrom::parse(image).map(Self::Nrom),
             1 => Mmc1::parse(image).map(Self::Mmc1),
@@ -2394,3 +2432,55 @@ mod unrom512_tests {
     }
 }
 
+
+
+#[cfg(test)]
+mod nes2_nrom_tests {
+    use super::*;
+
+    fn nes2_nrom(prg_banks: u8, chr_banks: u8) -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN + chr_banks as usize * CHR_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = prg_banks;
+        image[5] = chr_banks;
+        image[7] = 0x08; // NES 2.0, mapper 0.
+        image
+    }
+
+    #[test]
+    fn nes2_nrom_with_chr_ram_loads_and_mirrors_16k_prg() {
+        let mut image = nes2_nrom(1, 0);
+        image[INES_HEADER_LEN..INES_HEADER_LEN + PRG_BANK_LEN].fill(0x5A);
+        let cart = Cartridge::parse(&image).unwrap();
+        assert!(matches!(cart, Cartridge::Nrom(_)));
+        assert_eq!(cart.cpu_read(0x8000), Some(0x5A));
+        assert_eq!(cart.cpu_read(0xC000), Some(0x5A));
+        assert!(cart.chr_is_ram());
+    }
+
+    #[test]
+    fn nes2_nrom_with_32k_prg_and_chr_rom_loads() {
+        let mut image = nes2_nrom(2, 1);
+        let chr_start = INES_HEADER_LEN + 2 * PRG_BANK_LEN;
+        image[chr_start..chr_start + CHR_BANK_LEN].fill(0xA6);
+        let cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.cpu_read(0x8000), Some(0));
+        assert_eq!(cart.cpu_read(0xC000), Some(0));
+        assert_eq!(cart.ppu_read(0x123), Some(0xA6));
+        assert!(!cart.chr_is_ram());
+    }
+
+    #[test]
+    fn nes2_nrom_rejects_extended_size_that_exceeds_nrom_board_limits() {
+        let mut image = nes2_nrom(1, 0);
+        image[9] = 0x01; // 257 PRG banks in linear NES 2.0 encoding.
+        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::InvalidPrgSize(_))));
+    }
+
+    #[test]
+    fn nes2_non_nrom_mappers_remain_explicitly_unsupported() {
+        let mut image = nes2_nrom(1, 0);
+        image[6] = 0x10;
+        assert_eq!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported));
+    }
+}
