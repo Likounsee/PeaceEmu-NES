@@ -895,6 +895,29 @@ mod tests {
     }
 
     #[test]
+    fn scanline_renderer_tracks_vertical_scroll_instead_of_reusing_one_tile_row() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x0A;
+        ppu.mem_write(0x0000, 0x80, Some(&mut cartridge)); // Row 0: pixel at x=0.
+        ppu.mem_write(0x0001, 0x40, Some(&mut cartridge)); // Row 1: pixel at x=1.
+        ppu.mem_write(0x3F01, 0x21, Some(&mut cartridge));
+
+        ppu.tick_with_cartridge(256, Some(&cartridge));
+        assert_eq!(ppu.framebuffer()[0], 0x21);
+        ppu.tick_with_cartridge(85, Some(&cartridge)); // Enter visible scanline 1.
+        ppu.tick_with_cartridge(256, Some(&cartridge));
+
+        assert_eq!(ppu.framebuffer()[256], 0x00, "row 1 must not reuse row 0's pattern");
+        assert_eq!(ppu.framebuffer()[257], 0x21, "row 1 must use the incremented fine-Y address");
+    }
+
+    #[test]
     fn sprite_zero_hit_becomes_visible_during_scanline_not_only_at_frame_end() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
