@@ -177,3 +177,11 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - Adaptation locale : une fenêtre PRG de 8 Kio sélectionnable en $8000-$9FFF et trois fenêtres fixes en $A000-$FFFF ; quatre registres CHR de 4 Kio commandés par deux latches FD/FE ; mirroring horizontal/vertical commutable, tout en préservant le four-screen déclaré dans l'en-tête. Les transitions de latch sont suivies avec `Cell` dans la lecture CHR afin de conserver la signature de lecture utilisée par le rendu PPU existant.
 - Tests : banques PRG sélectionnables/fixes, changement des deux latches par accès aux adresses de déclenchement, mirroring et protection four-screen, refus de PRG trop petit ou de CHR-ROM absente, et dispatch à travers `Cartridge`.
 - Limites : mapper MMC2 uniquement sur iNES legacy avec CHR-ROM ; NES 2.0, variantes matérielles et timing PPU par dot restent hors périmètre. Les références existantes ont guidé le comportement ; aucun fichier source d'émulateur n'a été copié.
+
+
+## Seizième adaptation réalisée : UNROM-512 (mapper 30)
+
+- Référence matérielle principale : [NESdev — UNROM 512](https://www.nesdev.org/wiki/UNROM512), notamment le registre `[NCCPPPPP]`, les fenêtres PRG de 16 Kio, les quatre banques CHR-RAM de 8 Kio et l'absence de PRG-RAM sur la carte décrite. Le fonctionnement des fenêtres a aussi été comparé au mapper UxROM déjà présent dans PeaceEmu.
+- Adaptation « recette maison » : intégration de `Unrom512` dans l'enum `Cartridge`, avec PRG sélectionnable par les bits 0–4, dernière banque fixe, CHR-RAM 32 Kio commutable par les bits 5–6 et bit 7 de mirroring one-screen lorsque le drapeau iNES indique une configuration commutable. Le chargement saute correctement le trainer avant la PRG-ROM, sans prétendre fournir de PRG-RAM physique.
+- Tests : banques PRG commutables/fixes, persistance isolée des quatre banques CHR-RAM, mirroring one-screen, trainer et refus de PRG-ROM hors capacités retenues ou de CHR-ROM.
+- Limites explicites : sous-ensemble iNES legacy (256/512 Kio PRG) ; sous-mappers NES 2.0, flash ROM, conflits de bus et variantes de configuration H/V/four-screen non entièrement modélisés. Le comportement est réimplémenté dans les structures PeaceEmu, sans copier le code d'un émulateur tiers.
