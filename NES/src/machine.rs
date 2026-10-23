@@ -211,7 +211,7 @@ mod tests {
         const PRG_BANK_LEN: usize = 16 * 1024;
         const CHR_BANK_LEN: usize = 8 * 1024;
         let mut image = vec![0; 16 + 4 * PRG_BANK_LEN + 3 * CHR_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 4;
         image[5] = 3;
         image[6] = 0x20; // Mapper 66 low nibble.
