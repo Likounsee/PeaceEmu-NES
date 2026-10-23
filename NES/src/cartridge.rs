@@ -1,4 +1,4 @@
-//! Legacy iNES parsing and mapper implementations for NROM, UxROM and CNROM.
+//! Legacy iNES parsing and mapper implementations for NROM, UxROM, CNROM and AxROM.
 
 use core::fmt;
 
@@ -18,6 +18,10 @@ pub enum Mirroring {
     Vertical,
     /// Four-screen memory supplied by the cartridge.
     FourScreen,
+    /// All logical nametables map to the lower physical nametable.
+    OneScreenLower,
+    /// All logical nametables map to the upper physical nametable.
+    OneScreenUpper,
 }
 
 /// Parsed NROM cartridge.
