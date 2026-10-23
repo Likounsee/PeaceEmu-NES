@@ -78,5 +78,5 @@ fn mapper30_four_screen_flag_is_not_overridden_by_bank_writes() {
     assert!(cart.cpu_write(0x8000, 0xE0));
     assert_eq!(cart.mirroring(), Mirroring::FourScreen);
     assert_eq!(cart.ppu_read(0), Some(0));
-    assert_eq!(cart.ppu_read(CHR_BANK - 1), Some(0));
+    assert_eq!(cart.ppu_read((CHR_BANK - 1) as u16), Some(0));
 }
