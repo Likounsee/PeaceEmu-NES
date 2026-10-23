@@ -144,9 +144,16 @@ impl Ppu {
                 self.line_fine_x = self.fine_x;
             }
 
+            // Build the visible output as the emulated beam advances. Rendering a
+            // blank line while both layers are disabled also prevents stale pixels from
+            // a previous frame when a game toggles rendering during gameplay.
+            if self.dot == 256 && self.scanline < 240 {
+                self.render_scanline(self.scanline as usize, cartridge);
+            }
+
             // During visible and pre-render scanlines, the rendering pipeline advances
             // coarse X every tile, increments Y at dot 256, and copies scroll fields at
-            // the hardware reload points. Pixel fetches are still approximated by a line renderer. 
+            // the hardware reload points. Pixel fetches are still approximated by a line renderer.
             if self.mask & 0x18 != 0 && (self.scanline < 240 || self.scanline == 261) {
                 if ((1..=256).contains(&self.dot) || (328..=336).contains(&self.dot))
                     && self.dot.is_multiple_of(8)
@@ -154,9 +161,6 @@ impl Ppu {
                     self.increment_coarse_x();
                 }
                 if self.dot == 256 {
-                    if self.scanline < 240 {
-                        self.render_scanline(self.scanline as usize, cartridge);
-                    }
                     self.increment_y();
                 }
                 if self.dot == 257 {
