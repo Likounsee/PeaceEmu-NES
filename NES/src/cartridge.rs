@@ -1,4 +1,4 @@
-//! iNES cartridge parsing and initial NROM mapper 0 support.
+//! Legacy iNES parsing and mapper implementations for NROM, UxROM and CNROM.
 
 use core::fmt;
 
@@ -39,11 +39,11 @@ pub enum CartridgeError {
     InvalidMagic,
     /// NES 2.0 is recognized but not implemented.
     Nes2NotSupported,
-    /// Mapper other than zero was requested.
+    /// Mapper not implemented by this core was requested.
     UnsupportedMapper(u16),
-    /// PRG size is not valid for NROM.
+    /// PRG size is invalid for the selected mapper.
     InvalidPrgSize(usize),
-    /// CHR-ROM size is not valid for NROM (only zero or one 8 KiB bank is supported).
+    /// CHR-ROM size is invalid for the selected mapper.
     InvalidChrSize(usize),
     /// Declared cartridge data is truncated.
     TruncatedImage {
