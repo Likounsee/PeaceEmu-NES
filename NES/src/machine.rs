@@ -557,7 +557,7 @@ mod pcm_frontend_tests {
     #[test]
     fn machine_exposes_configurable_pcm_batches_while_emulating() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         // Infinite JMP $8000 loop so stepping remains deterministic.
         image[16] = 0x4C;
