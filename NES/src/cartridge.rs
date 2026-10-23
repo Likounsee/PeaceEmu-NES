@@ -2107,8 +2107,8 @@ mod mmc2_tests {
         image[5] = chr_banks;
         image[6] = 0x90;
         let prg_start = INES_HEADER_LEN;
-        for bank in 0..prg_banks as usize {
-            image[prg_start + bank * PRG_BANK_LEN..prg_start + (bank + 1) * PRG_BANK_LEN].fill(bank as u8);
+        for bank in 0..prg_banks as usize * 2 {
+            image[prg_start + bank * 0x2000..prg_start + (bank + 1) * 0x2000].fill(bank as u8);
         }
         let chr_start = prg_start + prg_banks as usize * PRG_BANK_LEN;
         for bank in 0..chr_banks as usize * 2 {
