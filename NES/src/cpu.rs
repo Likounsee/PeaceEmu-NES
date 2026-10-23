@@ -1266,8 +1266,8 @@ mod tests {
             0xA0, 0x02,       // LDY #$02
             0x9E, 0xFF, 0x20, // SHX $20FF,Y -> crossing writes $01 to $0101
             0xA9, 0xFF,       // LDA #$FF
-            0x9F, 0x10, 0x20, // AHX $2010,Y -> $2012, mask $21, value $01
-            0x9C, 0x10, 0x20, // SHY $2010,X -> $201F, value $21 & Y = $02
+            0x9F, 0x10, 0x02, // AHX $0210,Y -> $0212, mask $03, value $03
+            0x9C, 0x10, 0x02, // SHY $0210,X -> $021F, value $03 & Y = $02
         ]);
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
@@ -1275,9 +1275,9 @@ mod tests {
         assert_eq!(bus.read(0x0101), 0x01);
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
-        assert_eq!(bus.read(0x2012), 0x01);
+        assert_eq!(bus.read(0x0212), 0x03);
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
-        assert_eq!(bus.read(0x201F), 0x02);
+        assert_eq!(bus.read(0x021F), 0x02);
     }
 
     #[test]
@@ -1286,11 +1286,11 @@ mod tests {
             0xA9, 0x3F,       // LDA #$3F
             0xA2, 0x1F,       // LDX #$1F
             0xA0, 0x01,       // LDY #$01
-            0x9B, 0x00, 0x20, // TAS $2000,Y: SP=A&X=$1F; value=$1F & $21=$01
+            0x9B, 0x00, 0x02, // TAS $0200,Y: SP=A&X=$1F; value=$1F & $03=$03
         ]);
         for _ in 0..3 { cpu.step(&mut bus).unwrap(); }
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
         assert_eq!(cpu.state().sp, 0x1F);
-        assert_eq!(bus.read(0x2001), 0x01);
+        assert_eq!(bus.read(0x0201), 0x03);
     }
 
