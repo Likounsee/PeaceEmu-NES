@@ -25,7 +25,7 @@ pub enum Mirroring {
     OneScreenUpper,
 }
 
-/// Decodes a NES 2.0 ROM size field. When the high nibble is 0xF, the low byte uses exponent/multiplier encoding; otherwise it is a linear bank count.fn nes2_rom_size(lsb: u8, msb_nibble: u8, unit: usize) -> usize {
+/// Decodes a NES 2.0 ROM size field. When the high nibble is 0xF, the low byte uses exponent/multiplier encoding; otherwise it is a linear bank count.\nfn nes2_rom_size(lsb: u8, msb_nibble: u8, unit: usize) -> usize {
     if msb_nibble == 0x0F {
         let exponent = (lsb >> 2) as u32;
         let multiplier = ((lsb & 0x03) as usize) * 2 + 1;
@@ -85,7 +85,7 @@ impl fmt::Display for CartridgeError {
 impl std::error::Error for CartridgeError {}
 
 impl Nrom {
-    /// Parses a legacy iNES image and accepts mapper 0 with one or two PRG banks.
+    /// Parses an iNES or NES 2.0 mapper-0 image with one or two PRG banks.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
         if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
