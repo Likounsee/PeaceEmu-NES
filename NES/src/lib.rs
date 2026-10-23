@@ -16,6 +16,10 @@ pub mod machine;
 /// PPU register and memory model.
 pub mod ppu;
 
+/// Optional adapter for the shared PeaceEmu host contract.
+#[cfg(feature = "peaceemu-host")]
+pub mod peaceemu_adapter;
+
 /// Current module version.
 pub const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Stable system identifier for PeaceEmu registration.
