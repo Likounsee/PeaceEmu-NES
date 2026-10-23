@@ -303,14 +303,14 @@ impl Cpu {
             0x8A => { self.state.a = self.state.x; self.set_nz(self.state.a); 2 }
             0x98 => { self.state.a = self.state.y; self.set_nz(self.state.a); 2 }
             0xE8 => { self.state.x = self.state.x.wrapping_add(1); self.set_nz(self.state.x); 2 }
-            0xE6 => { let a = self.fetch(bus) as u16; let v = bus.read(a).wrapping_add(1); bus.write(a, v); self.set_nz(v); 5 }
-            0xEE => { let a = self.fetch_word(bus); let v = bus.read(a).wrapping_add(1); bus.write(a, v); self.set_nz(v); 6 }
-            0xF6 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; let v = bus.read(a).wrapping_add(1); bus.write(a, v); self.set_nz(v); 6 }
-            0xFE => { let a = self.fetch_word(bus).wrapping_add(self.state.x as u16); let v = bus.read(a).wrapping_add(1); bus.write(a, v); self.set_nz(v); 7 }
-            0xC6 => { let a = self.fetch(bus) as u16; let v = bus.read(a).wrapping_sub(1); bus.write(a, v); self.set_nz(v); 5 }
-            0xCE => { let a = self.fetch_word(bus); let v = bus.read(a).wrapping_sub(1); bus.write(a, v); self.set_nz(v); 6 }
-            0xD6 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; let v = bus.read(a).wrapping_sub(1); bus.write(a, v); self.set_nz(v); 6 }
-            0xDE => { let a = self.fetch_word(bus).wrapping_add(self.state.x as u16); let v = bus.read(a).wrapping_sub(1); bus.write(a, v); self.set_nz(v); 7 }
+            0xE6 => { let a = self.fetch(bus) as u16; let old = bus.read(a); bus.write(a, old); let v = old.wrapping_add(1); bus.write(a, v); self.set_nz(v); 5 }
+            0xEE => { let a = self.fetch_word(bus); let old = bus.read(a); bus.write(a, old); let v = old.wrapping_add(1); bus.write(a, v); self.set_nz(v); 6 }
+            0xF6 => { let base = self.fetch(bus); let _ = bus.read(base as u16); let a = base.wrapping_add(self.state.x) as u16; let old = bus.read(a); bus.write(a, old); let v = old.wrapping_add(1); bus.write(a, v); self.set_nz(v); 6 }
+            0xFE => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); Self::dummy_indexed_store_read(bus, base, a); let old = bus.read(a); bus.write(a, old); let v = old.wrapping_add(1); bus.write(a, v); self.set_nz(v); 7 }
+            0xC6 => { let a = self.fetch(bus) as u16; let old = bus.read(a); bus.write(a, old); let v = old.wrapping_sub(1); bus.write(a, v); self.set_nz(v); 5 }
+            0xCE => { let a = self.fetch_word(bus); let old = bus.read(a); bus.write(a, old); let v = old.wrapping_sub(1); bus.write(a, v); self.set_nz(v); 6 }
+            0xD6 => { let base = self.fetch(bus); let _ = bus.read(base as u16); let a = base.wrapping_add(self.state.x) as u16; let old = bus.read(a); bus.write(a, old); let v = old.wrapping_sub(1); bus.write(a, v); self.set_nz(v); 6 }
+            0xDE => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); Self::dummy_indexed_store_read(bus, base, a); let old = bus.read(a); bus.write(a, old); let v = old.wrapping_sub(1); bus.write(a, v); self.set_nz(v); 7 }
             0xC8 => { self.state.y = self.state.y.wrapping_add(1); self.set_nz(self.state.y); 2 }
             0xCA => { self.state.x = self.state.x.wrapping_sub(1); self.set_nz(self.state.x); 2 }
             0x88 => { self.state.y = self.state.y.wrapping_sub(1); self.set_nz(self.state.y); 2 }
@@ -318,10 +318,10 @@ impl Cpu {
             0x2A => { self.state.a = self.shift(self.state.a, 1); 2 }
             0x4A => { self.state.a = self.shift(self.state.a, 2); 2 }
             0x6A => { self.state.a = self.shift(self.state.a, 3); 2 }
-            0x06 | 0x26 | 0x46 | 0x66 => { let a = self.fetch(bus) as u16; let k = (opcode >> 5) & 3; let v = self.shift(bus.read(a), k); bus.write(a, v); 5 }
-            0x16 | 0x36 | 0x56 | 0x76 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; let k = (opcode >> 5) & 3; let v = self.shift(bus.read(a), k); bus.write(a, v); 6 }
-            0x0E | 0x2E | 0x4E | 0x6E => { let a = self.fetch_word(bus); let k = (opcode >> 5) & 3; let v = self.shift(bus.read(a), k); bus.write(a, v); 6 }
-            0x1E | 0x3E | 0x5E | 0x7E => { let a = self.fetch_word(bus).wrapping_add(self.state.x as u16); let k = (opcode >> 5) & 3; let v = self.shift(bus.read(a), k); bus.write(a, v); 7 }
+            0x06 | 0x26 | 0x46 | 0x66 => { let a = self.fetch(bus) as u16; let old = bus.read(a); let v = self.shift(old, (opcode >> 5) & 3); bus.write(a, old); bus.write(a, v); 5 }
+            0x16 | 0x36 | 0x56 | 0x76 => { let base = self.fetch(bus); let _ = bus.read(base as u16); let a = base.wrapping_add(self.state.x) as u16; let old = bus.read(a); let v = self.shift(old, (opcode >> 5) & 3); bus.write(a, old); bus.write(a, v); 6 }
+            0x0E | 0x2E | 0x4E | 0x6E => { let a = self.fetch_word(bus); let old = bus.read(a); let v = self.shift(old, (opcode >> 5) & 3); bus.write(a, old); bus.write(a, v); 6 }
+            0x1E | 0x3E | 0x5E | 0x7E => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); Self::dummy_indexed_store_read(bus, base, a); let old = bus.read(a); let v = self.shift(old, (opcode >> 5) & 3); bus.write(a, old); bus.write(a, v); 7 }
             0x69 => { let v = self.fetch(bus); self.adc(v); 2 }
             0x65 => { let a = self.fetch(bus) as u16; self.adc(bus.read(a)); 3 }
             0x75 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; self.adc(bus.read(a)); 4 }
