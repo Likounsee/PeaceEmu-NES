@@ -598,6 +598,24 @@ mod tests {
     }
 
     #[test]
+    fn dmc_dma_stalls_cpu_and_advances_ppu_time() {
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
+        let before_cycles = machine.total_cycles();
+        machine.write_cpu(0x4010, 0x00); // No DMC IRQ.
+        machine.write_cpu(0x4012, 0x00); // $C000 sample start.
+        machine.write_cpu(0x4013, 0x00); // One-byte sample.
+        machine.write_cpu(0x4015, 0x10); // Enable DMC; its buffer is empty.
+        let before_position = machine.bus.ppu_position();
+
+        let result = machine.step().unwrap();
+        assert_eq!(result.cycles, 2, "StepResult reports the opcode's nominal cycles");
+        assert_eq!(machine.total_cycles() - before_cycles, 6, "the four-cycle DMC DMA stall must be included in elapsed CPU time");
+        let after_position = machine.bus.ppu_position();
+        assert_eq!(after_position.0, before_position.0);
+        assert_eq!(after_position.1 - before_position.1, 18, "the PPU must advance three dots for each of six elapsed CPU cycles");
+    }
+
+    #[test]
     fn machine_controller_api_latches_both_ports() {
         let image = nrom_with_program(&[0xEA, 0x4C, 0x00, 0x80]);
         let mut machine = NesMachine::from_ines(&image).unwrap();
