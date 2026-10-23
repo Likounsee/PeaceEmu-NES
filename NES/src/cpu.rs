@@ -279,19 +279,19 @@ impl Cpu {
             0x8D => { let a = self.fetch_word(bus); bus.write(a, self.state.a); 4 }
             0x86 => { let a = self.fetch(bus) as u16; bus.write(a, self.state.x); 3 }
             0x84 => { let a = self.fetch(bus) as u16; bus.write(a, self.state.y); 3 }
-            0x95 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; bus.write(a, self.state.a); 4 }
-            0x9D => { let a = self.fetch_word(bus).wrapping_add(self.state.x as u16); bus.write(a, self.state.a); 5 }
-            0x99 => { let a = self.fetch_word(bus).wrapping_add(self.state.y as u16); bus.write(a, self.state.a); 5 }
+            0x95 => { let base = self.fetch(bus) as u16; let _ = bus.read(base); let a = base.wrapping_add(self.state.x as u16) & 0x00FF; bus.write(a, self.state.a); 4 }
+            0x9D => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); Self::dummy_indexed_store_read(bus, base, a); bus.write(a, self.state.a); 5 }
+            0x99 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); Self::dummy_indexed_store_read(bus, base, a); bus.write(a, self.state.a); 5 }
             0x81 => { let a = self.indirect_x(bus); bus.write(a, self.state.a); 6 }
-            0x91 => { let a = self.indirect_y(bus).wrapping_add(self.state.y as u16); bus.write(a, self.state.a); 6 }
-            0x96 => { let a = self.fetch(bus).wrapping_add(self.state.y) as u16; bus.write(a, self.state.x); 4 }
+            0x91 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); Self::dummy_indexed_store_read(bus, base, a); bus.write(a, self.state.a); 6 }
+            0x96 => { let base = self.fetch(bus) as u16; let _ = bus.read(base); let a = base.wrapping_add(self.state.y as u16) & 0x00FF; bus.write(a, self.state.x); 4 }
             0x8E => { let a = self.fetch_word(bus); bus.write(a, self.state.x); 4 }
-            0x94 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; bus.write(a, self.state.y); 4 }
+            0x94 => { let base = self.fetch(bus) as u16; let _ = bus.read(base); let a = base.wrapping_add(self.state.x as u16) & 0x00FF; bus.write(a, self.state.y); 4 }
             0x8C => { let a = self.fetch_word(bus); bus.write(a, self.state.y); 4 }
             // Stable unofficial SAX stores A & X without changing flags.
             0x87 => { let a = self.fetch(bus) as u16; bus.write(a, self.state.a & self.state.x); 3 }
             0x8F => { let a = self.fetch_word(bus); bus.write(a, self.state.a & self.state.x); 4 }
-            0x97 => { let a = self.fetch(bus).wrapping_add(self.state.y) as u16; bus.write(a, self.state.a & self.state.x); 4 }
+            0x97 => { let base = self.fetch(bus) as u16; let _ = bus.read(base); let a = base.wrapping_add(self.state.y as u16) & 0x00FF; bus.write(a, self.state.a & self.state.x); 4 }
             0x83 => { let a = self.indirect_x(bus); bus.write(a, self.state.a & self.state.x); 6 }
             0xAA => { self.state.x = self.state.a; self.set_nz(self.state.x); 2 }
             0xA8 => { self.state.y = self.state.a; self.set_nz(self.state.y); 2 }
@@ -547,6 +547,13 @@ impl Cpu {
             let _ = bus.read(dummy);
         }
         bus.read(address)
+    }
+
+    /// Performs the mandatory wrong-page/dummy read before an indexed store.
+    /// Unlike indexed loads, stores always perform this bus access, even without page crossing.
+    fn dummy_indexed_store_read(bus: &mut CpuBus, base: u16, address: u16) {
+        let dummy = (base & 0xFF00) | (address & 0x00FF);
+        let _ = bus.read(dummy);
     }
 
     fn branch(&mut self, bus: &mut CpuBus, take: bool) -> u8 {
@@ -889,6 +896,26 @@ mod tests {
 
         assert_eq!(result.cycles, 5);
         assert_eq!(cpu.state().pc, 0x1234);
+    }
+
+    #[test]
+    fn indexed_store_performs_dummy_read_before_writing_target() {
+        let mut bus = CpuBus::new();
+        bus.set_controller_state(0, 0b0000_0010); // A=0, B=1.
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+        bus.write(0x0600, 0x9D); // STA $40FF,X; dummy read is $4016.
+        bus.write(0x0601, 0xFF);
+        bus.write(0x0602, 0x40);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        cpu.state.x = 0x17;
+        cpu.state.a = 0x55;
+
+        let result = cpu.step(&mut bus).unwrap();
+
+        assert_eq!(result.cycles, 5);
+        assert_eq!(bus.read(0x4016) & 1, 1, "dummy read must advance the controller shift register");
     }
 
     #[test]
