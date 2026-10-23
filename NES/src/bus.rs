@@ -92,6 +92,8 @@ impl CpuBus {
     pub fn framebuffer(&self) -> &[u8] { self.ppu.framebuffer() }
     /// Advances the PPU by the specified number of dots.
     pub fn tick_ppu(&mut self, dots: u32) { self.ppu.tick(dots); }
+    /// Advances the mapper's approximate scanline IRQ counter.
+    pub fn clock_mapper_irq(&mut self) { if let Some(cartridge) = self.cartridge.as_mut() { cartridge.clock_irq_counter(); } }
     /// Returns the current PPU scanline and dot, for frame scheduling and diagnostics.
     pub fn ppu_position(&self) -> (u16, u16) { self.ppu.position() }
     /// Advances the APU by CPU cycles and services pending DMC sample reads.
@@ -110,7 +112,7 @@ impl CpuBus {
     /// Returns one approximate normalized mono sample from the APU mixer.
     pub fn apu_sample(&self) -> f32 { self.apu.sample() }
     /// Returns the level-triggered APU IRQ line without clearing it.
-    pub fn irq_pending(&self) -> bool { self.apu.irq_pending() }
+    pub fn irq_pending(&self) -> bool { self.apu.irq_pending() || self.cartridge.as_ref().is_some_and(Cartridge::irq_pending) }
     /// Takes a pending NMI edge raised by the PPU.
     pub fn take_nmi_request(&mut self) -> bool { self.ppu.take_nmi_request() }
     /// Takes a pending OAM DMA page requested by a write to $4014.
