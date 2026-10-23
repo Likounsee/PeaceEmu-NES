@@ -129,7 +129,14 @@ impl NesMachine {
             self.cpu.add_stall_cycles(dma_cycles);
             elapsed_cycles = elapsed_cycles.saturating_add(dma_cycles);
         }
+        let (scanline_before, _) = self.bus.ppu_position();
         self.bus.tick_ppu(u32::from(elapsed_cycles) * 3);
+        let (scanline_after, _) = self.bus.ppu_position();
+        if scanline_after != scanline_before {
+            // Until PPU A12 bus transitions are exposed, approximate one MMC3 IRQ clock
+            // per crossed scanline; this preserves IRQ delivery but is not dot-accurate.
+            self.bus.clock_mapper_irq();
+        }
         self.bus.tick_apu(u32::from(elapsed_cycles));
         Ok(result)
     }
