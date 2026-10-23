@@ -1370,16 +1370,16 @@ impl Unrom512 {
     }
 }
 
-/// Supported cartridge mapper implementations.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Cartridge {
-    fn copy_ram(target: &mut [u8], source: &[u8]) -> bool {
+fn copy_ram(target: &mut [u8], source: &[u8]) -> bool {
     if target.len() != source.len() { return false; }
     target.copy_from_slice(source);
     true
 }
 
-/// Mapper 0, no PRG banking.
+/// Supported cartridge mapper implementations.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Cartridge {
+    /// Mapper 0, no PRG banking.
     Nrom(Nrom),
     /// Mapper 1, serial PRG/CHR banking and mirroring.
     Mmc1(Mmc1),
