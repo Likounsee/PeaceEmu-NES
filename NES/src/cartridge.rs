@@ -1306,3 +1306,93 @@ mod gxrom_tests {
     }
 }
 
+
+#[cfg(test)]
+mod mmc3_tests {
+    use super::*;
+
+    fn mmc3_image(prg_banks: u8, chr_banks: u8) -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN + chr_banks as usize * CHR_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = prg_banks;
+        image[5] = chr_banks;
+        image[6] = 0x40; // Mapper 4.
+        let prg_start = INES_HEADER_LEN;
+        for bank in 0..(prg_banks as usize * 2) {
+            let start = prg_start + bank * 0x2000;
+            image[start..start + 0x2000].fill(bank as u8);
+        }
+        let chr_start = prg_start + prg_banks as usize * PRG_BANK_LEN;
+        for bank in 0..(chr_banks as usize * 8) {
+            let start = chr_start + bank * 0x400;
+            image[start..start + 0x400].fill((0x40 + bank) as u8);
+        }
+        image
+    }
+
+    #[test]
+    fn mapper_4_maps_switchable_and_fixed_prg_windows() {
+        let mut cart = Cartridge::parse(&mmc3_image(4, 2)).unwrap();
+        assert_eq!(cart.cpu_read(0x8000), Some(0));
+        assert_eq!(cart.cpu_read(0xA000), Some(1));
+        assert_eq!(cart.cpu_read(0xC000), Some(6));
+        assert_eq!(cart.cpu_read(0xE000), Some(7));
+        cart.cpu_write(0x8000, 6);
+        cart.cpu_write(0x8001, 3);
+        assert_eq!(cart.cpu_read(0x8000), Some(3));
+        cart.cpu_write(0x8000, 0x46);
+        assert_eq!(cart.cpu_read(0x8000), Some(6));
+        assert_eq!(cart.cpu_read(0xC000), Some(3));
+        assert_eq!(cart.cpu_read(0xE000), Some(7));
+    }
+
+    #[test]
+    fn mapper_4_maps_chr_banks_and_supports_chr_ram() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 2)).unwrap();
+        assert_eq!(cart.ppu_read(0), Some(0x40));
+        cart.cpu_write(0x8000, 2);
+        cart.cpu_write(0x8001, 5);
+        assert_eq!(cart.ppu_read(0), Some(0x45));
+        cart.cpu_write(0x8000, 0x82);
+        cart.cpu_write(0x8001, 6);
+        assert_eq!(cart.ppu_read(0), Some(0x46));
+
+        let mut ram = Cartridge::parse(&mmc3_image(2, 0)).unwrap();
+        assert!(ram.chr_is_ram());
+        assert!(ram.ppu_write(0x0123, 0xA5));
+        assert_eq!(ram.ppu_read(0x0123), Some(0xA5));
+    }
+
+    #[test]
+    fn mapper_4_ram_protection_mirroring_and_irq_registers_work() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        assert_eq!(cart.mirroring(), Mirroring::Horizontal);
+        cart.cpu_write(0xA000, 0);
+        assert_eq!(cart.mirroring(), Mirroring::Vertical);
+        cart.cpu_write(0xA001, 0xC0);
+        cart.cpu_write(0x6000, 0x55);
+        assert_eq!(cart.cpu_read(0x6000), Some(0));
+        cart.cpu_write(0xA001, 0x80);
+        cart.cpu_write(0x6000, 0x5A);
+        assert_eq!(cart.cpu_read(0x6000), Some(0x5A));
+        cart.cpu_write(0xC000, 1);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+        cart.clock_irq_counter();
+        assert!(!cart.irq_pending());
+        cart.clock_irq_counter();
+        assert!(cart.irq_pending());
+        cart.cpu_write(0xE000, 0);
+        assert!(!cart.irq_pending());
+    }
+
+    #[test]
+    fn mapper_4_preserves_hardwired_four_screen_mirroring() {
+        let mut image = mmc3_image(2, 1);
+        image[6] |= 0x08;
+        let mut cart = Cartridge::parse(&image).unwrap();
+        cart.cpu_write(0xA000, 0);
+        assert_eq!(cart.mirroring(), Mirroring::FourScreen);
+    }
+}
+
