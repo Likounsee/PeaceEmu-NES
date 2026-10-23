@@ -23,7 +23,7 @@ Aucun fichier source tiers n'est importé dans le cœur par cette décision. Tou
 
 1. Choisir un comportement matériel précis et documenter le problème observé.
 2. Comparer au moins une implémentation permissive et les références matérielles.
-3. Porter uniquement la logique utile, en l'adaptant à nos structures `Ppu`, `CpuBus`, `Nrom` et `NesMachine`.
+3. Porter uniquement la logique utile, en l'adaptant à nos structures `Ppu`, `CpuBus`, `Cartridge` et `NesMachine`.
 4. Ajouter des tests de régression pour les cas normaux, les limites et les cas de synchronisation.
 5. Ajouter ici la provenance et la licence si du code est effectivement repris ; conserver les notices exigées par la licence.
 6. Valider formatage, tests et Clippy via CI avant d'annoncer le résultat.
@@ -57,6 +57,15 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - Les opérations réutilisent les helpers locaux `shift`, `adc`, `compare`, `indirect_x` et `indirect_y`, sans nouvelle dépendance et sans copier un cœur externe.
 - Une régression vérifie les effets mémoire, registres et flags pour les six familles. Les écritures factices et les effets de bus à chaque cycle restent hors périmètre : cette tranche n'est pas cycle-exacte.
 
+
+
+## Quatrième adaptation réalisée : abstraction mapper et UxROM (mapper 2)
+
+- Référence de conception : implémentation UxROM de TetaNES et documentation matérielle NESdev ; les références ont servi à confirmer la disposition « banque commutable en $8000-$BFFF, dernière banque fixe en $C000-$FFFF ».
+- Adaptation locale : ajout de `Cartridge` comme enum de dispatch statique et d'une implémentation `Uxrom`. Le chargement iNES choisit désormais NROM (mapper 0) ou UxROM (mapper 2) ; le bus CPU route les écritures mapper, et la PPU utilise l'interface commune du cartridge.
+- Tests de régression : sélection de banques, banque finale fixe, limites $8000/$BFFF/$C000/$FFFF, PRG-RAM, CHR-RAM et chargement UxROM via `NesMachine` avec le vecteur de reset dans la banque fixe.
+- Limites explicites : NES 2.0 et CHR-ROM multi-banque restent non pris en charge ; les variantes UxROM avec bus conflicts ne sont pas encore modélisées. Cette tranche est une première prise en charge mapper 2, pas une compatibilité exhaustive de toutes les cartouches UxROM.
+- Aucun code source TetaNES n'a été copié dans cette tranche ; la structure et les comportements matériels ont été adaptés au code et aux tests de PeaceEmu-NES.
 
 ## Politique Rust
 
