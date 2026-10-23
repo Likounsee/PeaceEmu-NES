@@ -130,7 +130,7 @@ mod win {
             x_src: i32, y_src: i32, src_width: i32, src_height: i32, bits: *const c_void,
             info: *const BitmapInfo, usage: u32, raster_op: u32) -> i32;
     }
-    #[link(name = "xinput1_4")]
+    #[link(name = "xinput9_1_0")]
     extern "system" {
         fn XInputGetState(user_index: u32, state: *mut XInputState) -> u32;
     }
