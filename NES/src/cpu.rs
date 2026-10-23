@@ -636,7 +636,7 @@ mod tests {
         image[4] = 1;
         image[16 + 0x3FFE] = 0x00;
         image[16 + 0x3FFF] = 0x07;
-        bus.insert_cartridge(crate::cartridge::Nrom::parse(&image).unwrap());
+        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
         bus.write(0x4017, 0x00);
         bus.tick_apu(14_915);
         assert!(bus.irq_pending());
@@ -659,7 +659,7 @@ mod tests {
         image[4] = 1;
         image[16 + 0x3FFE] = 0x00;
         image[16 + 0x3FFF] = 0x07;
-        bus.insert_cartridge(crate::cartridge::Nrom::parse(&image).unwrap());
+        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
         bus.tick_apu(14_915);
         assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0xEA);
         assert_eq!(cpu.state().pc, 0x0601);
@@ -677,7 +677,7 @@ mod tests {
         image[16 + 0x3FFE] = 0x00;
         image[16 + 0x3FFF] = 0x70;
         image[16 + 0x1000] = 0xEA;
-        bus.insert_cartridge(Nrom::parse(&image).unwrap());
+        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
         cpu.step(&mut bus).unwrap(); // Clear I before either interrupt.
         bus.tick_ppu(243 * 341 + 1);
         bus.write(0x2000, 0x80);
@@ -698,7 +698,7 @@ mod tests {
         image[4] = 1;
         image[16 + 0x3FFE] = 0x34;
         image[16 + 0x3FFF] = 0x12;
-        bus.insert_cartridge(crate::cartridge::Nrom::parse(&image).unwrap());
+        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
         let result = cpu.step(&mut bus).unwrap();
         assert_eq!(result.cycles, 7);
         assert_eq!(cpu.state().pc, 0x1234);
@@ -858,7 +858,7 @@ mod tests {
         image[16 + 0x3FFB] = 0x90;
         image[16 + 0x0600] = 0xEA;
         let mut bus = CpuBus::new();
-        bus.insert_cartridge(Nrom::parse(&image).unwrap());
+        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
         let mut cpu = Cpu::new();
         cpu.set_pc(0x8600);
         bus.tick_ppu(243 * 341 + 1);
@@ -879,7 +879,7 @@ mod tests {
         image[4] = 1;
         image[16 + 0x3FFC] = 0x34;
         image[16 + 0x3FFD] = 0x12;
-        let cartridge = Nrom::parse(&image).unwrap();
+        let cartridge = crate::cartridge::Cartridge::parse(&image).unwrap();
         let mut bus = CpuBus::new();
         bus.insert_cartridge(cartridge);
         let mut cpu = Cpu::new();
