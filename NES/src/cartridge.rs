@@ -1302,7 +1302,7 @@ impl Unrom512 {
             | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
         if mapper != 30 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
         let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if !(8..=32).contains(&image[4]) { return Err(CartridgeError::InvalidPrgSize(prg_len)); }
+        if image[4] != 16 && image[4] != 32 { return Err(CartridgeError::InvalidPrgSize(prg_len)); }
         let chr_len = image[5] as usize * CHR_BANK_LEN;
         if chr_len != 0 { return Err(CartridgeError::InvalidChrSize(chr_len)); }
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
@@ -1324,7 +1324,7 @@ impl Unrom512 {
         })
     }
 
-    /// Reads PRG-RAM, a selectable 16 KiB bank, or the fixed final 16 KiB bank.
+    /// Reads a selectable 16 KiB bank or the fixed final 16 KiB bank.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
         match address {
             0x8000..=0xBFFF => {
@@ -1336,7 +1336,7 @@ impl Unrom512 {
         }
     }
 
-    /// Selects PRG bank (bits 0-3), one-screen page (bit 4), and CHR-RAM bank (bits 5-6).
+    /// Selects PRG bank (bits 0-4), CHR-RAM bank (bits 5-6), and one-screen page (bit 7).
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
             0x8000..=0xFFFF => {
@@ -2305,7 +2305,7 @@ mod unrom512_tests {
 
     #[test]
     fn mapper_30_switches_chr_ram_banks_and_one_screen_page() {
-        let mut c = Cartridge::parse(&image(8, 0)).unwrap();
+        let mut c = Cartridge::parse(&image(16, 0)).unwrap();
         assert_eq!(c.mirroring(), Mirroring::OneScreenLower);
         c.ppu_write(0x0123, 0x11);
         c.cpu_write(0x8000, 0x20);
@@ -2336,8 +2336,9 @@ mod unrom512_tests {
     #[test]
     fn mapper_30_rejects_chr_rom_and_unsupported_prg_sizes() {
         assert!(matches!(Cartridge::parse(&image(7, 0)), Err(CartridgeError::InvalidPrgSize(_))));
+        assert!(matches!(Cartridge::parse(&image(8, 0)), Err(CartridgeError::InvalidPrgSize(_))));
         assert!(matches!(Cartridge::parse(&image(33, 0)), Err(CartridgeError::InvalidPrgSize(_))));
-        assert!(matches!(Cartridge::parse(&image(8, 1)), Err(CartridgeError::InvalidChrSize(_))));
+        assert!(matches!(Cartridge::parse(&image(16, 1)), Err(CartridgeError::InvalidChrSize(_))));
     }
 }
 
