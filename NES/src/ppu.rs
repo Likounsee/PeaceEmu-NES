@@ -862,6 +862,27 @@ mod tests {
     }
 
     #[test]
+    fn sprite_zero_hit_becomes_visible_during_scanline_not_only_at_frame_end() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        ppu.mask = 0x1E;
+        ppu.frame_scroll_valid = true;
+        ppu.frame_scroll_v = 0;
+        ppu.frame_fine_x = 0;
+        ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
+        ppu.oam[0..4].copy_from_slice(&[255, 1, 0, 0]);
+        assert_eq!(ppu.status & 0x40, 0);
+        ppu.tick_with_cartridge(255, Some(&cartridge));
+        assert_eq!(ppu.status & 0x40, 0, "hit must not be visible before the scanline evaluation point");
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+        assert_ne!(ppu.status & 0x40, 0, "CPU-visible sprite-0 hit must be raised during the frame");
+    }
+
+    #[test]
     fn sprite_renderer_composites_sprite_pixel_and_sets_zero_hit() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
