@@ -358,7 +358,7 @@ impl Axrom {
             | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
         if mapper != 7 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
         let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if image[4] < 2 || image[4] > 32 || image[4] % 2 != 0 {
+        if image[4] < 2 || image[4] > 16 || image[4] % 2 != 0 {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         let chr_len = image[5] as usize * CHR_BANK_LEN;
@@ -399,7 +399,7 @@ impl Axrom {
         match address {
             0x6000..=0x7FFF => { self.prg_ram[address as usize - 0x6000] = value; true }
             0x8000..=0xFFFF => {
-                self.selected_prg_bank = (value & 0x0F) as usize;
+                self.selected_prg_bank = (value & 0x07) as usize;
                 self.upper_nametable = value & 0x10 != 0;
                 true
             }
@@ -517,7 +517,7 @@ mod axrom_tests {
     #[test]
     fn mapper_seven_rejects_odd_or_oversized_prg_and_chr_rom() {
         assert!(matches!(Cartridge::parse(&axrom_image(3, 0)), Err(CartridgeError::InvalidPrgSize(_))));
-        assert!(matches!(Cartridge::parse(&axrom_image(34, 0)), Err(CartridgeError::InvalidPrgSize(_))));
+        assert!(matches!(Cartridge::parse(&axrom_image(18, 0)), Err(CartridgeError::InvalidPrgSize(_))));
         assert!(matches!(Cartridge::parse(&axrom_image(2, 1)), Err(CartridgeError::InvalidChrSize(_))));
     }
 }
