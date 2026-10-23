@@ -375,6 +375,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn one_screen_mirroring_maps_all_nametables_to_selected_physical_page() {
+        for (mirroring, physical) in [
+            (Mirroring::OneScreenLower, 0usize),
+            (Mirroring::OneScreenUpper, 1usize),
+        ] {
+            for table in 0..4u16 {
+                assert_eq!(
+                    Ppu::nametable_index(0x2000 + table * 0x400 + 0x123, mirroring),
+                    physical * 0x400 + 0x123
+                );
+            }
+        }
+    }
+
+    #[test]
     fn status_read_clears_vblank_and_write_toggle() {
         let mut ppu = Ppu::new();
         ppu.tick(243 * 341 + 1);
