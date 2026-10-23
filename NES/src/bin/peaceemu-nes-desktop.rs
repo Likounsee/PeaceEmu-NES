@@ -36,14 +36,6 @@ mod win {
     const PM_REMOVE: u32 = 1;
     const DIB_RGB_COLORS: u32 = 0;
     const SRCCOPY: u32 = 0x00CC0020;
-    const VK_SHIFT: i32 = 0x10;
-    const VK_RETURN: i32 = 0x0D;
-    const VK_LEFT: i32 = 0x25;
-    const VK_UP: i32 = 0x26;
-    const VK_RIGHT: i32 = 0x27;
-    const VK_DOWN: i32 = 0x28;
-    const VK_X: i32 = 0x58;
-    const VK_Z: i32 = 0x5A;
     const WAVE_FORMAT_PCM: u16 = 1;
     const WAVE_MAPPER: u32 = u32::MAX;
     const WHDR_DONE: u32 = 0x0000_0001;
@@ -262,7 +254,8 @@ mod win {
             "usage: peaceemu-nes-desktop <game.nes> [--scale 1..6] [--audio-rate 8000..192000] [--keys A,B,SELECT,START,UP,DOWN,LEFT,RIGHT]".to_owned()
         })?;
         let mut scale = 3i32;
-        let mut audio_rate = 44_100u32;\n        let mut keys = [0x5A, 0x58, 0x10, 0x0D, 0x26, 0x28, 0x25, 0x27];
+        let mut audio_rate = 44_100u32;
+        let mut keys = [0x5A, 0x58, 0x10, 0x0D, 0x26, 0x28, 0x25, 0x27];
         while let Some(argument) = args.next() {
             let value = args.next().ok_or_else(|| format!("missing value for {}", argument.to_string_lossy()))?;
             match argument.to_string_lossy().as_ref() {
