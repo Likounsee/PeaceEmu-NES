@@ -258,7 +258,7 @@ mod win {
         let mut scale = 3i32;
         let mut audio_rate = 44_100u32;
         let mut keys = [0x5A, 0x58, 0x10, 0x0D, 0x26, 0x28, 0x25, 0x27];
-        let mut keys2 = [0x61, 0x62, 0x60, 0x65, 0x68, 0x62, 0x64, 0x66];
+        let mut keys2 = [0x61, 0x63, 0x60, 0x6E, 0x68, 0x62, 0x64, 0x66];
         while let Some(argument) = args.next() {
             let value = args.next().ok_or_else(|| format!("missing value for {}", argument.to_string_lossy()))?;
             match argument.to_string_lossy().as_ref() {
