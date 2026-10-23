@@ -6,17 +6,11 @@
 
 PeaceEmu reste le centre de contrôle : il choisit la ROM, les touches, la mise à l'échelle et les options audio, puis lance le module avec ces réglages. Le module ouvre **une fenêtre séparée qui ne contient que l'image du jeu** (HUD original inclus s'il fait partie du jeu), sans barre d'outils ni HUD ajouté par l'émulateur. Le frontend Windows natif actuel sert de chemin de jeu immédiat ; l'API `NesSession` permet aussi l'intégration future au contrat partagé `EmulationCore`.
 
-### Récupérer une version Windows prête à lancer
+### Lancement depuis PeaceEmu (chemin utilisateur prévu)
 
-Chaque push validé sur la branche `NES` compile aussi le frontend en mode `release` et publie l'exécutable comme artefact GitHub Actions pendant 14 jours. Pour le récupérer : ouvre l'onglet **Actions** du dépôt, sélectionne le dernier workflow **NES core checks** réussi sur la branche `NES`, puis télécharge **PeaceEmu-NES-Windows-x64** dans la section Artifacts. Décompresse si nécessaire, puis lance l'exécutable en lui passant le chemin d'une ROM `.nes` (glisser-déposer non garanti).
+Le chemin utilisateur prévu est **exclusivement la bibliothèque de l'application PeaceEmu** : importer une ROM `.nes`, la sélectionner dans la bibliothèque, puis cliquer sur **Lancer**. PeaceEmu charge ce module NES, ouvre la fenêtre dédiée à l'image du jeu et conserve les commandes, la configuration et les sauvegardes sous le contrôle de l'application principale.
 
-Exemple PowerShell depuis le dossier contenant l'exécutable :
-
-```powershell
-.\peaceemu-nes-desktop.exe "C:\chemin\vers\jeu.nes"
-```
-
-Le binaire est autonome côté dépendances Rust, mais nécessite Windows et une ROM compatible. La publication de l'artefact signifie que le programme a été compilé par CI ; elle ne prouve pas que toutes les ROMs fonctionnent.
+Le binaire Windows natif décrit ci-dessous est un banc d'essai de développement pour le module ; ce n'est pas le parcours utilisateur normal et il ne remplace pas l'intégration dans la bibliothèque PeaceEmu.
 
 ### Lancement direct sur Windows
 
