@@ -95,3 +95,11 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - Adaptation locale dans `NES/src/cartridge.rs` : registre série 5 bits et bit de reset, modes PRG 16/32 Kio, banques CHR 4/8 Kio, désactivation de PRG-RAM, et mirroring one-screen/vertical/horizontal. Le dispatch statique `Cartridge` et le bus existant restent inchangés dans leur contrat public.
 - Tests ajoutés : sélection PRG dans les modes commutables/fixes, sélection des deux fenêtres CHR 4 Kio, écriture CHR-RAM, mirroring, protection PRG-RAM et reset du registre série. Un test au niveau `NesMachine` vérifie également le chargement iNES, le vecteur de reset et les écritures sérielles à travers le bus CPU.
 - Limites : images iNES classiques uniquement ; cette version accepte 2, 4, 8 ou 16 banques PRG de 16 Kio et jusqu'à 16 banques CHR de 8 Kio (ou CHR-RAM). Les variantes MMC1 spécifiques à certaines cartes, la gestion temporelle des écritures consécutives, l'horloge cycle-exacte et NES 2.0 ne sont pas encore modélisées. Aucun code source TetaNES n'a été copié : les règles matérielles ont été adaptées aux types et méthodes PeaceEmu.
+
+
+## Huitième adaptation réalisée : GxROM (mapper 66)
+
+- Référence de conception : comportement public du mapper GxROM décrit par [NESdev — GxROM](https://www.nesdev.org/wiki/GxROM), utilisé pour vérifier le décodage du registre de banques.
+- Adaptation PeaceEmu : nouveau type Rust `Gxrom` intégré à l'enum `Cartridge`. Les bits 4–5 sélectionnent une fenêtre PRG de 32 Kio et les bits 0–1 une banque CHR de 8 Kio ; le nombre réel de banques borne les valeurs sélectionnées. La RAM PRG, le mirroring iNES et les trainers sont traités par le chargeur commun au mapper.
+- Tests ajoutés : commutation PRG/CHR indépendante, limites de banques sur les petites images, mirroring horizontal/vertical, refus d'écriture CHR-ROM, tailles invalides et image tronquée.
+- Limites : prise en charge iNES legacy seulement, CHR-ROM obligatoire, sans modélisation des variantes matérielles ni NES 2.0. Le comportement est adapté aux interfaces locales PeaceEmu ; aucun code source tiers n'a été copié.
