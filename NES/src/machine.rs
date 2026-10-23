@@ -477,6 +477,38 @@ mod tests {
     }
 
     #[test]
+    fn battery_ram_round_trips_and_rejects_wrong_size_without_mutation() {
+        let mut image = nrom_with_program(&[0xEA]);
+        image[6] |= 0x02;
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        assert!(machine.has_battery_backed_ram());
+        machine.write_cpu(0x6000, 0xA5);
+        machine.write_cpu(0x7FFF, 0x5A);
+
+        let saved = machine.save_battery_ram().unwrap();
+        assert_eq!(saved.len(), 8 * 1024);
+        machine.write_cpu(0x6000, 0x11);
+        assert!(matches!(
+            machine.load_battery_ram(&saved[..saved.len() - 1]),
+            Err(MachineError::InvalidSaveRamLength { expected: 8192, actual: 8191 })
+        ));
+        assert_eq!(machine.read_cpu(0x6000), 0x11, "invalid save must not partially mutate RAM");
+
+        machine.load_battery_ram(&saved).unwrap();
+        assert_eq!(machine.read_cpu(0x6000), 0xA5);
+        assert_eq!(machine.read_cpu(0x7FFF), 0x5A);
+    }
+
+    #[test]
+    fn cartridges_without_battery_flag_reject_persistent_save_operations() {
+        let image = nrom_with_program(&[0xEA]);
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        assert!(!machine.has_battery_backed_ram());
+        assert_eq!(machine.save_battery_ram(), Err(MachineError::NoBatteryRam));
+        assert_eq!(machine.load_battery_ram(&vec![0; 8192]), Err(MachineError::NoBatteryRam));
+    }
+
+    #[test]
     fn machine_reports_invalid_cartridges() {
         assert!(matches!(NesMachine::from_ines(&[0; 8]), Err(MachineError::Cartridge(CartridgeError::TruncatedHeader))));
     }
