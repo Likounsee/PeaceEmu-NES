@@ -140,7 +140,9 @@ impl Cpu {
             0x80 | 0x82 | 0x89 | 0xC2 | 0xE2 => { self.fetch(bus); 2 }
             0x04 | 0x44 | 0x64 => { let a = self.fetch(bus) as u16; let _ = bus.read(a); 3 }
             0x14 | 0x34 | 0x54 | 0x74 | 0xD4 | 0xF4 => {
-                let a = self.fetch(bus).wrapping_add(self.state.x) as u16;
+                let base = self.fetch(bus);
+                let _ = bus.read(base as u16);
+                let a = base.wrapping_add(self.state.x) as u16;
                 let _ = bus.read(a);
                 4
             }
@@ -148,7 +150,7 @@ impl Cpu {
             0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC => {
                 let base = self.fetch_word(bus);
                 let address = base.wrapping_add(self.state.x as u16);
-                let _ = bus.read(address);
+                let _ = Self::read_indexed(bus, base, address);
                 4 + u8::from(base & 0xFF00 != address & 0xFF00)
             }
             // Stable unofficial immediate operations, adapted to this interpreter's
@@ -181,6 +183,11 @@ impl Cpu {
                 self.set_flag(flags::CARRY, lhs >= operand);
                 self.state.x = lhs.wrapping_sub(operand);
                 self.set_nz(self.state.x);
+                2
+            }
+            0x8B => { // XAA #imm is unstable; model the commonly observed A & X & immediate form.
+                self.state.a &= self.state.x & self.fetch(bus);
+                self.set_nz(self.state.a);
                 2
             }
             0xA9 => { let v = self.fetch(bus); self.state.a = v; self.set_nz(v); 2 }
@@ -1297,6 +1304,24 @@ mod tests {
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 7);
         cpu.step(&mut bus).unwrap();
         assert_eq!(cpu.state().a & 1, 1, "indexed INC must consume controller A during its dummy read");
+    }
+
+    #[test]
+    fn unofficial_xaa_uses_common_and_mask_model() {
+        let (mut cpu, mut bus) = setup(&[0x8B, 0xF3]);
+        cpu.state.a = 0xCC;
+        cpu.state.x = 0x5A;
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
+        assert_eq!(cpu.state.a, 0x40);
+        assert_eq!(cpu.state.status & (flags::NEGATIVE | flags::ZERO), 0);
+    }
+
+    #[test]
+    fn absolute_x_unofficial_nop_preserves_page_cross_cycles() {
+        let (mut cpu, mut bus) = setup(&[0xA2, 0x01, 0x1C, 0xFF, 0x40]);
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(cpu.state.pc, 0x0605);
     }
 
     #[test]
