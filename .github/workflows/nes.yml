@@ -5,6 +5,8 @@ on:
     branches: [main, NES]
     paths:
       - "NES/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - ".github/workflows/nes.yml"
   pull_request:
     branches: [main, NES]
@@ -36,6 +38,10 @@ jobs:
         run: cargo test --all-targets --locked
       - name: Run Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Test root Git-dependency package
+        run: cargo test --manifest-path ../Cargo.toml --locked
+      - name: Lint root Git-dependency package
+        run: cargo clippy --manifest-path ../Cargo.toml --all-targets --locked -- -D warnings
 
   windows-module-build:
     name: Windows NES module compatibility
@@ -50,5 +56,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Check Windows frontend
+      - name: Check Windows module package
         run: cargo check --all-targets --locked
+      - name: Check root Git-dependency package
+        run: cargo check --manifest-path ../Cargo.toml --locked
