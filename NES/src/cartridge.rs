@@ -241,7 +241,8 @@ impl Uxrom {
     /// Writes pattern memory only when it is CHR-RAM.
     pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
         if address >= 0x2000 || !self.chr_is_ram { return false; }
-        self.chr[address as usize % self.chr.len()] = value;
+        let index = address as usize % self.chr.len();
+        self.chr[index] = value;
         true
     }
 }
