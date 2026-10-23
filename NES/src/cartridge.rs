@@ -1180,6 +1180,8 @@ pub enum Cartridge {
     ColorDreams(ColorDreams),
     /// Mapper 34 BNROM variant, switchable 32 KiB PRG and CHR-RAM.
     Bnrom(Bnrom),
+    /// Mapper 13 CPROM with a fixed lower CHR-RAM region and banked upper region.
+    Cprom(Cprom),
 }
 
 impl Cartridge {
