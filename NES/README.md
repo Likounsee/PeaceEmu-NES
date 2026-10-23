@@ -11,11 +11,12 @@ PeaceEmu reste le centre de contrôle : il choisit la ROM, les touches, la mise 
 Depuis le dossier `NES`, avec Rust installé :
 
 ```powershell
-cargo run --release --bin peaceemu-nes-desktop -- "C:\\chemin\\vers\\jeu.nes" --scale 3 --audio-rate 44100 --keys 90,88,16,13,38,40,37,39
+cargo run --release --bin peaceemu-nes-desktop -- "C:\chemin\vers\jeu.nes" --scale 3 --audio-rate 44100 --keys 90,88,16,13,38,40,37,39
 ```
 
 - `--scale 1..6` règle l'agrandissement entier de l'image (défaut : 3×).
-- `--audio-rate 8000..192000` règle le taux PCM (défaut : 44 100 Hz).\n- `--keys A,B,SELECT,START,UP,DOWN,LEFT,RIGHT` permet à PeaceEmu de transmettre son mapping clavier sous forme de codes de touches virtuels Windows (défaut : `90,88,16,13,38,40,37,39`).
+- `--audio-rate 8000..192000` règle le taux PCM (défaut : 44 100 Hz).
+- `--keys A,B,SELECT,START,UP,DOWN,LEFT,RIGHT` permet à PeaceEmu de transmettre son mapping clavier sous forme de codes de touches virtuels Windows (défaut : `90,88,16,13,38,40,37,39`).
 - Flèches : directions ; **Z** : A ; **X** : B ; **Maj droite** : Select ; **Entrée** : Start.
 - Les sauvegardes RAM des cartouches avec batterie sont chargées/enregistrées dans un fichier `.sav` à côté de la ROM.
 - Le son utilise la sortie PCM Windows ; si aucun périphérique audio n'est disponible, le jeu continue en silence.
@@ -106,7 +107,7 @@ Le dernier lot ajoute BNROM (mapper 34, variante BNROM uniquement), en plus de C
 - **PPU : 62 %** — rendu des lignes visible pendant la frame, scroll capturé à chaque ligne et indicateurs sprite-0 hit/overflow consultables avant la fin de frame ; fetchs pixel/dot et effets de registre en milieu de ligne encore approximatifs.
 - **APU : 58 %** — canaux principaux, mixage approximatif, sortie PCM configurable et blocage CPU/horloges PPU lors des rechargements DMC ; filtrage et arbitrage DMA précis restent incomplets.
 - **Cartouches et mappers : 97 %** — nombreuses familles iNES legacy et premiers cas NES 2.0 pris en charge ; variantes et plusieurs mappers restent absents.
-- **Intégration / lancement jouable : 52 %** — fenêtre de jeu sans HUD ajouté, sortie audio PCM Windows, mise à l'échelle et taux audio configurables au lancement, entrées clavier et sauvegardes RAM batterie ; le lancement orchestré par PeaceEmu et le contrat EmulationCore partagé restent à raccorder.
+- **Intégration / lancement jouable : 52 %** — fenêtre de jeu sans HUD ajouté, sortie audio PCM Windows, mise à l'échelle, taux audio et mapping clavier configurables au lancement, sauvegardes RAM batterie ; le lancement orchestré par PeaceEmu et le contrat EmulationCore partagé restent à raccorder.
 
 
 UNROM-512 (mapper 30) prend en charge les images iNES legacy à 256/512 Kio de PRG-ROM et sans CHR-ROM : banque PRG de 16 Kio sélectionnable (bits 0–4), banque finale fixe, quatre banques CHR-RAM de 8 Kio (bits 5–6) et bit 7 de sélection one-screen lorsque l'en-tête indique cette configuration. La variante ajoutée n'émule pas le flash interne, les sous-mappers NES 2.0 ni les conflits de bus des cartes physiques ; elle n'expose pas de PRG-RAM, conformément à la fiche de carte documentée.
