@@ -584,7 +584,7 @@ mod tests {
         let cycles = machine.step_frame().unwrap();
         assert!(cycles > 0);
         assert_eq!(machine.framebuffer().len(), 256 * 240);
-        assert!(machine.framebuffer().iter().any(|&pixel| pixel == 0x21), "the emulated frame should contain the programmed background palette color");
+        assert!(machine.framebuffer().contains(&0x21), "the emulated frame should contain the programmed background palette color");
     }
 
     #[test]
