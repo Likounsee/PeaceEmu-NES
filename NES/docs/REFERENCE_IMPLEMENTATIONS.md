@@ -160,3 +160,12 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - Adaptation « recette maison » : 32 Kio de PRG-ROM fixes, 16 Kio de CHR-RAM séparés en une zone basse fixe de 4 Kio et quatre banques commutables de 4 Kio dans la zone haute. Une écriture CPU dans $8000-$FFFF sélectionne la banque haute ; PRG-RAM, trainer et mirroring iNES suivent les conventions du crate.
 - Tests : PRG fixe sur les deux fenêtres, isolation et persistance des quatre banques CHR hautes, zone basse fixe, refus de CHR-ROM et de tailles PRG autres que 32 Kio.
 - Limites : uniquement l'organisation CPROM legacy iNES décrite ici ; NES 2.0 et variantes de cartes restent non pris en charge. Aucun code source d'un émulateur tiers n'a été copié ; les règles matérielles ont été réimplémentées dans l'enum de dispatch PeaceEmu.
+
+
+## Quatorzième adaptation réalisée : stores instables du 2A03
+
+- Références de comportement : tableaux d'opcodes 6502/2A03 et documentation NESdev sur les instructions non officielles ; comparaison conceptuelle avec les interpréteurs existants, sans importer leur code source.
+- Adaptation PeaceEmu : ajout de AHX indirect-indexé (`$93`) et absolu,Y (`$9F`), TAS (`$9B`), SHY (`$9C`) et SHX (`$9E`). Les valeurs sont masquées par l'octet haut de l'adresse de base augmenté de un ; lorsqu'un index franchit une page, le modèle fait aussi refléter la corruption d'octet haut par la valeur écrite.
+- Vérifications : tests dédiés aux deux formes AHX, au changement de SP par TAS, aux masques de données et au cas de franchissement de page. CI verte sur le commit `76521b9`.
+- Limite importante : les instructions dites instables dépendent de détails électriques du processeur et peuvent avoir des comportements moins uniformes selon les cas. Ce modèle vise les comportements documentés courants ; il ne constitue pas une exécution bus-cycle-exacte du 2A03.
+- Méthode : conserver le dispatch et les helpers de PeaceEmu, comparer les résultats aux tableaux matériels, puis verrouiller les cas connus avec des tests. Pas de dépendance d'émulateur ajoutée et pas de code tiers copié.
