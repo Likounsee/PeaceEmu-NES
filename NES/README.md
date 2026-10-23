@@ -1,20 +1,22 @@
 # PeaceEmu-NES — module NES
 
-## Lancer une ROM sur Windows
+> Cœur d'émulation Nintendo Entertainment System (NES) destiné à être intégré dans l'application PeaceEmu existante.
 
-Un frontend de bureau natif minimal est disponible dans le dépôt, sans dépendance externe :
-il ouvre une fenêtre 3×, exécute la ROM iNES, affiche les images du cœur Rust et charge/enregistre automatiquement les sauvegardes RAM des cartouches qui les déclarent (fichier `.sav` à côté de la ROM).
+## Architecture cible : module intégré, aucune fenêtre séparée
 
-Depuis le dossier `NES`, avec Rust installé :
+**PeaceEmu reste l'application hôte.** Ce dépôt fournit le cœur NES et une API de session consommable par le moteur de PeaceEmu. Le module ne crée pas de fenêtre, ne possède pas de boucle d'événements graphique et n'ouvre aucun périphérique audio : ces responsabilités appartiennent à l'application principale.
 
-```powershell
-cargo run --release --bin peaceemu-nes-desktop -- "C:\chemin\vers\jeu.nes"
-```
+L'API d'intégration se trouve dans `src/session.rs` :
 
-Commandes : flèches directionnelles = croix, **Z** = A, **X** = B, **Maj droite** = Select, **Entrée** = Start. Fermer la fenêtre quitte l'émulateur. Ce frontend est encore expérimental : pas de sortie audio ni de sauvegardes d'état, et la compatibilité des jeux dépend toujours du cœur d'émulation. Sur les autres systèmes, le binaire affiche un message indiquant que le frontend natif est actuellement Windows uniquement.
+- `NesSession::load(rom, config)` charge une ROM avec la configuration décidée par PeaceEmu.
+- `NesSession::set_controller_state(...)` transmet les entrées de manettes mappées par l'application.
+- `NesSession::advance_frame()` renvoie les pixels NES indexés (256×240), les échantillons audio PCM mono et les cycles CPU consommés.
+- `NesSession::save_battery_ram()` / `load_battery_ram()` laissent PeaceEmu choisir les chemins et la politique de persistance.
+- `NesConfig` permet à PeaceEmu de choisir la fréquence d'échantillonnage audio.
 
+Le moteur graphique hôte applique sa palette, son agrandissement et sa présentation au framebuffer reçu ; le moteur audio hôte lit les échantillons PCM ; les paramètres et les fichiers de sauvegarde restent sous le contrôle de PeaceEmu. L'intégration avec le contrat partagé `EmulationCore` du dépôt hôte reste à effectuer : ce dépôt ne duplique pas ce contrat tant que la stratégie de partage/versionnement n'est pas décidée.
 
-> Cœur d'émulation Nintendo Entertainment System (NES) pour l'application PeaceEmu existante.
+## Objectif
 
 ## Objectif
 ## Réutilisation du code existant
@@ -24,7 +26,7 @@ Pour éviter de tout réimplémenter à la main, les références open source, l
 
 Développer un cœur NES réel, indépendant de l'interface graphique, intégrable à l'application principale [PeaceEmu](https://github.com/Likounsee/PeaceEmu). L'interface, la bibliothèque de jeux, les fenêtres et l'orchestration des sessions existent déjà dans le dépôt principal : ce dépôt ne doit pas recréer ces fonctionnalités.
 
-**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES et les mappers NROM, MMC1, UxROM, CNROM, MMC3, MMC2, AxROM, GxROM, CPROM et UNROM-512, un sous-ensemble élargi du CPU, un modèle de registres APU, compteurs de longueur, séquenceur de frame approximatif et un mélangeur audio pulse/triangle/bruit/DMC à mixage non linéaire approximatif avec enveloppes, sweep et compteur linéaire triangle approximatifs, un premier canal DMC avec lecture d'échantillons par le bus et IRQ, ainsi que le rendu par ligne de la PPU synchronisé sur la progression du faisceau disposent de code et de tests. Le comptage des frontières de scanline est désormais retourné par la PPU afin que les longues pauses DMA ne perdent pas les clocks IRQ MMC3 traversées. Le séquenceur APU fait avancer ses horloges frame à chaque cycle CPU pour garder un état déterministe quelle que soit la taille des lots passés à `tick_cpu_cycles`. Les accès DMC provoquent maintenant un blocage nominal de quatre cycles par rechargement du buffer, et ces cycles supplémentaires avancent aussi le CPU, la PPU et l'APU. Le module n'est pas encore déclaré jouable et n'est pas encore branché au contrat hôte.
+**État réel :** le crate Rust est créé. Le bus RAM, le parseur iNES et les mappers NROM, MMC1, UxROM, CNROM, MMC3, MMC2, AxROM, GxROM, CPROM et UNROM-512, un sous-ensemble élargi du CPU, un modèle de registres APU, compteurs de longueur, séquenceur de frame approximatif et un mélangeur audio pulse/triangle/bruit/DMC à mixage non linéaire approximatif avec enveloppes, sweep et compteur linéaire triangle approximatifs, un premier canal DMC avec lecture d'échantillons par le bus et IRQ, ainsi que le rendu par ligne de la PPU synchronisé sur la progression du faisceau disposent de code et de tests. Le comptage des frontières de scanline est désormais retourné par la PPU afin que les longues pauses DMA ne perdent pas les clocks IRQ MMC3 traversées. Le séquenceur APU fait avancer ses horloges frame à chaque cycle CPU pour garder un état déterministe quelle que soit la taille des lots passés à `tick_cpu_cycles`. Les accès DMC provoquent maintenant un blocage nominal de quatre cycles par rechargement du buffer, et ces cycles supplémentaires avancent aussi le CPU, la PPU et l'APU. L'API de session intégrée est exposée et testée dans ce dépôt, mais le branchement compilable au contrat hôte et la compatibilité des jeux ne sont pas encore établis.
 
 ## Langage et intégration
 
@@ -32,7 +34,7 @@ Développer un cœur NES réel, indépendant de l'interface graphique, intégrab
 - **Édition cible :** Rust 2021 ; respecter la version minimale et les conventions du dépôt hôte lors de l'intégration.
 - **Responsabilité de ce dépôt :** matériel émulé et tests du cœur NES.
 - **Responsabilité du dépôt PeaceEmu :** interface, bibliothèque, fenêtres, cycle de vie des sessions et services communs.
-- **Contrat d'intégration :** adaptateur à écrire pour implémenter EmulationCore, fournir un identifiant système stable, déclarer les capacités réellement prises en charge et transférer images/audio via les types communs.
+- **Contrat d'intégration :** adapter `NesSession` pour implémenter `EmulationCore`, fournir un identifiant système stable, déclarer les capacités réellement prises en charge et convertir les images/audio vers les types communs.
 - **Point à résoudre avant le branchement compilable :** le crate emulation-core se trouve actuellement dans le workspace du dépôt hôte et n'est pas publié comme dépendance. Il faut choisir une stratégie de partage/versionnement du contrat au lieu de dupliquer ses types.
 
 ## Réutilisation de références existantes
