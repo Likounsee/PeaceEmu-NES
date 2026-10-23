@@ -357,6 +357,8 @@ impl Ppu {
             Mirroring::Vertical => table & 1,
             Mirroring::Horizontal => table >> 1,
             Mirroring::FourScreen => table,
+            Mirroring::OneScreenLower => 0,
+            Mirroring::OneScreenUpper => 1,
         };
         physical * 0x400 + offset
     }
