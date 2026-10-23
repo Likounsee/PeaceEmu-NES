@@ -143,3 +143,12 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - Adaptation locale : un registre d'écriture sélectionne une fenêtre PRG de 32 Kio via les bits 0–3 et une banque CHR-ROM de 8 Kio via les bits 4–7. La RAM PRG, le mirroring iNES, les trainers et les bornes de ROM suivent les conventions locales de `Cartridge`.
 - Tests : commutation PRG et CHR indépendante, limites des deux fenêtres, protection en écriture de CHR-ROM, absence de CHR-ROM et tailles PRG non prises en charge.
 - Limites : iNES legacy uniquement ; NES 2.0 et les variantes de cartes ne sont pas implémentés. Aucune source d'émulateur externe n'a été copiée.
+
+
+## Douzième adaptation réalisée : BNROM (mapper 34)
+
+- Référence de comportement : documentation publique NESdev du mapper 34, comparée au commutateur PRG 32 Kio de GxROM et aux modèles CHR-RAM déjà présents.
+- Adaptation locale : variante BNROM uniquement ; une écriture dans $8000-$FFFF sélectionne la fenêtre PRG de 32 Kio, la CHR-RAM de 8 Kio est accessible en lecture/écriture, et le mirroring vient de l'en-tête iNES. Les trainers sont copiés en PRG-RAM selon la convention locale.
+- Tests : commutation de toute la fenêtre PRG, mirroring, accès aux deux extrémités CHR-RAM et rejet des tailles PRG/CHR non prises en charge.
+- Limite importante : le mapper 34 peut aussi désigner des cartes NINA-001 selon l'image et le sous-mapper. Cette implémentation ne prétend prendre en charge que BNROM ; NINA-001 n'est pas traité.
+- Aucun code source d'émulateur externe n'a été copié ; l'implémentation est écrite selon les conventions du crate PeaceEmu-NES.
