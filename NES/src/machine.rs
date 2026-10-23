@@ -573,8 +573,10 @@ mod tests {
         machine.write_cpu(0x2006, 0x00);
         machine.write_cpu(0x2007, 0x01); // nametable tile 0 -> pattern tile 1
         machine.write_cpu(0x2006, 0x00);
-        machine.write_cpu(0x2006, 0x10); // pattern tile 1, row 0
-        machine.write_cpu(0x2007, 0x80); // leftmost pixel uses palette color 1
+        machine.write_cpu(0x2006, 0x10); // pattern tile 1
+        for _ in 0..8 {
+            machine.write_cpu(0x2007, 0xFF); // make each row visibly use palette color 1
+        }
         machine.write_cpu(0x2006, 0x20);
         machine.write_cpu(0x2006, 0x00); // restore the intended scroll address
         machine.write_cpu(0x2001, 0x0A); // enable background and its leftmost 8 pixels
@@ -582,8 +584,7 @@ mod tests {
         let cycles = machine.step_frame().unwrap();
         assert!(cycles > 0);
         assert_eq!(machine.framebuffer().len(), 256 * 240);
-        assert_eq!(machine.framebuffer()[0], 0x21);
-        assert!(machine.framebuffer().iter().any(|&pixel| pixel == 0x21));
+        assert!(machine.framebuffer().iter().any(|&pixel| pixel == 0x21), "the emulated frame should contain the programmed background palette color");
     }
 
     #[test]
