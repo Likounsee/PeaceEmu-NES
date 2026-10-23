@@ -28,6 +28,8 @@ pub struct Ppu {
     frame_scroll_v: u16,
     frame_fine_x: u8,
     frame_scroll_valid: bool,
+    line_scroll_v: u16,
+    line_fine_x: u8,
     nmi_pending: bool,
     nmi_line: bool,
     suppress_vblank: bool,
@@ -43,7 +45,8 @@ impl Default for Ppu {
             nametables: [0; 4096], palette: [0; 32], v: 0, t: 0,
             fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
             scanline: 261, dot: 0, odd_frame: false, frame_scroll_v: 0, frame_fine_x: 0,
-            frame_scroll_valid: false, nmi_pending: false, nmi_line: false, suppress_vblank: false,
+            frame_scroll_valid: false, line_scroll_v: 0, line_fine_x: 0,
+            nmi_pending: false, nmi_line: false, suppress_vblank: false,
             framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
         }
     }
@@ -133,9 +136,17 @@ impl Ppu {
             }
             self.dot += 1;
 
+            // Latch the scroll address at the start of each visible scanline. The
+            // live v register is changed by coarse-X fetches and the dot-256 Y increment,
+            // so using it at the end of the line would shift the row being rendered.
+            if self.dot == 1 && self.scanline < 240 {
+                self.line_scroll_v = self.v;
+                self.line_fine_x = self.fine_x;
+            }
+
             // During visible and pre-render scanlines, the rendering pipeline advances
             // coarse X every tile, increments Y at dot 256, and copies scroll fields at
-            // the hardware reload points. Pixel fetches are still snapshot-based.
+            // the hardware reload points. Pixel fetches are still approximated by a line renderer. 
             if self.mask & 0x18 != 0 && (self.scanline < 240 || self.scanline == 261) {
                 if ((1..=256).contains(&self.dot) || (328..=336).contains(&self.dot))
                     && self.dot.is_multiple_of(8)
@@ -195,16 +206,13 @@ impl Ppu {
         let sprites_enabled = self.mask & 0x10 != 0;
         let show_bg_left = self.mask & 0x02 != 0;
         let show_sprites_left = self.mask & 0x04 != 0;
-        let scroll_v = if self.frame_scroll_valid { self.frame_scroll_v } else { self.v };
-        let fine_x = if self.frame_scroll_valid { self.frame_fine_x as usize } else { self.fine_x as usize };
+        let scroll_v = self.line_scroll_v;
+        let fine_x = self.line_fine_x as usize;
         let base_nt_x = ((scroll_v >> 10) & 1) as usize;
-        let base_nt_y = ((scroll_v >> 11) & 1) as usize;
+        let nt_y = ((scroll_v >> 11) & 1) as usize;
         let base_coarse_x = (scroll_v & 0x1F) as usize;
-        let base_coarse_y = ((scroll_v >> 5) & 0x1F) as usize;
+        let coarse_y = ((scroll_v >> 5) & 0x1F) as usize;
         let fine_y = ((scroll_v >> 12) & 7) as usize;
-        let scroll_y = base_coarse_y * 8 + fine_y + y;
-        let tile_y = scroll_y / 8;
-        let (coarse_y, nt_y) = Self::scroll_coarse_y(base_coarse_y, base_nt_y, tile_y - base_coarse_y);
         let pattern_base = if self.ctrl & 0x10 != 0 { 0x1000u16 } else { 0 };
         let universal = self.output_color(self.palette[0]);
         for x in 0..256usize {
@@ -221,7 +229,7 @@ impl Ppu {
             let coarse_x = tile_x % 32;
             let tile_addr = nametable + (coarse_y * 32 + coarse_x) as u16;
             let tile = self.mem_read(tile_addr, cartridge) as u16;
-            let row = (scroll_y % 8) as u16;
+            let row = fine_y as u16;
             let col = (scroll_x % 8) as u16;
             let pattern_addr = pattern_base + tile * 16 + row;
             let low = self.mem_read(pattern_addr, cartridge);
