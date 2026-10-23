@@ -1273,7 +1273,6 @@ mod tests {
         assert_eq!(bus.read(0x0101), 0x01);
     }
 
-} 
     #[test]
     fn unstable_indexed_stores_mask_data_and_model_page_cross_corruption() {
         let (mut cpu, mut bus) = setup(&[
@@ -1308,4 +1307,4 @@ mod tests {
         assert_eq!(cpu.state().sp, 0x1F);
         assert_eq!(bus.read(0x0201), 0x03);
     }
-
+}
