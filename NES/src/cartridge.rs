@@ -25,7 +25,8 @@ pub enum Mirroring {
     OneScreenUpper,
 }
 
-/// Decodes a NES 2.0 ROM size field. When the high nibble is 0xF, the low byte uses exponent/multiplier encoding; otherwise it is a linear bank count.\nfn nes2_rom_size(lsb: u8, msb_nibble: u8, unit: usize) -> usize {
+/// Decodes a NES 2.0 ROM size field. When the high nibble is 0xF, the low byte uses exponent/multiplier encoding; otherwise it is a linear bank count.
+fn nes2_rom_size(lsb: u8, msb_nibble: u8, unit: usize) -> usize {
     if msb_nibble == 0x0F {
         let exponent = (lsb >> 2) as u32;
         let multiplier = ((lsb & 0x03) as usize) * 2 + 1;
