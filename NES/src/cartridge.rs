@@ -906,6 +906,8 @@ pub enum Cartridge {
     Mmc3(Mmc3),
     /// Mapper 66, independently switchable PRG and CHR banks.
     Gxrom(Gxrom),
+    /// Mapper 71, Camerica switchable PRG bank and one-screen mirroring.
+    Camerica(Camerica),
 }
 
 impl Cartridge {
