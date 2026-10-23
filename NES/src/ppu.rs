@@ -175,6 +175,11 @@ impl Ppu {
         let fine_y = ((self.v >> 12) & 7) as usize;
 
         for y in 0..HEIGHT {
+            // Vertical scroll is constant across a scanline; compute its wrapped
+            // coarse-Y/nametable address once instead of repeating it for every pixel.
+            let scroll_y = base_coarse_y * 8 + fine_y + y;
+            let tile_y = scroll_y / 8;
+            let (coarse_y, nt_y) = Self::scroll_coarse_y(base_coarse_y, base_nt_y, tile_y);
             for x in 0..WIDTH {
                 let output = y * WIDTH + x;
                 if !rendering_enabled || (x < 8 && !show_left) {
@@ -183,14 +188,8 @@ impl Ppu {
                     continue;
                 }
                 let scroll_x = base_coarse_x * 8 + (self.fine_x as usize) + x;
-                let scroll_y = base_coarse_y * 8 + fine_y + y;
                 let tile_x = scroll_x / 8;
-                let tile_y = scroll_y / 8;
                 let nt_x = base_nt_x ^ ((tile_x / 32) & 1);
-                // Vertical scrolling follows the PPU's coarse-Y rollover rules:
-                // row 29 wraps and toggles the vertical nametable, while row 31
-                // wraps without toggling. Rows 30 and 31 are not aliases for 0 and 1.
-                let (coarse_y, nt_y) = Self::scroll_coarse_y(base_coarse_y, base_nt_y, tile_y);
                 let nametable = 0x2000u16 + ((nt_y * 2 + nt_x) as u16) * 0x400;
                 let coarse_x = tile_x % 32;
                 let tile_addr = nametable + (coarse_y * 32 + coarse_x) as u16;
