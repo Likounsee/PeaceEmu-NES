@@ -136,10 +136,6 @@ impl Nrom {
     /// Returns true when character memory is RAM.
     pub fn chr_is_ram(&self) -> bool { self.chr_is_ram }
 
-    /// Clocks a mapper IRQ counter once per approximated scanline boundary.
-    pub fn clock_irq_counter(&mut self) { if let Self::Mmc3(c) = self { c.clock_irq_counter(); } }
-    /// Returns whether the cartridge mapper asserts an IRQ line.
-    pub fn irq_pending(&self) -> bool { matches!(self, Self::Mmc3(c) if c.irq_pending()) }
     /// Reads a byte from PPU pattern memory.
     pub fn ppu_read(&self, address: u16) -> Option<u8> {
         if address >= 0x2000 { return None; }
@@ -851,6 +847,10 @@ impl Cartridge {
     pub fn chr_is_ram(&self) -> bool {
         match self { Self::Nrom(c) => c.chr_is_ram(), Self::Mmc1(c) => c.chr_is_ram(), Self::Uxrom(c) => c.chr_is_ram(), Self::Cnrom(c) => c.chr_is_ram(), Self::Mmc3(c) => c.chr_is_ram(), Self::Axrom(c) => c.chr_is_ram(), Self::Gxrom(c) => c.chr_is_ram() }
     }
+    /// Clocks a mapper IRQ counter once per approximated scanline boundary.
+    pub fn clock_irq_counter(&mut self) { if let Self::Mmc3(c) = self { c.clock_irq_counter(); } }
+    /// Returns whether the cartridge mapper asserts an IRQ line.
+    pub fn irq_pending(&self) -> bool { matches!(self, Self::Mmc3(c) if c.irq_pending()) }
     /// Reads a byte from PPU pattern memory.
     pub fn ppu_read(&self, address: u16) -> Option<u8> {
         match self { Self::Nrom(c) => c.ppu_read(address), Self::Mmc1(c) => c.ppu_read(address), Self::Uxrom(c) => c.ppu_read(address), Self::Cnrom(c) => c.ppu_read(address), Self::Mmc3(c) => c.ppu_read(address), Self::Axrom(c) => c.ppu_read(address), Self::Gxrom(c) => c.ppu_read(address) }
