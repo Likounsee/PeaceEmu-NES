@@ -807,7 +807,7 @@ impl Camerica {
     /// Parses a legacy iNES mapper-71 image using CHR-RAM and 2-16 PRG banks.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
         if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
         let mapper = ((image[6] >> 4) as u16)
             | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
@@ -923,7 +923,8 @@ impl Cartridge {
             3 => Cnrom::parse(image).map(Self::Cnrom),
             4 => Mmc3::parse(image).map(Self::Mmc3),
             7 => Axrom::parse(image).map(Self::Axrom),
-            66 => Gxrom::parse(image).map(Self::Gxrom),\n            71 => Camerica::parse(image).map(Self::Camerica),
+            66 => Gxrom::parse(image).map(Self::Gxrom),
+            71 => Camerica::parse(image).map(Self::Camerica),
             other => Err(CartridgeError::UnsupportedMapper(other)),
         }
     }
@@ -1500,7 +1501,7 @@ mod camerica_tests {
 
     fn camerica_image(banks: u8) -> Vec<u8> {
         let mut image = vec![0; INES_HEADER_LEN + banks as usize * PRG_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = banks;
         image[6] = 0x70 | 0x01; // Mapper 71, vertical mirroring by default.
         for bank in 0..banks as usize {
