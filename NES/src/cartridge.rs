@@ -1248,7 +1248,9 @@ impl Mmc2 {
         }
     }
 
+    /// Returns the mapper's current nametable mirroring mode.
     pub fn mirroring(&self) -> Mirroring { self.mirroring }
+    /// Returns false because MMC2 requires CHR-ROM.
     pub fn chr_is_ram(&self) -> bool { false }
 
     /// Reads CHR-ROM using the active latch, then updates the latch on documented trigger addresses.
@@ -1273,6 +1275,7 @@ impl Mmc2 {
         Some(value)
     }
 
+    /// Rejects writes because MMC2 uses CHR-ROM rather than CHR-RAM.
     pub fn ppu_write(&mut self, _address: u16, _value: u8) -> bool { false }
 }
 
