@@ -238,6 +238,7 @@ impl Cpu {
             0x9F => {
                 let base = self.fetch_word(bus);
                 let address = base.wrapping_add(self.state.y as u16);
+                Self::dummy_indexed_store_read(bus, base, address);
                 let value = self.state.a & self.state.x & ((base >> 8) as u8).wrapping_add(1);
                 let target = if base & 0xFF00 != address & 0xFF00 {
                     (u16::from(value) << 8) | (address & 0x00FF)
