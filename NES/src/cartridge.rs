@@ -147,6 +147,201 @@ impl Nrom {
     }
 }
 
+
+/// UxROM (mapper 2): switchable lower PRG bank and fixed final PRG bank.
+///
+/// Bus-conflict variants are not modelled yet; writes select the bank directly.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Uxrom {
+    prg_rom: Vec<u8>,
+    prg_ram: Vec<u8>,
+    chr: Vec<u8>,
+    chr_is_ram: bool,
+    mirroring: Mirroring,
+    selected_bank: usize,
+}
+
+impl Uxrom {
+    /// Parses a legacy iNES mapper-2 image with at least two 16 KiB PRG banks.
+    pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
+        if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
+        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
+        let mapper = ((image[6] >> 4) as u16)
+            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        if mapper != 2 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
+
+        let prg_len = image[4] as usize * PRG_BANK_LEN;
+        if image[4] < 2 { return Err(CartridgeError::InvalidPrgSize(prg_len)); }
+        let chr_len = image[5] as usize * CHR_BANK_LEN;
+        if chr_len != 0 && chr_len != CHR_BANK_LEN {
+            return Err(CartridgeError::InvalidChrSize(chr_len));
+        }
+        let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
+        let expected = INES_HEADER_LEN + trainer_len + prg_len + chr_len;
+        if image.len() < expected {
+            return Err(CartridgeError::TruncatedImage { expected, actual: image.len() });
+        }
+        let prg_start = INES_HEADER_LEN + trainer_len;
+        let chr_start = prg_start + prg_len;
+        let mut prg_ram = vec![0; PRG_RAM_LEN];
+        if trainer_len != 0 {
+            prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
+        }
+        let chr_is_ram = chr_len == 0;
+        let chr = if chr_is_ram { vec![0; CHR_BANK_LEN] } else { image[chr_start..chr_start + chr_len].to_vec() };
+        let mirroring = if image[6] & 0x08 != 0 { Mirroring::FourScreen }
+            else if image[6] & 0x01 != 0 { Mirroring::Vertical }
+            else { Mirroring::Horizontal };
+        Ok(Self { prg_rom: image[prg_start..chr_start].to_vec(), prg_ram, chr, chr_is_ram, mirroring, selected_bank: 0 })
+    }
+
+    /// Reads PRG-RAM or the currently selected/fixed PRG-ROM bank.
+    pub fn cpu_read(&self, address: u16) -> Option<u8> {
+        match address {
+            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+            0x8000..=0xBFFF => {
+                let index = self.selected_bank * PRG_BANK_LEN + address as usize - 0x8000;
+                Some(self.prg_rom[index])
+            }
+            0xC000..=0xFFFF => {
+                let fixed_bank = self.prg_rom.len() / PRG_BANK_LEN - 1;
+                let index = fixed_bank * PRG_BANK_LEN + address as usize - 0xC000;
+                Some(self.prg_rom[index])
+            }
+            _ => None,
+        }
+    }
+
+    /// Writes PRG-RAM or selects a lower PRG bank; ROM bytes themselves remain read-only.
+    pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
+        match address {
+            0x6000..=0x7FFF => {
+                self.prg_ram[address as usize - 0x6000] = value;
+                true
+            }
+            0x8000..=0xFFFF => {
+                let switchable_banks = self.prg_rom.len() / PRG_BANK_LEN - 1;
+                self.selected_bank = value as usize % switchable_banks;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns cartridge nametable mirroring.
+    pub fn mirroring(&self) -> Mirroring { self.mirroring }
+    /// Returns true when character memory is RAM.
+    pub fn chr_is_ram(&self) -> bool { self.chr_is_ram }
+    /// Reads a byte from PPU pattern memory.
+    pub fn ppu_read(&self, address: u16) -> Option<u8> {
+        if address >= 0x2000 { return None; }
+        Some(self.chr[address as usize % self.chr.len()])
+    }
+    /// Writes pattern memory only when it is CHR-RAM.
+    pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
+        if address >= 0x2000 || !self.chr_is_ram { return false; }
+        self.chr[address as usize % self.chr.len()] = value;
+        true
+    }
+}
+
+/// Supported cartridge mapper implementations.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Cartridge {
+    /// Mapper 0, no PRG banking.
+    Nrom(Nrom),
+    /// Mapper 2, switchable lower PRG bank.
+    Uxrom(Uxrom),
+}
+
+impl Cartridge {
+    /// Parses a supported legacy iNES cartridge and selects its mapper implementation.
+    pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
+        if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
+        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
+        let mapper = ((image[6] >> 4) as u16)
+            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        match mapper {
+            0 => Nrom::parse(image).map(Self::Nrom),
+            2 => Uxrom::parse(image).map(Self::Uxrom),
+            other => Err(CartridgeError::UnsupportedMapper(other)),
+        }
+    }
+
+    /// Reads a byte from the CPU address space.
+    pub fn cpu_read(&self, address: u16) -> Option<u8> {
+        match self { Self::Nrom(c) => c.cpu_read(address), Self::Uxrom(c) => c.cpu_read(address) }
+    }
+    /// Writes cartridge RAM or mapper registers.
+    pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
+        match self { Self::Nrom(c) => c.cpu_write(address, value), Self::Uxrom(c) => c.cpu_write(address, value) }
+    }
+    /// Returns cartridge nametable mirroring.
+    pub fn mirroring(&self) -> Mirroring {
+        match self { Self::Nrom(c) => c.mirroring(), Self::Uxrom(c) => c.mirroring() }
+    }
+    /// Returns true when character memory is RAM.
+    pub fn chr_is_ram(&self) -> bool {
+        match self { Self::Nrom(c) => c.chr_is_ram(), Self::Uxrom(c) => c.chr_is_ram() }
+    }
+    /// Reads a byte from PPU pattern memory.
+    pub fn ppu_read(&self, address: u16) -> Option<u8> {
+        match self { Self::Nrom(c) => c.ppu_read(address), Self::Uxrom(c) => c.ppu_read(address) }
+    }
+    /// Writes pattern memory only when it is CHR-RAM.
+    pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
+        match self { Self::Nrom(c) => c.ppu_write(address, value), Self::Uxrom(c) => c.ppu_write(address, value) }
+    }
+}
+
+#[cfg(test)]
+mod uxrom_tests {
+    use super::*;
+
+    fn uxrom_image(banks: u8) -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + banks as usize * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = banks;
+        image[6] = 0x20;
+        for bank in 0..banks as usize {
+            image[INES_HEADER_LEN + bank * PRG_BANK_LEN..INES_HEADER_LEN + (bank + 1) * PRG_BANK_LEN].fill(bank as u8);
+        }
+        image
+    }
+
+    #[test]
+    fn mapper_two_switches_lower_bank_and_keeps_last_bank_fixed() {
+        let image = uxrom_image(4);
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        assert_eq!(cartridge.cpu_read(0x8000), Some(0));
+        assert_eq!(cartridge.cpu_read(0xBFFF), Some(0));
+        assert_eq!(cartridge.cpu_read(0xC000), Some(3));
+        assert_eq!(cartridge.cpu_read(0xFFFF), Some(3));
+        assert!(cartridge.cpu_write(0x8000, 2));
+        assert_eq!(cartridge.cpu_read(0x8000), Some(2));
+        assert_eq!(cartridge.cpu_read(0xC000), Some(3));
+        assert!(cartridge.cpu_write(0xFFFF, 1));
+        assert_eq!(cartridge.cpu_read(0x8000), Some(1));
+        assert_eq!(cartridge.cpu_read(0xC000), Some(3));
+    }
+
+    #[test]
+    fn mapper_two_supports_prg_ram_and_chr_ram() {
+        let mut cartridge = Cartridge::parse(&uxrom_image(2)).unwrap();
+        assert!(cartridge.cpu_write(0x6000, 0xA7));
+        assert_eq!(cartridge.cpu_read(0x6000), Some(0xA7));
+        assert!(cartridge.ppu_write(0x1FFF, 0x5A));
+        assert_eq!(cartridge.ppu_read(0x1FFF), Some(0x5A));
+    }
+
+    #[test]
+    fn mapper_two_rejects_single_prg_bank() {
+        assert!(matches!(Cartridge::parse(&uxrom_image(1)), Err(CartridgeError::InvalidPrgSize(_))));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
