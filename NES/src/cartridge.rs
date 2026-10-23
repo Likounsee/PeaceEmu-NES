@@ -1284,11 +1284,12 @@ impl Mmc2 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Unrom512 {
     prg_rom: Vec<u8>,
-    prg_ram: Vec<u8>,
     chr_ram: Vec<u8>,
     prg_bank: usize,
     chr_bank: usize,
     mirroring: Mirroring,
+    four_screen: bool,
+    switchable_mirroring: bool,
 }
 
 impl Unrom512 {
@@ -1310,27 +1311,25 @@ impl Unrom512 {
             return Err(CartridgeError::TruncatedImage { expected, actual: image.len() });
         }
         let prg_start = INES_HEADER_LEN + trainer_len;
-        let mut prg_ram = vec![0; PRG_RAM_LEN];
-        if trainer_len != 0 {
-            prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
-        }
         Ok(Self {
             prg_rom: image[prg_start..prg_start + prg_len].to_vec(),
-            prg_ram,
             chr_ram: vec![0; 4 * CHR_BANK_LEN],
             prg_bank: 0,
             chr_bank: 0,
-            mirroring: Mirroring::OneScreenLower,
+            mirroring: if image[6] & 0x08 != 0 && image[6] & 1 != 0 { Mirroring::FourScreen }
+                else if image[6] & 0x08 != 0 { Mirroring::OneScreenLower }
+                else if image[6] & 1 != 0 { Mirroring::Vertical } else { Mirroring::Horizontal },
+            four_screen: image[6] & 0x08 != 0 && image[6] & 1 != 0,
+            switchable_mirroring: image[6] & 0x08 != 0 && image[6] & 1 == 0,
         })
     }
 
     /// Reads PRG-RAM, a selectable 16 KiB bank, or the fixed final 16 KiB bank.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
         match address {
-            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
             0x8000..=0xBFFF => {
                 let bank_count = self.prg_rom.len() / PRG_BANK_LEN;
-                Some(self.prg_rom[(self.prg_bank % (bank_count - 1)) * PRG_BANK_LEN + address as usize - 0x8000])
+                Some(self.prg_rom[(self.prg_bank % bank_count) * PRG_BANK_LEN + address as usize - 0x8000])
             }
             0xC000..=0xFFFF => Some(self.prg_rom[self.prg_rom.len() - PRG_BANK_LEN + address as usize - 0xC000]),
             _ => None,
@@ -1340,10 +1339,11 @@ impl Unrom512 {
     /// Selects PRG bank (bits 0-3), one-screen page (bit 4), and CHR-RAM bank (bits 5-6).
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
-            0x6000..=0x7FFF => { self.prg_ram[address as usize - 0x6000] = value; true }
             0x8000..=0xFFFF => {
-                self.prg_bank = (value & 0x0F) as usize;
-                self.mirroring = if value & 0x10 == 0 { Mirroring::OneScreenLower } else { Mirroring::OneScreenUpper };
+                self.prg_bank = (value & 0x1F) as usize;
+                if self.switchable_mirroring && !self.four_screen {
+                    self.mirroring = if value & 0x80 == 0 { Mirroring::OneScreenLower } else { Mirroring::OneScreenUpper };
+                }
                 self.chr_bank = ((value >> 5) & 3) as usize;
                 true
             }
@@ -2282,7 +2282,7 @@ mod unrom512_tests {
         data[0..4].copy_from_slice(b"NES\x1A");
         data[4] = prg_banks;
         data[5] = chr_banks;
-        data[6] = 0xE0;
+        data[6] = 0xE8;
         data[7] = 0x10;
         for bank in 0..prg_banks as usize {
             let start = INES_HEADER_LEN + bank * PRG_BANK_LEN;
@@ -2312,10 +2312,10 @@ mod unrom512_tests {
         assert_eq!(c.mirroring(), Mirroring::OneScreenLower);
         assert_eq!(c.ppu_read(0x0123), Some(0));
         c.ppu_write(0x0123, 0x22);
-        c.cpu_write(0x8000, 0x50);
+        c.cpu_write(0x8000, 0xA0);
         assert_eq!(c.mirroring(), Mirroring::OneScreenUpper);
         assert_eq!(c.ppu_read(0x0123), Some(0x11));
-        c.cpu_write(0x8000, 0x60);
+        c.cpu_write(0x8000, 0xC0);
         assert_eq!(c.ppu_read(0x0123), Some(0));
         c.ppu_write(0x0123, 0x33);
         c.cpu_write(0x8000, 0x20);
@@ -2323,14 +2323,14 @@ mod unrom512_tests {
     }
 
     #[test]
-    fn mapper_30_trainer_and_prg_ram_are_available() {
+    fn mapper_30_skips_trainer_when_mapping_prg_and_has_no_prg_ram() {
         let mut data = image(8, 0);
         data[6] |= 0x04;
         data.splice(16..16, vec![0xA5; TRAINER_LEN]);
         let mut c = Cartridge::parse(&data).unwrap();
-        assert_eq!(c.cpu_read(0x7000), Some(0xA5));
-        c.cpu_write(0x6000, 0x5A);
-        assert_eq!(c.cpu_read(0x6000), Some(0x5A));
+        assert_eq!(c.cpu_read(0x8000), Some(0));
+        assert_eq!(c.cpu_read(0x7000), None);
+        assert!(!c.cpu_write(0x6000, 0x5A));
     }
 
     #[test]
