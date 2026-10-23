@@ -385,6 +385,48 @@ mod tests {
     }
 
     #[test]
+    fn homebrew_rom_renders_chr_rom_tiles_through_the_full_machine() {
+        const PRG_LEN: usize = 16 * 1024;
+        const CHR_LEN: usize = 8 * 1024;
+        let mut image = vec![0; 16 + PRG_LEN + CHR_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[5] = 1; // One 8 KiB CHR-ROM bank.
+
+        // Tile 1 has every pixel set in its low bitplane for all eight rows.
+        let chr_start = 16 + PRG_LEN;
+        image[chr_start + 16..chr_start + 24].fill(0xFF);
+        // The ROM loops forever at $8000 while the machine advances real PPU timing.
+        image[16..20].copy_from_slice(&[0xEA, 0x4C, 0x00, 0x80]);
+        image[16 + 0x3FFC] = 0x00;
+        image[16 + 0x3FFD] = 0x80;
+
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+
+        // Set universal backdrop and background palette through the CPU-visible PPU port.
+        machine.write_cpu(0x2006, 0x3F);
+        machine.write_cpu(0x2006, 0x00);
+        machine.write_cpu(0x2007, 0x0F);
+        machine.write_cpu(0x2007, 0x21);
+
+        // Fill the visible nametable with tile 1, then enable background rendering.
+        machine.write_cpu(0x2006, 0x20);
+        machine.write_cpu(0x2006, 0x00);
+        for _ in 0..(32 * 30) {
+            machine.write_cpu(0x2007, 1);
+        }
+        machine.write_cpu(0x2001, 0x0A); // Background + leftmost 8 background pixels.
+
+        let cycles = machine.step_frame().unwrap();
+        assert!(cycles > 29_000 && cycles < 31_000);
+        let frame = machine.framebuffer();
+        assert_eq!(frame.len(), 256 * 240);
+        assert_eq!(frame[0], 0x21, "tile pattern and palette must reach the output image");
+        assert_eq!(frame[8 * 256 + 8], 0x21, "the rendered tile grid must fill the image");
+        assert!(frame.iter().any(|&pixel| pixel != 0x0F), "framebuffer must not remain the blank backdrop");
+    }
+
+    #[test]
     fn machine_reports_invalid_cartridges() {
         assert!(matches!(NesMachine::from_ines(&[0; 8]), Err(MachineError::Cartridge(CartridgeError::TruncatedHeader))));
     }
