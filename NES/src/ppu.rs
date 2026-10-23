@@ -187,9 +187,13 @@ impl Ppu {
                 let tile_x = scroll_x / 8;
                 let tile_y = scroll_y / 8;
                 let nt_x = base_nt_x ^ ((tile_x / 32) & 1);
-                let nt_y = base_nt_y ^ ((tile_y / 30) & 1);
+                // Vertical scrolling follows the PPU's coarse-Y rollover rules:
+                // row 29 wraps and toggles the vertical nametable, while row 31
+                // wraps without toggling. Rows 30 and 31 are not aliases for 0 and 1.
+                let (coarse_y, nt_y) = Self::scroll_coarse_y(base_coarse_y, base_nt_y, tile_y);
                 let nametable = 0x2000u16 + ((nt_y * 2 + nt_x) as u16) * 0x400;
-                let tile_addr = nametable + ((tile_y % 30) * 32 + tile_x % 32) as u16;
+                let coarse_x = tile_x % 32;
+                let tile_addr = nametable + (coarse_y * 32 + coarse_x) as u16;
                 let tile = self.mem_read(tile_addr, cartridge) as u16;
                 let row = (scroll_y % 8) as u16;
                 let col = (scroll_x % 8) as u16;
@@ -203,9 +207,9 @@ impl Ppu {
                     self.framebuffer[output] = self.output_color(self.palette[0]);
                 } else {
                     let attr_addr = nametable + 0x3C0
-                        + (((tile_y % 30) / 4) * 8 + (tile_x % 32) / 4) as u16;
+                        + ((coarse_y / 4) * 8 + coarse_x / 4) as u16;
                     let attr = self.mem_read(attr_addr, cartridge);
-                    let shift = (((tile_y % 4) / 2) * 4 + ((tile_x % 4) / 2) * 2) as u8;
+                    let shift = (((coarse_y % 4) / 2) * 4 + ((coarse_x % 4) / 2) * 2) as u8;
                     let palette_id = (attr >> shift) & 3;
                     self.framebuffer[output] = self.output_color(self.palette[(palette_id * 4 + pixel) as usize]);
                 }
@@ -351,6 +355,18 @@ impl Ppu {
             }
             _ => { self.palette[Self::palette_index(address)] = value & 0x3F; }
         }
+    }
+
+    /// Advances coarse Y using the two special PPU rollover rows.
+    fn scroll_coarse_y(mut coarse_y: usize, mut nt_y: usize, rows: usize) -> (usize, usize) {
+        for _ in 0..rows {
+            match coarse_y {
+                29 => { coarse_y = 0; nt_y ^= 1; }
+                31 => coarse_y = 0,
+                _ => coarse_y += 1,
+            }
+        }
+        (coarse_y, nt_y)
     }
 
     fn nametable_index(address: u16, mirroring: Mirroring) -> usize {
