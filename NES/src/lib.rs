@@ -13,6 +13,8 @@ pub mod bus;
 pub mod cpu;
 /// Minimal top-level machine wrapper.
 pub mod machine;
+/// Frontend-independent API for embedding a running game in PeaceEmu.
+pub mod session;
 /// PPU register and memory model.
 pub mod ppu;
 
