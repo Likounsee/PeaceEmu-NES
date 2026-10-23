@@ -2,21 +2,29 @@
 
 > Cœur d'émulation Nintendo Entertainment System (NES) destiné à être intégré dans l'application PeaceEmu existante.
 
-## Architecture cible : module intégré, aucune fenêtre séparée
+## Architecture cible : PeaceEmu contrôle, fenêtre de jeu dédiée
 
-**PeaceEmu reste l'application hôte.** Ce dépôt fournit le cœur NES et une API de session consommable par le moteur de PeaceEmu. Le module ne crée pas de fenêtre, ne possède pas de boucle d'événements graphique et n'ouvre aucun périphérique audio : ces responsabilités appartiennent à l'application principale.
+PeaceEmu reste le centre de contrôle : il choisit la ROM, les touches, la mise à l'échelle et les options audio, puis lance le module avec ces réglages. Le module ouvre **une fenêtre séparée qui ne contient que l'image du jeu** (HUD original inclus s'il fait partie du jeu), sans barre d'outils ni HUD ajouté par l'émulateur. Le frontend Windows natif actuel sert de chemin de jeu immédiat ; l'API `NesSession` permet aussi l'intégration future au contrat partagé `EmulationCore`.
 
-L'API d'intégration se trouve dans `src/session.rs` :
+### Lancement direct sur Windows
 
-- `NesSession::load(rom, config)` charge une ROM avec la configuration décidée par PeaceEmu.
-- `NesSession::set_controller_state(...)` transmet les entrées de manettes mappées par l'application.
-- `NesSession::advance_frame()` renvoie les pixels NES indexés (256×240), les échantillons audio PCM mono et les cycles CPU consommés.
-- `NesSession::save_battery_ram()` / `load_battery_ram()` laissent PeaceEmu choisir les chemins et la politique de persistance.
-- `NesConfig` permet à PeaceEmu de choisir la fréquence d'échantillonnage audio.
+Depuis le dossier `NES`, avec Rust installé :
 
-Le moteur graphique hôte applique sa palette, son agrandissement et sa présentation au framebuffer reçu ; le moteur audio hôte lit les échantillons PCM ; les paramètres et les fichiers de sauvegarde restent sous le contrôle de PeaceEmu. L'intégration avec le contrat partagé `EmulationCore` du dépôt hôte reste à effectuer : ce dépôt ne duplique pas ce contrat tant que la stratégie de partage/versionnement n'est pas décidée.
+```powershell
+cargo run --release --bin peaceemu-nes-desktop -- "C:\\chemin\\vers\\jeu.nes" --scale 3 --audio-rate 44100
+```
 
-## Objectif
+- `--scale 1..6` règle l'agrandissement entier de l'image (défaut : 3×).
+- `--audio-rate 8000..192000` règle le taux PCM (défaut : 44 100 Hz).
+- Flèches : directions ; **Z** : A ; **X** : B ; **Maj droite** : Select ; **Entrée** : Start.
+- Les sauvegardes RAM des cartouches avec batterie sont chargées/enregistrées dans un fichier `.sav` à côté de la ROM.
+- Le son utilise la sortie PCM Windows ; si aucun périphérique audio n'est disponible, le jeu continue en silence.
+
+PeaceEmu pourra transmettre ses réglages au lancement en construisant ces arguments ; l'UI de configuration reste dans PeaceEmu, jamais dans la fenêtre de jeu.
+
+### API d'intégration du cœur
+
+Dans `src/session.rs`, `NesSession::load(rom, config)` charge une ROM, `set_controller_state(...)` transmet les entrées, `advance_frame()` renvoie les pixels NES indexés (256×240) et les échantillons audio PCM, et les méthodes de RAM batterie laissent l'hôte gérer le stockage. L'adaptateur vers le contrat partagé `EmulationCore` reste à brancher.
 
 ## Objectif
 ## Réutilisation du code existant
@@ -92,12 +100,12 @@ Le dernier lot ajoute BNROM (mapper 34, variante BNROM uniquement), en plus de C
 
 ### Estimation de complétion
 
-- **Cœur global : 77 %** — estimation d’ingénierie, pas un pourcentage de jeux compatibles ; les événements PPU sont partiellement visibles en cours de frame, mais les fetchs vidéo approximatifs et le branchement à l'application hôte restent des blocages majeurs.
+- **Cœur global : 78 %** — estimation d’ingénierie, pas un pourcentage de jeux compatibles ; les fetchs vidéo approximatifs et les cas CPU/APU non couverts restent des blocages majeurs.
 - **CPU : 76 %** — lectures factices de branchements, d'adressage indexé et de NOP non officiels, écritures successives pour les instructions read-modify-write officielles et composites, ajout du modèle XAA ; l'exécution reste principalement au niveau instruction et non cycle par cycle.
 - **PPU : 62 %** — rendu des lignes visible pendant la frame, scroll capturé à chaque ligne et indicateurs sprite-0 hit/overflow consultables avant la fin de frame ; fetchs pixel/dot et effets de registre en milieu de ligne encore approximatifs.
 - **APU : 58 %** — canaux principaux, mixage approximatif, sortie PCM configurable et blocage CPU/horloges PPU lors des rechargements DMC ; filtrage et arbitrage DMA précis restent incomplets.
 - **Cartouches et mappers : 97 %** — nombreuses familles iNES legacy et premiers cas NES 2.0 pris en charge ; variantes et plusieurs mappers restent absents.
-- **Intégration PeaceEmu : 40 %** — une API de session sans interface dédiée charge la ROM, reçoit les contrôles, renvoie les pixels et le PCM et expose la RAM batterie ; le raccordement réel au contrat EmulationCore partagé et le rendu dans la fenêtre de PeaceEmu restent à faire.
+- **Intégration / lancement jouable : 45 %** — fenêtre de jeu sans HUD ajouté, sortie audio PCM Windows, mise à l'échelle et taux audio configurables au lancement, entrées clavier et sauvegardes RAM batterie ; le lancement orchestré par PeaceEmu et le contrat EmulationCore partagé restent à raccorder.
 
 
 UNROM-512 (mapper 30) prend en charge les images iNES legacy à 256/512 Kio de PRG-ROM et sans CHR-ROM : banque PRG de 16 Kio sélectionnable (bits 0–4), banque finale fixe, quatre banques CHR-RAM de 8 Kio (bits 5–6) et bit 7 de sélection one-screen lorsque l'en-tête indique cette configuration. La variante ajoutée n'émule pas le flash interne, les sous-mappers NES 2.0 ni les conflits de bus des cartes physiques ; elle n'expose pas de PRG-RAM, conformément à la fiche de carte documentée.
