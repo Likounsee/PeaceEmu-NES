@@ -1373,7 +1373,13 @@ impl Unrom512 {
 /// Supported cartridge mapper implementations.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Cartridge {
-    /// Mapper 0, no PRG banking.
+    fn copy_ram(target: &mut [u8], source: &[u8]) -> bool {
+    if target.len() != source.len() { return false; }
+    target.copy_from_slice(source);
+    true
+}
+
+/// Mapper 0, no PRG banking.
     Nrom(Nrom),
     /// Mapper 1, serial PRG/CHR banking and mirroring.
     Mmc1(Mmc1),
@@ -1430,6 +1436,47 @@ impl Cartridge {
     /// Reads a byte from the CPU address space.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
         match self { Self::Nrom(c) => c.cpu_read(address), Self::Mmc1(c) => c.cpu_read(address), Self::Uxrom(c) => c.cpu_read(address), Self::Cnrom(c) => c.cpu_read(address), Self::Mmc3(c) => c.cpu_read(address), Self::Axrom(c) => c.cpu_read(address), Self::Gxrom(c) => c.cpu_read(address), Self::Camerica(c) => c.cpu_read(address), Self::ColorDreams(c) => c.cpu_read(address), Self::Bnrom(c) => c.cpu_read(address), Self::Cprom(c) => c.cpu_read(address), Self::Mmc2(c) => c.cpu_read(address), Self::Unrom512(c) => c.cpu_read(address) }
+    }
+
+    /// Returns a copy of the cartridge's battery-backed PRG-RAM region, if present.
+    ///
+    /// This deliberately bypasses mapper runtime read-enable bits so a save can be
+    /// captured consistently even while game code has temporarily disabled RAM.
+    pub fn prg_ram_snapshot(&self) -> Option<Vec<u8>> {
+        match self {
+            Self::Nrom(c) => Some(c.prg_ram.clone()),
+            Self::Mmc1(c) => Some(c.prg_ram.clone()),
+            Self::Uxrom(c) => Some(c.prg_ram.clone()),
+            Self::Cnrom(c) => Some(c.prg_ram.clone()),
+            Self::Mmc3(c) => Some(c.prg_ram.clone()),
+            Self::Axrom(c) => Some(c.prg_ram.clone()),
+            Self::Gxrom(c) => Some(c.prg_ram.clone()),
+            Self::Camerica(c) => Some(c.prg_ram.clone()),
+            Self::ColorDreams(c) => Some(c.prg_ram.clone()),
+            Self::Bnrom(c) => Some(c.prg_ram.clone()),
+            Self::Cprom(c) => Some(c.prg_ram.clone()),
+            Self::Mmc2(c) => Some(c.prg_ram.clone()),
+            Self::Unrom512(_) => None,
+        }
+    }
+
+    /// Restores cartridge PRG-RAM after the caller validates the complete payload.
+    pub fn restore_prg_ram(&mut self, data: &[u8]) -> bool {
+        match self {
+            Self::Nrom(c) => copy_ram(&mut c.prg_ram, data),
+            Self::Mmc1(c) => copy_ram(&mut c.prg_ram, data),
+            Self::Uxrom(c) => copy_ram(&mut c.prg_ram, data),
+            Self::Cnrom(c) => copy_ram(&mut c.prg_ram, data),
+            Self::Mmc3(c) => copy_ram(&mut c.prg_ram, data),
+            Self::Axrom(c) => copy_ram(&mut c.prg_ram, data),
+            Self::Gxrom(c) => copy_ram(&mut c.prg_ram, data),
+            Self::Camerica(c) => copy_ram(&mut c.prg_ram, data),
+            Self::ColorDreams(c) => copy_ram(&mut c.prg_ram, data),
+            Self::Bnrom(c) => copy_ram(&mut c.prg_ram, data),
+            Self::Cprom(c) => copy_ram(&mut c.prg_ram, data),
+            Self::Mmc2(c) => copy_ram(&mut c.prg_ram, data),
+            Self::Unrom512(_) => false,
+        }
     }
     /// Writes cartridge RAM or mapper registers.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
