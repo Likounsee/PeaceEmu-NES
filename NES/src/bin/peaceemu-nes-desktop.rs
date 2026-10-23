@@ -41,6 +41,20 @@ mod win {
     const WHDR_DONE: u32 = 0x0000_0001;
 
     #[repr(C)]
+    struct XInputGamepad {
+        buttons: u16,
+        left_trigger: u8,
+        right_trigger: u8,
+        thumb_lx: i16,
+        thumb_ly: i16,
+    }
+    #[repr(C)]
+    struct XInputState {
+        packet_number: u32,
+        gamepad: XInputGamepad,
+    }
+
+    #[repr(C)]
     struct WaveFormatEx {
         format_tag: u16,
         channels: u16,
@@ -116,6 +130,10 @@ mod win {
             x_src: i32, y_src: i32, src_width: i32, src_height: i32, bits: *const c_void,
             info: *const BitmapInfo, usage: u32, raster_op: u32) -> i32;
     }
+    #[link(name = "xinput1_4")]
+    extern "system" {
+        fn XInputGetState(user_index: u32, state: *mut XInputState) -> u32;
+    }
     #[link(name = "winmm")]
     extern "system" {
         fn waveOutOpen(output: *mut Handle, device_id: u32, format: *const WaveFormatEx, callback: usize, instance: usize, flags: u32) -> u32;
@@ -141,6 +159,33 @@ mod win {
 
     fn key_down(key: i32) -> bool {
         unsafe { GetAsyncKeyState(key) < 0 }
+    }
+
+    fn gamepad_state(index: u32) -> u8 {
+        const ERROR_SUCCESS: u32 = 0;
+        const DPAD_UP: u16 = 0x0001;
+        const DPAD_DOWN: u16 = 0x0002;
+        const DPAD_LEFT: u16 = 0x0004;
+        const DPAD_RIGHT: u16 = 0x0008;
+        const START: u16 = 0x0010;
+        const BACK: u16 = 0x0020;
+        const A: u16 = 0x1000;
+        const B: u16 = 0x2000;
+        let mut state: XInputState = unsafe { zeroed() };
+        if unsafe { XInputGetState(index, &mut state) } != ERROR_SUCCESS {
+            return 0;
+        }
+        let buttons = state.gamepad.buttons;
+        let mut nes = 0u8;
+        if buttons & A != 0 { nes |= 1 << 0; }
+        if buttons & B != 0 { nes |= 1 << 1; }
+        if buttons & BACK != 0 { nes |= 1 << 2; }
+        if buttons & START != 0 { nes |= 1 << 3; }
+        if buttons & DPAD_UP != 0 || state.gamepad.thumb_ly > 16_000 { nes |= 1 << 4; }
+        if buttons & DPAD_DOWN != 0 || state.gamepad.thumb_ly < -16_000 { nes |= 1 << 5; }
+        if buttons & DPAD_LEFT != 0 || state.gamepad.thumb_lx < -16_000 { nes |= 1 << 6; }
+        if buttons & DPAD_RIGHT != 0 || state.gamepad.thumb_lx > 16_000 { nes |= 1 << 7; }
+        nes
     }
 
     fn controller_state(focused: bool, keys: &[i32; 8]) -> u8 {
@@ -345,8 +390,10 @@ mod win {
             if !running { break; }
 
             let focused = unsafe { GetForegroundWindow() == hwnd };
-            machine.set_controller_state(0, controller_state(focused, &keys));
-            machine.set_controller_state(1, controller_state(focused, &keys2));
+            let player_one = controller_state(focused, &keys) | if focused { gamepad_state(0) } else { 0 };
+            let player_two = controller_state(focused, &keys2) | if focused { gamepad_state(1) } else { 0 };
+            machine.set_controller_state(0, player_one);
+            machine.set_controller_state(1, player_two);
             if let Err(error) = machine.step_frame() {
                 runtime_error = Some(format!("emulation stopped: {error}"));
                 break;
