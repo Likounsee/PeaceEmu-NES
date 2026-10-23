@@ -510,7 +510,7 @@ mod tests {
     #[test]
     fn frame_snapshot_reads_pixels_from_latched_nametable_scroll() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b\"NES\\x1A\");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap(); // CHR-RAM
         for row in 0..8u16 {
