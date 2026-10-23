@@ -667,7 +667,6 @@ mod tests {
 
     #[test]
     fn nmi_takes_priority_over_a_pending_apu_irq() {
-        use crate::cartridge::Nrom;
         let (mut cpu, mut bus) = setup(&[0x58, 0xEA]); // CLI; NOP
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
@@ -850,7 +849,6 @@ mod tests {
     }
     #[test]
     fn nmi_pushes_cpu_state_and_jumps_to_nmi_vector() {
-        use crate::cartridge::Nrom;
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
@@ -873,7 +871,6 @@ mod tests {
     }
 
     #[test] fn reset_loads_vector_from_nrom_cartridge() {
-        use crate::cartridge::Nrom;
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
