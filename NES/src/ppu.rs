@@ -870,6 +870,27 @@ mod tests {
     }
 
     #[test]
+    fn scanline_renderer_uses_scroll_latched_at_line_start() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x0A; // Background on, leftmost eight pixels visible.
+        ppu.v = 0x1000; // Fine Y = 1 at the start of this line.
+        ppu.mem_write(0x0001, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x3F01, 0x21, Some(&mut cartridge));
+
+        ppu.tick_with_cartridge(256, Some(&cartridge));
+
+        assert_eq!(ppu.framebuffer()[0], 0x21);
+        assert!(ppu.background_opaque[0]);
+        assert_eq!(ppu.line_scroll_v & 0x7000, 0x1000);
+    }
+
+    #[test]
     fn sprite_zero_hit_becomes_visible_during_scanline_not_only_at_frame_end() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
