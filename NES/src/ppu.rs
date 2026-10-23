@@ -158,7 +158,7 @@ impl Ppu {
     /// frontend can apply its chosen NTSC/PAL palette without changing emulation state.
     /// Background rendering is intentionally frame-based; per-dot fetch timing and
     /// mid-frame scroll changes are not implemented yet.
-    pub fn render_background(&mut self, cartridge: Option<&Nrom>) {
+    pub fn render_background(&mut self, cartridge: Option<&Cartridge>) {
         const WIDTH: usize = 256;
         const HEIGHT: usize = 240;
         let rendering_enabled = self.mask & 0x08 != 0;
@@ -212,7 +212,7 @@ impl Ppu {
     /// Renders a background snapshot and composites sprites in OAM priority order.
     /// Sprite 0 hit and first-eight-per-scanline overflow are approximated; this is not
     /// a dot-accurate sprite evaluator and does not model fetch contention.
-    pub fn render_frame(&mut self, cartridge: Option<&Nrom>) {
+    pub fn render_frame(&mut self, cartridge: Option<&Cartridge>) {
         self.render_background(cartridge);
         // Sprite 0 hit and overflow are derived from this snapshot, not persistent events.
         // Recompute both so changing OAM or masks cannot leave stale status behind.
@@ -327,16 +327,16 @@ impl Ppu {
         self.v = self.v.wrapping_add(if self.ctrl & 4 != 0 { 32 } else { 1 }) & 0x7FFF;
     }
 
-    fn mem_read(&self, address: u16, cartridge: Option<&Nrom>) -> u8 {
+    fn mem_read(&self, address: u16, cartridge: Option<&Cartridge>) -> u8 {
         let address = address & 0x3FFF;
         match address {
             0x0000..=0x1FFF => cartridge.and_then(|c| c.ppu_read(address)).unwrap_or(0),
-            0x2000..=0x3EFF => self.nametables[Self::nametable_index(address, cartridge.map(Nrom::mirroring).unwrap_or(Mirroring::Horizontal))],
+            0x2000..=0x3EFF => self.nametables[Self::nametable_index(address, cartridge.map(Cartridge::mirroring).unwrap_or(Mirroring::Horizontal))],
             _ => self.palette[Self::palette_index(address)],
         }
     }
 
-    fn mem_write(&mut self, address: u16, value: u8, cartridge: Option<&mut Nrom>) {
+    fn mem_write(&mut self, address: u16, value: u8, cartridge: Option<&mut Cartridge>) {
         let address = address & 0x3FFF;
         match address {
             0x0000..=0x1FFF => { if let Some(c) = cartridge { c.ppu_write(address, value); } }
