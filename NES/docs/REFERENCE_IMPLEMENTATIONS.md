@@ -76,6 +76,13 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - Limites : CNROM à bus conflicts non simulé ; seuls les iNES classiques avec 1 ou 2 banques PRG et 1 à 4 banques CHR sont acceptés. NES 2.0 reste hors périmètre.
 - Comme pour UxROM, aucune source de TetaNES n'a été copiée : les comportements sont adaptés à l'interface locale et testés dans PeaceEmu-NES.
 
+## Sixième adaptation réalisée : AxROM (mapper 7)
+
+- Références de comportement : documentation matérielle NESdev sur AxROM/mapper 7, confrontée aux conventions de banques et de mirroring de TetaNES.
+- Adaptation locale : fenêtres PRG de 32 Kio sélectionnées par les bits 0–3 des écritures CPU, CHR-RAM de 8 Kio, et mirroring one-screen basculé par le bit 4. La PPU connaît maintenant les deux pages one-screen en plus des modes horizontal, vertical et four-screen.
+- Tests : sélection de banques PRG aux deux extrémités de la fenêtre, bascule de page nametable, écriture/lecture CHR-RAM et rejet des tailles PRG impaires/hors plage ainsi que de CHR-ROM.
+- Limites : uniquement iNES classique, 2 à 32 unités PRG de 16 Kio (nombre pair), CHR-RAM et pas de modélisation de variantes de carte ou de bus conflicts. Aucune source TetaNES n'est copiée : les règles matérielles sont réimplémentées dans les types locaux.
+
 ## Politique Rust
 
 - `NES/rust-toolchain.toml` sélectionne `stable` et installe `rustfmt`/`clippy`, afin que les outils locaux suivent la dernière version stable disponible avec rustup.
