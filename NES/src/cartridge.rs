@@ -1505,7 +1505,8 @@ mod camerica_tests {
         let mut image = vec![0; INES_HEADER_LEN + banks as usize * PRG_BANK_LEN];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = banks;
-        image[6] = 0x70 | 0x01; // Mapper 71, vertical mirroring by default.
+        image[6] = 0x70 | 0x01; // Mapper 71 low bits, vertical mirroring by default.
+        image[7] = 0x40; // Mapper number bits 4-7.
         for bank in 0..banks as usize {
             let start = INES_HEADER_LEN + bank * PRG_BANK_LEN;
             image[start..start + PRG_BANK_LEN].fill(bank as u8);
