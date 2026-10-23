@@ -185,3 +185,22 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - Adaptation « recette maison » : intégration de `Unrom512` dans l'enum `Cartridge`, avec PRG sélectionnable par les bits 0–4, dernière banque fixe, CHR-RAM 32 Kio commutable par les bits 5–6 et bit 7 de mirroring one-screen lorsque le drapeau iNES indique une configuration commutable. Le chargement saute correctement le trainer avant la PRG-ROM, sans prétendre fournir de PRG-RAM physique.
 - Tests : banques PRG commutables/fixes, persistance isolée des quatre banques CHR-RAM, mirroring one-screen, trainer et refus de PRG-ROM hors capacités retenues ou de CHR-ROM.
 - Limites explicites : sous-ensemble iNES legacy (256/512 Kio PRG) ; sous-mappers NES 2.0, flash ROM, conflits de bus et variantes de configuration H/V/four-screen non entièrement modélisés. Le comportement est réimplémenté dans les structures PeaceEmu, sans copier le code d'un émulateur tiers.
+
+
+## Priorité de portage — réduire le travail réécrit à la main
+
+La stratégie pour les prochaines tranches est de porter des sous-systèmes plus larges et cohérents à partir de références éprouvées, plutôt que d'ajouter seulement des cas isolés. La référence principale reste TetaNES (MIT/Apache-2.0) ; chaque portage doit être comparé aux règles matérielles NESdev et adapté au modèle de données PeaceEmu.
+
+Ordre de travail recommandé :
+
+1. **PPU** : établir un chemin de rendu par dot avec fetches de nametable/attributs/pattern, registres à décalage et production des pixels. Garder l'API locale Ppu, Cartridge et le framebuffer 6 bits ; ne pas introduire l'interface utilisateur de TetaNES. Portage par phases, avec tests de timing et rendu.
+2. **Synchronisation bus/PPU/mapper** : exposer les événements matériels nécessaires au bus (accès PPU, transitions A12, points de scanline) pour que MMC3 réagisse aux fronts filtrés plutôt qu'à un compteur de scanlines approximatif. Ne pas revendiquer la précision cycle tant que le bus ne transporte pas les accès individuels.
+3. **CPU** : comparer le séquencement d'instructions, les interruptions, les accès factices et DMA ; prioriser les écarts qui affectent les ROM de test, puis conserver les opcodes dans l'interpréteur local.
+4. **APU** : comparer le séquenceur de trames, les compteurs et DMC, puis séparer horloges matérielles et échantillonnage audio hôte.
+5. **Intégration** : réutiliser le contrat EmulationCore du dépôt PeaceEmu via une stratégie de dépendance/workspace explicite, sans recopier ses types ni recréer le frontend.
+
+Une dépendance directe à TetaNES n'est pas considérée comme un raccourci automatique : son architecture Bus/Mapper, sa boucle d'exécution et son API audio/vidéo ne correspondent pas au contrat local. Les petits algorithmes matériels peuvent être portés sous licence permissive avec provenance et notices si le code source est réellement repris ; sinon, seules les règles de comportement servent de référence et l'implémentation est réécrite. RustyNES reste exclu de tout portage de code tant que la compatibilité GPL-3.0 n'a pas été explicitement décidée.
+
+## Nouvelle tranche de tests — événements NMI de la PPU
+
+Le fichier NES/tests/ppu_nmi_timing.rs teste la PPU par son API publique : vblank à la scanline 241 dot 1, activation tardive du NMI pendant vblank, acquittement par lecture de PPUSTATUS et nouvelle transition bas-haut lors d'une désactivation/réactivation. Ces tests verrouillent le contrat d'interruption avant de remplacer le rendu snapshot. Ils ne prétendent pas valider les courses matérielles au sous-cycle ni une synchronisation CPU/PPU cycle exacte.
