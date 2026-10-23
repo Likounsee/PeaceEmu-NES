@@ -207,6 +207,42 @@ mod tests {
     }
 
     #[test]
+    fn machine_loads_gxrom_and_routes_prg_chr_bank_selection() {
+        const PRG_BANK_LEN: usize = 16 * 1024;
+        const CHR_BANK_LEN: usize = 8 * 1024;
+        let mut image = vec![0; 16 + 4 * PRG_BANK_LEN + 3 * CHR_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 4;
+        image[5] = 3;
+        image[6] = 0x20; // Mapper 66 low nibble.
+        image[7] = 0x40; // Mapper 66 high nibble.
+        for bank in 0..2 {
+            let start = 16 + bank * 2 * PRG_BANK_LEN;
+            image[start..start + 2 * PRG_BANK_LEN].fill((0x30 + bank) as u8);
+        }
+        let chr_start = 16 + 4 * PRG_BANK_LEN;
+        for bank in 0..3 {
+            let start = chr_start + bank * CHR_BANK_LEN;
+            image[start..start + CHR_BANK_LEN].fill((0x60 + bank) as u8);
+        }
+        // Reset vector points into the initial final 16 KiB PRG bank.
+        image[16 + 3 * PRG_BANK_LEN + 0x3FFC] = 0x00;
+        image[16 + 3 * PRG_BANK_LEN + 0x3FFD] = 0xC0;
+
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        assert_eq!(machine.cpu_state().pc, 0xC000);
+        assert_eq!(machine.read_cpu(0x8000), 0x30);
+        assert_eq!(machine.read_cpu(0xC000), 0x30);
+        assert_eq!(machine.ppu_read(0x0000), Some(0x60));
+
+        machine.write_cpu(0x8000, 0x11); // PRG bank 1 and CHR bank 1.
+        assert_eq!(machine.read_cpu(0x8000), 0x31);
+        assert_eq!(machine.read_cpu(0xC000), 0x31);
+        assert_eq!(machine.ppu_read(0x0000), Some(0x61));
+        assert_eq!(machine.ppu_read(0x1FFF), Some(0x61));
+    }
+
+    #[test]
     fn machine_loads_reset_vector_and_executes_program() {
         let image = nrom_with_program(&[0xA9, 0x42, 0x8D, 0x00, 0x02, 0xEA]);
         let mut machine = NesMachine::from_ines(&image).unwrap();
