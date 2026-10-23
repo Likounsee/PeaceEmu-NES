@@ -3,7 +3,7 @@
 
 //! Hardware-focused NES emulation components, without a GUI dependency.
 
-/// CPU-visible audio register model (audio synthesis is not yet implemented).
+/// Audio register model, approximate channel synthesis, and host-rate PCM output.
 pub mod apu;
 /// Cartridge image parsing and mapper support.
 pub mod cartridge;
