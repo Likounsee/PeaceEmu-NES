@@ -1,0 +1,13 @@
+[package]
+name = "peaceemu-nes"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+license = "LicenseRef-Proprietary"
+description = "Nintendo Entertainment System emulation core for PeaceEmu"
+
+[lib]
+name = "peaceemu_nes"
+path = "NES/src/lib.rs"
+
+[dependencies]
