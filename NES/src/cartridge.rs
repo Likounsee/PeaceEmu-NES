@@ -99,7 +99,7 @@ impl Nrom {
             ((image[6] >> 4) as u16)
                 | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
         };
-        if mapper != 0 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
+        if mapper != 0 { return Err(if nes2 { CartridgeError::Nes2NotSupported } else { CartridgeError::UnsupportedMapper(mapper) }); }
 
         // NROM has only 16/32 KiB of PRG-ROM and 0/8 KiB of CHR-ROM. Decode
         // both the legacy iNES count fields and NES 2.0's extended linear or
@@ -1714,8 +1714,8 @@ mod tests {
         let mut v = image(1, 1, 0, 0); v.pop();
         assert!(matches!(Nrom::parse(&v), Err(CartridgeError::TruncatedImage { .. })));
     }
-    #[test] fn rejects_nes2_until_implemented() {
-        assert_eq!(Nrom::parse(&image(1, 1, 0, 8)), Err(CartridgeError::Nes2NotSupported));
+    #[test] fn accepts_nes2_mapper_zero() {
+        assert!(Nrom::parse(&image(1, 1, 0, 8)).is_ok());
     }
     #[test] fn rejects_chr_rom_sizes_outside_nrom_hardware() {
         assert_eq!(Nrom::parse(&image(1, 2, 0, 0)), Err(CartridgeError::InvalidChrSize(2 * CHR_BANK_LEN)));
@@ -1754,12 +1754,10 @@ mod tests {
             Err(CartridgeError::UnsupportedMapper(2))
         );
 
-        // NES 2.0's format marker takes precedence over legacy mapper decoding.
+        // NES 2.0's format marker selects its mapper fields; mapper 0 is supported.
+        image[6] = 0;
         image[7] = 0x08;
-        assert_eq!(
-            Nrom::parse(&image),
-            Err(CartridgeError::Nes2NotSupported)
-        );
+        assert!(Nrom::parse(&image).is_ok());
     }
 
     #[test]
@@ -2441,7 +2439,7 @@ mod nes2_nrom_tests {
 
     fn nes2_nrom(prg_banks: u8, chr_banks: u8) -> Vec<u8> {
         let mut image = vec![0; INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN + chr_banks as usize * CHR_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = prg_banks;
         image[5] = chr_banks;
         image[7] = 0x08; // NES 2.0, mapper 0.
