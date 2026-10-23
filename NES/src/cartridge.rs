@@ -942,9 +942,10 @@ mod mmc1_tests {
             image[start..start + PRG_BANK_LEN].fill(bank as u8);
         }
         let chr_start = INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN;
-        for bank in 0..chr_banks as usize {
-            let start = chr_start + bank * CHR_BANK_LEN;
-            image[start..start + CHR_BANK_LEN].fill((0x20 + bank) as u8);
+        // Mark each 4-KiB MMC1 CHR bank separately, not each 8-KiB iNES unit.
+        for bank in 0..chr_banks as usize * 2 {
+            let start = chr_start + bank * 0x1000;
+            image[start..start + 0x1000].fill((0x20 + bank) as u8);
         }
         image
     }
