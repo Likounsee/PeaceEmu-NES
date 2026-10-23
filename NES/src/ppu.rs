@@ -179,7 +179,7 @@ impl Ppu {
             // coarse-Y/nametable address once instead of repeating it for every pixel.
             let scroll_y = base_coarse_y * 8 + fine_y + y;
             let tile_y = scroll_y / 8;
-            let (coarse_y, nt_y) = Self::scroll_coarse_y(base_coarse_y, base_nt_y, tile_y);
+            let (coarse_y, nt_y) = Self::scroll_coarse_y(base_coarse_y, base_nt_y, tile_y - base_coarse_y);
             for x in 0..WIDTH {
                 let output = y * WIDTH + x;
                 if !rendering_enabled || (x < 8 && !show_left) {
