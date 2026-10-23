@@ -1,10 +1,10 @@
-//! CPU memory bus for the initial NROM machine.
+//! CPU memory bus for the NES machine.
 
 use crate::apu::Apu;
 use crate::cartridge::Cartridge;
 use crate::ppu::Ppu;
 
-/// CPU bus with 2 KiB internal RAM and optional NROM cartridge.
+/// CPU bus with 2 KiB internal RAM and an optional mapper-backed cartridge.
 ///
 /// PPU registers, frame rendering, NMI, OAM DMA and serial controller ports are routed.
 /// APU pulse/triangle/noise synthesis and an approximate DMC sample-fetch path are integrated;
