@@ -2279,7 +2279,7 @@ mod unrom512_tests {
 
     fn image(prg_banks: u8, chr_banks: u8) -> Vec<u8> {
         let mut data = vec![0; INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN + chr_banks as usize * CHR_BANK_LEN];
-        data[0..4].copy_from_slice(b"NES\\x1A");
+        data[0..4].copy_from_slice(b"NES\x1A");
         data[4] = prg_banks;
         data[5] = chr_banks;
         data[6] = 0xE0;
