@@ -879,6 +879,27 @@ mod tests {
     }
 
     #[test]
+    fn tick_reports_each_scanline_boundary_even_across_frame_wrap() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 260;
+        ppu.dot = 330;
+        assert_eq!(ppu.tick(341 * 3), 3);
+        assert_eq!(ppu.position(), (1, 330));
+    }
+
+    #[test]
+    fn odd_frame_skip_counts_as_a_scanline_boundary() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 261;
+        ppu.dot = 339;
+        ppu.odd_frame = true;
+        ppu.mask = 0x08;
+        assert_eq!(ppu.tick(1), 1);
+        assert_eq!(ppu.position(), (0, 0));
+    }
+
+
+    #[test]
     fn nametable_indices_follow_horizontal_vertical_and_four_screen_mirroring() {
         assert_eq!(Ppu::nametable_index(0x2000, Mirroring::Vertical), 0x000);
         assert_eq!(Ppu::nametable_index(0x2400, Mirroring::Vertical), 0x400);
