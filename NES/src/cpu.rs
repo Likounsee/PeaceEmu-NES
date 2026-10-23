@@ -204,6 +204,16 @@ impl Cpu {
             0xAF => { let a = self.fetch_word(bus); let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 4 }
             0xB7 => { let a = self.fetch(bus).wrapping_add(self.state.y) as u16; let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 4 }
             0xBF => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xBB => { // LAS: A, X and SP share memory & stack pointer.
+                let base = self.fetch_word(bus);
+                let address = base.wrapping_add(self.state.y as u16);
+                let value = bus.read(address) & self.state.sp;
+                self.state.a = value;
+                self.state.x = value;
+                self.state.sp = value;
+                self.set_nz(value);
+                4 + u8::from(base & 0xFF00 != address & 0xFF00)
+            }
             0xA4 => { let a = self.fetch(bus) as u16; let v = bus.read(a); self.state.y = v; self.set_nz(v); 3 }
             0xAC => { let a = self.fetch_word(bus); let v = bus.read(a); self.state.y = v; self.set_nz(v); 4 }
             0xB4 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; let v = bus.read(a); self.state.y = v; self.set_nz(v); 4 }
@@ -510,6 +520,27 @@ mod tests {
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5, "LAX absolute,Y adds a cycle on page crossing");
         assert_eq!((cpu.state.a, cpu.state.x), (0x00, 0x00));
         assert_ne!(cpu.state.status & flags::ZERO, 0);
+    }
+
+    #[test]
+    fn unofficial_las_loads_a_x_and_stack_pointer_with_page_cross_penalty() {
+        let (mut cpu, mut bus) = setup(&[0xBB, 0xFF, 0x02]);
+        cpu.state.y = 1;
+        cpu.state.sp = 0xF3;
+        bus.write(0x0300, 0x8F);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!((cpu.state.a, cpu.state.x, cpu.state.sp), (0x83, 0x83, 0x83));
+        assert_ne!(cpu.state.status & flags::NEGATIVE, 0);
+
+        cpu.state.y = 0;
+        cpu.state.sp = 0xFF;
+        cpu.set_pc(0x0600);
+        bus.write(0x0600, 0xBB);
+        bus.write(0x0601, 0x00);
+        bus.write(0x0602, 0x03);
+        bus.write(0x0300, 0x42);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 4);
+        assert_eq!((cpu.state.a, cpu.state.x, cpu.state.sp), (0x42, 0x42, 0x42));
     }
 
     #[test]
