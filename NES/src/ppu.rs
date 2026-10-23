@@ -512,6 +512,7 @@ mod tests {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
+        image[6] = 0x08; // Four-screen nametables keep nametable 0 and 1 independent.
         let mut cartridge = Cartridge::parse(&image).unwrap(); // CHR-RAM
         for row in 0..8u16 {
             cartridge.ppu_write(16 + row, 0xFF);
