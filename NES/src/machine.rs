@@ -251,7 +251,7 @@ mod tests {
     fn machine_loads_mmc3_and_routes_prg_bank_registers() {
         const PRG_BANK_LEN: usize = 16 * 1024;
         let mut image = vec![0; 16 + 4 * PRG_BANK_LEN + 8 * 1024];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 4;
         image[5] = 1;
         image[6] = 0x40; // Mapper 4 (MMC3).
