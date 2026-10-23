@@ -129,12 +129,12 @@ impl NesMachine {
             self.cpu.add_stall_cycles(dma_cycles);
             elapsed_cycles = elapsed_cycles.saturating_add(dma_cycles);
         }
-        let (scanline_before, _) = self.bus.ppu_position();
-        self.bus.tick_ppu(u32::from(elapsed_cycles) * 3);
-        let (scanline_after, _) = self.bus.ppu_position();
-        if scanline_after != scanline_before {
-            // Until PPU A12 bus transitions are exposed, approximate one MMC3 IRQ clock
-            // per crossed scanline; this preserves IRQ delivery but is not dot-accurate.
+        // Count every scanline boundary, not just whether the final scanline differs.
+        // This matters for OAM DMA stalls, which advance the PPU across several scanlines.
+        // MMC3 still uses scanline-boundary approximation until real PPU A12 fetch edges
+        // are exposed by the renderer.
+        let crossed_scanlines = self.bus.tick_ppu(u32::from(elapsed_cycles) * 3);
+        for _ in 0..crossed_scanlines {
             self.bus.clock_mapper_irq();
         }
         self.bus.tick_apu(u32::from(elapsed_cycles));
