@@ -1121,6 +1121,7 @@ impl Cprom {
         })
     }
 
+    /// Reads fixed PRG-ROM or PRG-RAM from the CPU address space.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
         match address {
             0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
@@ -1138,9 +1139,12 @@ impl Cprom {
         }
     }
 
+    /// Returns the mirroring mode declared by the iNES header.
     pub fn mirroring(&self) -> Mirroring { self.mirroring }
+    /// Returns true because CPROM provides CHR-RAM.
     pub fn chr_is_ram(&self) -> bool { true }
 
+    /// Reads the fixed lower or selected upper CHR-RAM bank.
     pub fn ppu_read(&self, address: u16) -> Option<u8> {
         if address >= 0x2000 { return None; }
         let index = if address < 0x1000 { address as usize }
@@ -1148,6 +1152,7 @@ impl Cprom {
         Some(self.chr_ram[index])
     }
 
+    /// Writes the fixed lower or selected upper CHR-RAM bank.
     pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
         if address >= 0x2000 { return false; }
         let index = if address < 0x1000 { address as usize }
