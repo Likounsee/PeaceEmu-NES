@@ -111,6 +111,14 @@ impl CpuBus {
     }
     /// Returns one approximate normalized mono sample from the APU mixer.
     pub fn apu_sample(&self) -> f32 { self.apu.sample() }
+    /// Configures the APU's PCM output rate in samples per second.
+    pub fn set_audio_sample_rate(&mut self, sample_rate: u32) -> bool {
+        self.apu.set_sample_rate(sample_rate)
+    }
+    /// Drains generated mono PCM samples in playback order.
+    pub fn drain_audio_samples(&mut self) -> Vec<f32> {
+        self.apu.drain_audio_samples()
+    }
     /// Returns the level-triggered APU IRQ line without clearing it.
     pub fn irq_pending(&self) -> bool { self.apu.irq_pending() || self.cartridge.as_ref().is_some_and(Cartridge::irq_pending) }
     /// Takes a pending NMI edge raised by the PPU.
