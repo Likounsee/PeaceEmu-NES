@@ -898,7 +898,7 @@ mod tests {
     fn scanline_renderer_tracks_vertical_scroll_instead_of_reusing_one_tile_row() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap();
         ppu.scanline = 0;
