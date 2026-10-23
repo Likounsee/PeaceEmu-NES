@@ -110,6 +110,22 @@ impl NesMachine {
     /// Returns one approximate normalized mono audio sample (0.0..1.0).
     pub fn audio_sample(&self) -> f32 { self.bus.apu_sample() }
 
+    /// Configures audio output sampling rate (8,000..=192,000 samples/second).
+    ///
+    /// Returns false for unsupported rates. A successful change clears queued samples
+    /// and resets the fractional resampling phase.
+    pub fn set_audio_sample_rate(&mut self, sample_rate: u32) -> bool {
+        self.bus.set_audio_sample_rate(sample_rate)
+    }
+
+    /// Drains mono PCM samples generated since the previous drain.
+    ///
+    /// The default output rate is 44.1 kHz. Frontends should drain this queue regularly;
+    /// the queue is bounded and discards the oldest samples if a consumer falls behind.
+    pub fn drain_audio_samples(&mut self) -> Vec<f32> {
+        self.bus.drain_audio_samples()
+    }
+
     /// Returns whether the loaded iNES image declares battery-backed save RAM.
     pub fn has_battery_backed_ram(&self) -> bool { self.battery_backed }
 
