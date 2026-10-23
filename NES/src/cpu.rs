@@ -542,9 +542,20 @@ impl Cpu {
     fn branch(&mut self, bus: &mut CpuBus, take: bool) -> u8 {
         let offset = self.fetch(bus) as i8;
         if !take { return 2; }
-        let before = self.state.pc;
-        self.state.pc = self.state.pc.wrapping_add_signed(offset as i16);
-        if before & 0xFF00 != self.state.pc & 0xFF00 { 4 } else { 3 }
+
+        // A taken 6502 branch performs a dummy read at the sequential PC. When
+        // crossing a page, it then reads the intermediate address with the old
+        // high byte and target low byte before the target instruction executes.
+        let sequential_pc = self.state.pc;
+        let _ = bus.read(sequential_pc);
+        self.state.pc = sequential_pc.wrapping_add_signed(offset as i16);
+        if sequential_pc & 0xFF00 != self.state.pc & 0xFF00 {
+            let intermediate = (sequential_pc & 0xFF00) | (self.state.pc & 0x00FF);
+            let _ = bus.read(intermediate);
+            4
+        } else {
+            3
+        }
     }
 }
 
@@ -690,6 +701,34 @@ mod tests {
         cpu.step(&mut bus).unwrap();
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 3);
         assert_eq!(cpu.state().pc, 0x0610);
+    }
+
+    #[test]
+    fn unofficial_sbc_immediate_alias_matches_official_sbc() {
+        let (mut official, mut official_bus) = setup(&[0xA9, 0x50, 0x38, 0xE9, 0x10]);
+        let (mut unofficial, mut unofficial_bus) = setup(&[0xA9, 0x50, 0x38, 0xEB, 0x10]);
+        for _ in 0..3 {
+            official.step(&mut official_bus).unwrap();
+            unofficial.step(&mut unofficial_bus).unwrap();
+        }
+        assert_eq!(official.state(), unofficial.state());
+        assert_eq!(official.total_cycles(), unofficial.total_cycles());
+    }
+
+    #[test]
+    fn taken_branch_performs_dummy_reads_and_preserves_target_and_cycles() {
+        let (mut cpu, mut bus) = setup(&[0xD0, 0x02, 0xEA, 0xEA, 0xA9, 0x44]);
+        let result = cpu.step(&mut bus).unwrap();
+        assert_eq!(result.cycles, 3);
+        assert_eq!(cpu.state().pc, 0x0604);
+
+        let mut bus = CpuBus::new();
+        bus.write(0x06FD, 0xD0);
+        bus.write(0x06FE, 0x02);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x06FD);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 4);
+        assert_eq!(cpu.state().pc, 0x0701);
     }
 
     #[test]
