@@ -216,25 +216,16 @@ impl NesMachine {
         for _ in 0..crossed_scanlines {
             self.bus.clock_mapper_irq();
         }
-        let dmc_stalls = self.bus.tick_apu(u32::from(elapsed_cycles));
-        if dmc_stalls != 0 {
-            // A DMC fetch steals CPU time after the instruction's nominal cycles.
-            // Advance all clocked devices for those stolen cycles as well.
+        let mut dmc_stalls = self.bus.tick_apu(u32::from(elapsed_cycles));
+        // DMC DMA steals CPU time and every stolen cycle still clocks the PPU/APU.
+        // Repeat if an unusually short DMC period requests another refill during a stall.
+        while dmc_stalls != 0 {
             self.cpu.add_stall_cycles(dmc_stalls.min(u32::from(u16::MAX)) as u16);
             let crossed = self.bus.tick_ppu(dmc_stalls.saturating_mul(3));
             for _ in 0..crossed {
                 self.bus.clock_mapper_irq();
             }
-            // The APU continues running while the CPU is stalled. The refill itself
-            // has already happened, so this normally does not recursively request DMA.
-            let extra_stalls = self.bus.tick_apu(dmc_stalls);
-            if extra_stalls != 0 {
-                self.cpu.add_stall_cycles(extra_stalls.min(u32::from(u16::MAX)) as u16);
-                let crossed = self.bus.tick_ppu(extra_stalls.saturating_mul(3));
-                for _ in 0..crossed {
-                    self.bus.clock_mapper_irq();
-                }
-            }
+            dmc_stalls = self.bus.tick_apu(dmc_stalls);
         }
         Ok(result)
     }
