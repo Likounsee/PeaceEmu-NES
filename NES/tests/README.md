@@ -14,6 +14,8 @@ Les tests se trouvent près des modules dans les blocs cfg(test) de la biblioth�
 - **Bus :** registres PPU/APU, manettes, open bus matériel et interaction cartouche/bus.
 - **Cartouches :** bits de mirroring, trainer, tailles extrêmes, PRG-RAM, validation plus stricte et tests de mapper.
 - **PPU/APU :** registres, timing, rendu, interruptions et sortie déterministe.
+- **PPU vblank/NMI :** activation tardive du NMI, acquittement via PPUSTATUS et transitions du signal NMI (NES/tests/ppu_nmi_timing.rs).
+- **Mapper 30 :** trainer tronqué, PRG tronqué après trainer et mapping de la banque PRG fixe (NES/tests/mapper30_boundaries.rs).
 - **Intégration :** démarrage avec ROM homebrew redistribuable et suites de validation dont la licence autorise l'utilisation.
 
 Les tests doivent être reproductibles et automatisés en CI. Compiler n'est pas une preuve de compatibilité. Ne pas supprimer une régression pour faire passer la CI ; documenter les limites connues.
