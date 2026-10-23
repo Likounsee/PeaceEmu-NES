@@ -10,9 +10,4 @@ description = "Nintendo Entertainment System emulation core for PeaceEmu"
 name = "peaceemu_nes"
 path = "src/lib.rs"
 
-[features]
-default = []
-peaceemu-host = ["dep:emulation-core"]
-
 [dependencies]
-emulation-core = { git = "https://github.com/Likounsee/PeaceEmu.git", branch = "PeaceEmu", package = "emulation-core", optional = true }
