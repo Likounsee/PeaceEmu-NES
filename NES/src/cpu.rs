@@ -187,12 +187,12 @@ impl Cpu {
             0xA5 => { let a = self.fetch(bus) as u16; let v = bus.read(a); self.state.a = v; self.set_nz(v); 3 }
             0xAD => { let a = self.fetch_word(bus); let v = bus.read(a); self.state.a = v; self.set_nz(v); 4 }
             0xB5 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; let v = bus.read(a); self.state.a = v; self.set_nz(v); 4 }
-            0xBD => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); let v = bus.read(a); self.state.a = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
-            0xB9 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); let v = bus.read(a); self.state.a = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xBD => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); let v = self.read_indexed(bus, base, a); self.state.a = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xB9 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); let v = self.read_indexed(bus, base, a); self.state.a = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0xA1 => { let a = self.indirect_x(bus); let v = bus.read(a); self.state.a = v; self.set_nz(v); 6 }
-            0xB1 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); let v = bus.read(a); self.state.a = v; self.set_nz(v); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xB1 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); let v = self.read_indexed(bus, base, a); self.state.a = v; self.set_nz(v); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0xA3 => { let a = self.indirect_x(bus); let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 6 }
-            0xB3 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xB3 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); let v = self.read_indexed(bus, base, a); self.state.a = v; self.state.x = v; self.set_nz(v); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0xA2 => { let v = self.fetch(bus); self.state.x = v; self.set_nz(v); 2 }
             // LAX immediate ($AB) is unstable on NMOS 6502 revisions, but is used
             // by real NES software; model the common observed A=X=operand behavior.
@@ -201,12 +201,12 @@ impl Cpu {
             0xA6 => { let a = self.fetch(bus) as u16; let v = bus.read(a); self.state.x = v; self.set_nz(v); 3 }
             0xAE => { let a = self.fetch_word(bus); let v = bus.read(a); self.state.x = v; self.set_nz(v); 4 }
             0xB6 => { let a = self.fetch(bus).wrapping_add(self.state.y) as u16; let v = bus.read(a); self.state.x = v; self.set_nz(v); 4 }
-            0xBE => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); let v = bus.read(a); self.state.x = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xBE => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); let v = self.read_indexed(bus, base, a); self.state.x = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
             // Stable unofficial LAX loads one value into both A and X.
             0xA7 => { let a = self.fetch(bus) as u16; let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 3 }
             0xAF => { let a = self.fetch_word(bus); let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 4 }
             0xB7 => { let a = self.fetch(bus).wrapping_add(self.state.y) as u16; let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 4 }
-            0xBF => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); let v = bus.read(a); self.state.a = v; self.state.x = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xBF => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); let v = self.read_indexed(bus, base, a); self.state.a = v; self.state.x = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0xBB => { // LAS: A, X and SP share memory & stack pointer.
                 let base = self.fetch_word(bus);
                 let address = base.wrapping_add(self.state.y as u16);
@@ -220,7 +220,7 @@ impl Cpu {
             0xA4 => { let a = self.fetch(bus) as u16; let v = bus.read(a); self.state.y = v; self.set_nz(v); 3 }
             0xAC => { let a = self.fetch_word(bus); let v = bus.read(a); self.state.y = v; self.set_nz(v); 4 }
             0xB4 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; let v = bus.read(a); self.state.y = v; self.set_nz(v); 4 }
-            0xBC => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); let v = bus.read(a); self.state.y = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xBC => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); let v = self.read_indexed(bus, base, a); self.state.y = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
             // Unstable NMOS 2A03 stores. Following established opcode-table behavior,
             // the data mask uses the base address high byte + 1; crossing a page also
             // corrupts the destination high byte to the value written.
@@ -321,52 +321,52 @@ impl Cpu {
             0x65 => { let a = self.fetch(bus) as u16; self.adc(bus.read(a)); 3 }
             0x75 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; self.adc(bus.read(a)); 4 }
             0x6D => { let a = self.fetch_word(bus); self.adc(bus.read(a)); 4 }
-            0x7D => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.adc(bus.read(a)); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
-            0x79 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); self.adc(bus.read(a)); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0x7D => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.adc(self.read_indexed(bus, base, a)); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0x79 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); self.adc(self.read_indexed(bus, base, a)); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0x61 => { let a = self.indirect_x(bus); self.adc(bus.read(a)); 6 }
-            0x71 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); self.adc(bus.read(a)); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0x71 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); self.adc(self.read_indexed(bus, base, a)); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0xE9 | 0xEB => { let v = self.fetch(bus); self.adc(!v); 2 }
             0xE5 => { let a = self.fetch(bus) as u16; self.adc(!bus.read(a)); 3 }
             0xF5 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; self.adc(!bus.read(a)); 4 }
             0xED => { let a = self.fetch_word(bus); self.adc(!bus.read(a)); 4 }
-            0xFD => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.adc(!bus.read(a)); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
-            0xF9 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); self.adc(!bus.read(a)); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xFD => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.adc(!self.read_indexed(bus, base, a)); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xF9 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); self.adc(!self.read_indexed(bus, base, a)); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0xE1 => { let a = self.indirect_x(bus); self.adc(!bus.read(a)); 6 }
-            0xF1 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); self.adc(!bus.read(a)); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xF1 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); self.adc(!self.read_indexed(bus, base, a)); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0x29 => { let v = self.fetch(bus); self.state.a &= v; self.set_nz(self.state.a); 2 }
             0x25 => { let a = self.fetch(bus) as u16; self.state.a &= bus.read(a); self.set_nz(self.state.a); 3 }
             0x2D => { let a = self.fetch_word(bus); self.state.a &= bus.read(a); self.set_nz(self.state.a); 4 }
             0x35 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; self.state.a &= bus.read(a); self.set_nz(self.state.a); 4 }
-            0x3D => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.state.a &= bus.read(a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
-            0x39 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a &= bus.read(a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0x3D => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.state.a &= self.read_indexed(bus, base, a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0x39 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a &= self.read_indexed(bus, base, a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0x21 => { let a = self.indirect_x(bus); self.state.a &= bus.read(a); self.set_nz(self.state.a); 6 }
-            0x31 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a &= bus.read(a); self.set_nz(self.state.a); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0x31 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a &= self.read_indexed(bus, base, a); self.set_nz(self.state.a); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0x05 => { let a = self.fetch(bus) as u16; self.state.a |= bus.read(a); self.set_nz(self.state.a); 3 }
             0x15 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; self.state.a |= bus.read(a); self.set_nz(self.state.a); 4 }
-            0x19 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a |= bus.read(a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
-            0x1D => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.state.a |= bus.read(a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0x19 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a |= self.read_indexed(bus, base, a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0x1D => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.state.a |= self.read_indexed(bus, base, a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0x01 => { let a = self.indirect_x(bus); self.state.a |= bus.read(a); self.set_nz(self.state.a); 6 }
-            0x11 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a |= bus.read(a); self.set_nz(self.state.a); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0x11 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a |= self.read_indexed(bus, base, a); self.set_nz(self.state.a); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0x0D => { let a = self.fetch_word(bus); self.state.a |= bus.read(a); self.set_nz(self.state.a); 4 }
             0x45 => { let a = self.fetch(bus) as u16; self.state.a ^= bus.read(a); self.set_nz(self.state.a); 3 }
             0x55 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; self.state.a ^= bus.read(a); self.set_nz(self.state.a); 4 }
-            0x59 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a ^= bus.read(a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
-            0x5D => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.state.a ^= bus.read(a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0x59 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a ^= self.read_indexed(bus, base, a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0x5D => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.state.a ^= self.read_indexed(bus, base, a); self.set_nz(self.state.a); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0x41 => { let a = self.indirect_x(bus); self.state.a ^= bus.read(a); self.set_nz(self.state.a); 6 }
-            0x51 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a ^= bus.read(a); self.set_nz(self.state.a); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0x51 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); self.state.a ^= self.read_indexed(bus, base, a); self.set_nz(self.state.a); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0x4D => { let a = self.fetch_word(bus); self.state.a ^= bus.read(a); self.set_nz(self.state.a); 4 }
             0x09 => { let v = self.fetch(bus); self.state.a |= v; self.set_nz(self.state.a); 2 }
             0x49 => { let v = self.fetch(bus); self.state.a ^= v; self.set_nz(self.state.a); 2 }
             0xC1 => { let a = self.indirect_x(bus); self.compare(self.state.a, bus.read(a)); 6 }
             0xC5 => { let a = self.fetch(bus) as u16; self.compare(self.state.a, bus.read(a)); 3 }
-            0xD1 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); self.compare(self.state.a, bus.read(a)); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xD1 => { let base = self.indirect_y(bus); let a = base.wrapping_add(self.state.y as u16); self.compare(self.state.a, self.read_indexed(bus, base, a)); 5 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0xC9 => { let v = self.fetch(bus); self.compare(self.state.a, v); 2 }
             0xE0 => { let v = self.fetch(bus); self.compare(self.state.x, v); 2 }
             0xC0 => { let v = self.fetch(bus); self.compare(self.state.y, v); 2 }
             0xCD => { let a = self.fetch_word(bus); self.compare(self.state.a, bus.read(a)); 4 }
             0xD5 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; self.compare(self.state.a, bus.read(a)); 4 }
-            0xDD => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.compare(self.state.a, bus.read(a)); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
-            0xD9 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); self.compare(self.state.a, bus.read(a)); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xDD => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); self.compare(self.state.a, self.read_indexed(bus, base, a)); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            0xD9 => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.y as u16); self.compare(self.state.a, self.read_indexed(bus, base, a)); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
             0xE4 => { let a = self.fetch(bus) as u16; self.compare(self.state.x, bus.read(a)); 3 }
             0xEC => { let a = self.fetch_word(bus); self.compare(self.state.x, bus.read(a)); 4 }
             0xC4 => { let a = self.fetch(bus) as u16; self.compare(self.state.y, bus.read(a)); 3 }
@@ -539,6 +539,16 @@ impl Cpu {
     fn compare(&mut self, a: u8, b: u8) {
         self.set_flag(flags::CARRY, a >= b); self.set_nz(a.wrapping_sub(b));
     }
+    /// Performs the extra wrong-page read used by indexed read instructions when
+    /// the effective address crosses a 256-byte page boundary.
+    fn read_indexed(&mut self, bus: &mut CpuBus, base: u16, address: u16) -> u8 {
+        if base & 0xFF00 != address & 0xFF00 {
+            let dummy = (base & 0xFF00) | (address & 0x00FF);
+            let _ = bus.read(dummy);
+        }
+        bus.read(address)
+    }
+
     fn branch(&mut self, bus: &mut CpuBus, take: bool) -> u8 {
         let offset = self.fetch(bus) as i8;
         if !take { return 2; }
