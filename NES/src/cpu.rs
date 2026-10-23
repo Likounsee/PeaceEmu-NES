@@ -709,6 +709,26 @@ mod tests {
     }
 
     #[test]
+    fn indirect_jmp_reproduces_the_original_6502_page_wrap_bug() {
+        let mut bus = CpuBus::new();
+        // JMP ($02FF) reads its high byte from $0200 on the NMOS 6502/2A03,
+        // not from $0300. Keep a conflicting value at $0300 to catch regressions.
+        bus.write(0x0600, 0x6C);
+        bus.write(0x0601, 0xFF);
+        bus.write(0x0602, 0x02);
+        bus.write(0x02FF, 0x34);
+        bus.write(0x0200, 0x12);
+        bus.write(0x0300, 0x56);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+
+        let result = cpu.step(&mut bus).unwrap();
+
+        assert_eq!(result.cycles, 5);
+        assert_eq!(cpu.state().pc, 0x1234);
+    }
+
+    #[test]
     fn adc_and_sbc_remain_binary_when_decimal_flag_is_set_on_the_2a03() {
         let (mut cpu, mut bus) = setup(&[
             0xF8,       // SED: the 2A03 stores D but ignores decimal arithmetic.
