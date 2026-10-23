@@ -548,3 +548,33 @@ mod tests {
     }
 
 }
+
+
+#[cfg(test)]
+mod pcm_frontend_tests {
+    use super::*;
+
+    #[test]
+    fn machine_exposes_configurable_pcm_batches_while_emulating() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        // Infinite JMP $8000 loop so stepping remains deterministic.
+        image[16] = 0x4C;
+        image[17] = 0x00;
+        image[18] = 0x80;
+        image[16 + 0x3FFC] = 0x00;
+        image[16 + 0x3FFD] = 0x80;
+
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        assert!(!machine.set_audio_sample_rate(1));
+        assert!(machine.set_audio_sample_rate(48_000));
+        for _ in 0..200 {
+            machine.step().unwrap();
+        }
+        let samples = machine.drain_audio_samples();
+        assert!(!samples.is_empty());
+        assert!(samples.iter().all(|sample| sample.is_finite() && (0.0..=1.0).contains(sample)));
+        assert!(machine.drain_audio_samples().is_empty());
+    }
+}
