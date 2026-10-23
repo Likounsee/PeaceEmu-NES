@@ -2312,7 +2312,7 @@ mod unrom512_tests {
         assert_eq!(c.mirroring(), Mirroring::OneScreenLower);
         assert_eq!(c.ppu_read(0x0123), Some(0));
         c.ppu_write(0x0123, 0x22);
-        c.cpu_write(0x8000, 0xA0);
+        c.cpu_write(0x8000, 0x80);
         assert_eq!(c.mirroring(), Mirroring::OneScreenUpper);
         assert_eq!(c.ppu_read(0x0123), Some(0x11));
         c.cpu_write(0x8000, 0xC0);
@@ -2324,7 +2324,7 @@ mod unrom512_tests {
 
     #[test]
     fn mapper_30_skips_trainer_when_mapping_prg_and_has_no_prg_ram() {
-        let mut data = image(8, 0);
+        let mut data = image(16, 0);
         data[6] |= 0x04;
         data.splice(16..16, vec![0xA5; TRAINER_LEN]);
         let mut c = Cartridge::parse(&data).unwrap();
