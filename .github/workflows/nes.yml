@@ -36,3 +36,19 @@ jobs:
         run: cargo test --all-targets --locked
       - name: Run Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
+
+  windows-game-window:
+    name: Windows game window and PCM build
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: NES
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check Windows frontend
+        run: cargo check --all-targets --locked
