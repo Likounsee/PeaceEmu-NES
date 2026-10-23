@@ -43,6 +43,9 @@ mod win {
     const VK_DOWN: i32 = 0x28;
     const VK_X: i32 = 0x58;
     const VK_Z: i32 = 0x5A;
+    const WAVE_FORMAT_PCM: u16 = 1;
+    const WAVE_MAPPER: u32 = u32::MAX;
+    const WHDR_DONE: u32 = 0x0000_0001;
 
     #[repr(C)]
     struct Point { x: i32, y: i32 }
@@ -151,11 +154,84 @@ mod win {
         }
     }
 
+    struct AudioOutput {
+        handle: HWaveOut,
+        previous_input: f32,
+        previous_output: f32,
+    }
+
+    impl AudioOutput {
+        fn open() -> Result<Self, String> {
+            let format = WaveFormatEx {
+                format_tag: WAVE_FORMAT_PCM,
+                channels: 1,
+                samples_per_sec: 44_100,
+                avg_bytes_per_sec: 88_200,
+                block_align: 2,
+                bits_per_sample: 16,
+                cb_size: 0,
+            };
+            let mut handle = null_mut();
+            let result = unsafe { waveOutOpen(&mut handle, WAVE_MAPPER, &format, 0, 0, 0) };
+            if result != 0 || handle.is_null() {
+                return Err(format!("Windows audio device could not be opened (waveOut error {result})"));
+            }
+            Ok(Self { handle, previous_input: 0.0, previous_output: 0.0 })
+        }
+
+        fn play(&mut self, samples: &[f32]) -> Result<(), String> {
+            if samples.is_empty() { return Ok(()); }
+            // Remove the mixer's DC component before converting normalized output to signed PCM.
+            let mut pcm = Vec::with_capacity(samples.len());
+            for &sample in samples {
+                let input = sample.clamp(0.0, 1.0);
+                let filtered = input - self.previous_input + 0.995 * self.previous_output;
+                self.previous_input = input;
+                self.previous_output = filtered;
+                pcm.push((filtered.clamp(-1.0, 1.0) * 28_000.0) as i16);
+            }
+            let mut header = WaveHdr {
+                data: pcm.as_mut_ptr().cast(),
+                buffer_length: (pcm.len() * size_of::<i16>()) as u32,
+                bytes_recorded: 0,
+                user: 0,
+                flags: 0,
+                loops: 0,
+                next: null_mut(),
+                reserved: 0,
+            };
+            let header_size = size_of::<WaveHdr>() as u32;
+            let prepared = unsafe { waveOutPrepareHeader(self.handle, &mut header, header_size) };
+            if prepared != 0 { return Err(format!("waveOutPrepareHeader failed ({prepared})")); }
+            let written = unsafe { waveOutWrite(self.handle, &mut header, header_size) };
+            if written != 0 {
+                unsafe { waveOutUnprepareHeader(self.handle, &mut header, header_size); }
+                return Err(format!("waveOutWrite failed ({written})"));
+            }
+            // Keep the PCM allocation alive until Windows has consumed the whole buffer.
+            while header.flags & WHDR_DONE == 0 {
+                unsafe { Sleep(1); }
+            }
+            let unprepared = unsafe { waveOutUnprepareHeader(self.handle, &mut header, header_size) };
+            if unprepared != 0 { return Err(format!("waveOutUnprepareHeader failed ({unprepared})")); }
+            Ok(())
+        }
+    }
+
+    impl Drop for AudioOutput {
+        fn drop(&mut self) {
+            unsafe {
+                waveOutReset(self.handle);
+                waveOutClose(self.handle);
+            }
+        }
+    }
+
     pub fn run() -> Result<(), String> {
         let path = std::env::args_os().nth(1)
             .ok_or_else(|| "usage: peaceemu-nes-desktop <game.nes>".to_owned())?;
         let image = fs::read(&path).map_err(|e| format!("cannot read ROM: {e}"))?;
-        let mut machine = NesMachine::from_ines(&image).map_err(|e| e.to_string())?;
+        let mut machine = NesMachine::from_ines(&image).map_err(|e| e.to_string())?;\n        let mut audio = AudioOutput::open()?;
         let mut save_path = std::path::PathBuf::from(&path);
         save_path.set_extension("sav");
         if machine.has_battery_backed_ram() && save_path.exists() {
