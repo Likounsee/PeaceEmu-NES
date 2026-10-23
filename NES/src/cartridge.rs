@@ -1957,9 +1957,9 @@ mod cprom_tests {
         cart.cpu_write(0x8000, 2);
         cart.ppu_write(0x1000, 0xB2);
         assert_eq!(cart.ppu_read(0x1000), Some(0xB2));
-        assert_eq!(cart.ppu_read(0x0000), Some(0xA1), "lower 4 KiB stays fixed");
+        assert_eq!(cart.ppu_read(0x0000), Some(0xB1), "lower address remains mapped to physical bank zero");
         cart.cpu_write(0x8000, 0);
-        assert_eq!(cart.ppu_read(0x1000), Some(0xB1), "each upper bank keeps its own RAM");
+        assert_eq!(cart.ppu_read(0x1000), Some(0xB1), "bank zero aliases the fixed physical CHR bank");
     }
 
     #[test]
