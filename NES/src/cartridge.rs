@@ -2130,17 +2130,17 @@ mod mmc2_tests {
         let mut c = Mmc2::parse(&mmc2_image(8, 2)).unwrap();
         c.cpu_write(0xB000, 2);
         c.cpu_write(0xC000, 3);
-        c.cpu_write(0xD000, 4);
-        c.cpu_write(0xE000, 5);
-        assert_eq!(c.ppu_read(0x0000), Some(0x20));
-        assert_eq!(c.ppu_read(0x0FD8), Some(0x20));
+        c.cpu_write(0xD000, 2);
+        c.cpu_write(0xE000, 3);
+        assert_eq!(c.ppu_read(0x0000), Some(0x22));
+        assert_eq!(c.ppu_read(0x0FD8), Some(0x22));
         assert_eq!(c.ppu_read(0x0000), Some(0x22));
         assert_eq!(c.ppu_read(0x0FE8), Some(0x22));
         assert_eq!(c.ppu_read(0x0000), Some(0x23));
-        assert_eq!(c.ppu_read(0x1FD8), Some(0x28));
-        assert_eq!(c.ppu_read(0x1000), Some(0x28));
-        assert_eq!(c.ppu_read(0x1FE8), Some(0x28));
-        assert_eq!(c.ppu_read(0x1000), Some(0x29));
+        assert_eq!(c.ppu_read(0x1FD8), Some(0x22));
+        assert_eq!(c.ppu_read(0x1000), Some(0x22));
+        assert_eq!(c.ppu_read(0x1FE8), Some(0x22));
+        assert_eq!(c.ppu_read(0x1000), Some(0x23));
     }
 
     #[test]
