@@ -105,13 +105,15 @@ impl Ppu {
     }
 
     /// Advances the PPU by a number of dots and updates vblank timing.
-    pub fn tick(&mut self, dots: u32) {
+    pub fn tick(&mut self, dots: u32) -> u32 {
+        let mut crossed_scanlines = 0;
         for _ in 0..dots {
             // NTSC skips pre-render dot 340 on odd frames while rendering is active.
             if self.scanline == 261 && self.dot == 339 && self.odd_frame && self.mask & 0x18 != 0 {
                 self.dot = 0;
                 self.scanline = 0;
                 self.odd_frame = false;
+                crossed_scanlines += 1;
                 continue;
             }
             self.dot += 1;
@@ -147,9 +149,11 @@ impl Ppu {
             if self.dot >= 341 {
                 self.dot = 0;
                 self.scanline += 1;
+                crossed_scanlines += 1;
                 if self.scanline >= 262 { self.scanline = 0; self.odd_frame = !self.odd_frame; }
             }
         }
+        crossed_scanlines
     }
 
     /// Renders a complete background snapshot using the current VRAM scroll address.
