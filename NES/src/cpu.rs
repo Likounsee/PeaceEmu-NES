@@ -227,6 +227,7 @@ impl Cpu {
             0x93 => {
                 let base = self.indirect_y(bus);
                 let address = base.wrapping_add(self.state.y as u16);
+                Self::dummy_indexed_store_read(bus, base, address);
                 let value = self.state.a & self.state.x & ((base >> 8) as u8).wrapping_add(1);
                 let target = if base & 0xFF00 != address & 0xFF00 {
                     (u16::from(value) << 8) | (address & 0x00FF)
@@ -247,6 +248,7 @@ impl Cpu {
             0x9B => {
                 let base = self.fetch_word(bus);
                 let address = base.wrapping_add(self.state.y as u16);
+                Self::dummy_indexed_store_read(bus, base, address);
                 self.state.sp = self.state.a & self.state.x;
                 let value = self.state.sp & ((base >> 8) as u8).wrapping_add(1);
                 let target = if base & 0xFF00 != address & 0xFF00 {
@@ -258,6 +260,7 @@ impl Cpu {
             0x9C => {
                 let base = self.fetch_word(bus);
                 let address = base.wrapping_add(self.state.x as u16);
+                Self::dummy_indexed_store_read(bus, base, address);
                 let value = self.state.y & ((base >> 8) as u8).wrapping_add(1);
                 let target = if base & 0xFF00 != address & 0xFF00 {
                     (u16::from(value) << 8) | (address & 0x00FF)
@@ -268,6 +271,7 @@ impl Cpu {
             0x9E => {
                 let base = self.fetch_word(bus);
                 let address = base.wrapping_add(self.state.y as u16);
+                Self::dummy_indexed_store_read(bus, base, address);
                 let value = self.state.x & ((base >> 8) as u8).wrapping_add(1);
                 let target = if base & 0xFF00 != address & 0xFF00 {
                     (u16::from(value) << 8) | (address & 0x00FF)
@@ -485,7 +489,11 @@ impl Cpu {
     }
 
     fn indirect_x(&mut self, bus: &mut CpuBus) -> u16 {
-        let pointer = self.fetch(bus).wrapping_add(self.state.x);
+        let zero_page = self.fetch(bus);
+        // The 6502 performs a dummy read of the unindexed zero-page operand before
+        // adding X and reading the effective pointer.
+        let _ = bus.read(zero_page as u16);
+        let pointer = zero_page.wrapping_add(self.state.x);
         let lo = bus.read(pointer as u16) as u16;
         let hi = bus.read(pointer.wrapping_add(1) as u16) as u16;
         (hi << 8) | lo
