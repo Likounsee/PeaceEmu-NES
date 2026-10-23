@@ -1952,7 +1952,7 @@ mod cprom_tests {
         assert!(cart.chr_is_ram());
         cart.ppu_write(0x0000, 0xA1);
         cart.ppu_write(0x1000, 0xB1);
-        assert_eq!(cart.ppu_read(0x0000), Some(0xA1));
+        assert_eq!(cart.ppu_read(0x0000), Some(0xB1), "upper bank zero aliases the fixed physical bank");
         assert_eq!(cart.ppu_read(0x1000), Some(0xB1));
         cart.cpu_write(0x8000, 2);
         cart.ppu_write(0x1000, 0xB2);
