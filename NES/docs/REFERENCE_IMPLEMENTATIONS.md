@@ -67,6 +67,15 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - Limites explicites : NES 2.0 et CHR-ROM multi-banque restent non pris en charge ; les variantes UxROM avec bus conflicts ne sont pas encore modélisées. Cette tranche est une première prise en charge mapper 2, pas une compatibilité exhaustive de toutes les cartouches UxROM.
 - Aucun code source TetaNES n'a été copié dans cette tranche ; la structure et les comportements matériels ont été adaptés au code et aux tests de PeaceEmu-NES.
 
+
+## Cinquième adaptation réalisée : CNROM (mapper 3)
+
+- Référence de conception : modèle de commutation CHR du mapper 3 décrit par NESdev, comparé à l'organisation des mappers dans TetaNES.
+- Adaptation locale : ajout de `Cnrom` dans le dispatch statique `Cartridge`. Le PRG reste mappé comme NROM (16 ou 32 Kio) et les écritures CPU dans `$8000-$FFFF` sélectionnent l'une des banques CHR-ROM de 8 Kio.
+- Tests : commutation des banques CHR aux bornes `$0000`/`$1FFF`, stabilité du mapping PRG, protection de la CHR-ROM en écriture et rejet des images sans CHR-ROM ou avec plus de quatre banques CHR.
+- Limites : CNROM à bus conflicts non simulé ; seuls les iNES classiques avec 1 ou 2 banques PRG et 1 à 4 banques CHR sont acceptés. NES 2.0 reste hors périmètre.
+- Comme pour UxROM, aucune source de TetaNES n'a été copiée : les comportements sont adaptés à l'interface locale et testés dans PeaceEmu-NES.
+
 ## Politique Rust
 
 - `NES/rust-toolchain.toml` sélectionne `stable` et installe `rustfmt`/`clippy`, afin que les outils locaux suivent la dernière version stable disponible avec rustup.
