@@ -86,18 +86,18 @@ Le dernier lot ajoute BNROM (mapper 34, variante BNROM uniquement), en plus de C
 | APU | Partiel — registres, compteurs, enveloppes pulse, sweep, compteur linéaire triangle et premier DMC (lecture mémoire, buffer, démarrage silencieux, sortie delta, bouclage/IRQ, arrêt/acquittement testés) ; arbitrage DMA, filtrage, resampling et timing exact à faire |
 | Contrôleurs | Première version — ports série $4016/$4017, huit boutons et latch |
 | Timing complet | À faire |
-| Adaptateur EmulationCore | À faire — partage du contrat à définir |
+| API de session hôte | En place — chargement ROM, configuration audio, commandes manettes, framebuffer et PCM par frame, accès à la RAM batterie ; tests automatisés |\n| Adaptateur EmulationCore | À faire — branchement au contrat partagé de PeaceEmu et conversion vers ses types vidéo/audio |
 | Tests de compatibilité | À faire |
 
 
 ### Estimation de complétion
 
-- **Cœur global : 77 %** — estimation d’ingénierie, pas un pourcentage de jeux compatibles ; les événements PPU sont maintenant partiellement visibles en cours de frame, mais l'absence d'interface jouable intégrée et les fetchs vidéo approximatifs restent des blocages majeurs.
+- **Cœur global : 77 %** — estimation d’ingénierie, pas un pourcentage de jeux compatibles ; les événements PPU sont partiellement visibles en cours de frame, mais les fetchs vidéo approximatifs et le branchement à l'application hôte restent des blocages majeurs.
 - **CPU : 76 %** — lectures factices de branchements, d'adressage indexé et de NOP non officiels, écritures successives pour les instructions read-modify-write officielles et composites, ajout du modèle XAA ; l'exécution reste principalement au niveau instruction et non cycle par cycle.
 - **PPU : 62 %** — rendu des lignes visible pendant la frame, scroll capturé à chaque ligne et indicateurs sprite-0 hit/overflow consultables avant la fin de frame ; fetchs pixel/dot et effets de registre en milieu de ligne encore approximatifs.
 - **APU : 58 %** — canaux principaux, mixage approximatif, sortie PCM configurable et blocage CPU/horloges PPU lors des rechargements DMC ; filtrage et arbitrage DMA précis restent incomplets.
 - **Cartouches et mappers : 97 %** — nombreuses familles iNES legacy et premiers cas NES 2.0 pris en charge ; variantes et plusieurs mappers restent absents.
-- **Intégration / interface jouable : 33 %** — un frontend Windows autonome peut charger une ROM iNES, afficher le framebuffer, transmettre les huit boutons du premier contrôleur et persister la RAM batterie ; l’adaptateur au contrat hôte, le son côté frontend, les sauvegardes d’état et la portabilité restent à faire.
+- **Intégration PeaceEmu : 40 %** — une API de session sans interface dédiée charge la ROM, reçoit les contrôles, renvoie les pixels et le PCM et expose la RAM batterie ; le raccordement réel au contrat EmulationCore partagé et le rendu dans la fenêtre de PeaceEmu restent à faire.
 
 
 UNROM-512 (mapper 30) prend en charge les images iNES legacy à 256/512 Kio de PRG-ROM et sans CHR-ROM : banque PRG de 16 Kio sélectionnable (bits 0–4), banque finale fixe, quatre banques CHR-RAM de 8 Kio (bits 5–6) et bit 7 de sélection one-screen lorsque l'en-tête indique cette configuration. La variante ajoutée n'émule pas le flash interne, les sous-mappers NES 2.0 ni les conflits de bus des cartes physiques ; elle n'expose pas de PRG-RAM, conformément à la fiche de carte documentée.
