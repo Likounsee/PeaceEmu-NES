@@ -150,16 +150,13 @@ mod win {
         unsafe { GetAsyncKeyState(key) < 0 }
     }
 
-    fn controller_state() -> u8 {
+    fn controller_state(keys: &[i32; 8]) -> u8 {
         let mut state = 0u8;
-        if key_down(VK_Z) { state |= 1 << 0; }       // A
-        if key_down(VK_X) { state |= 1 << 1; }       // B
-        if key_down(VK_SHIFT) { state |= 1 << 2; }   // Select
-        if key_down(VK_RETURN) { state |= 1 << 3; }  // Start
-        if key_down(VK_UP) { state |= 1 << 4; }
-        if key_down(VK_DOWN) { state |= 1 << 5; }
-        if key_down(VK_LEFT) { state |= 1 << 6; }
-        if key_down(VK_RIGHT) { state |= 1 << 7; }
+        for (button, key) in keys.iter().copied().enumerate() {
+            if key_down(key) {
+                state |= 1 << button;
+            }
+        }
         state
     }
 
@@ -262,10 +259,10 @@ mod win {
     pub fn run() -> Result<(), String> {
         let mut args = std::env::args_os().skip(1);
         let path = args.next().ok_or_else(|| {
-            "usage: peaceemu-nes-desktop <game.nes> [--scale 1..6] [--audio-rate 8000..192000]".to_owned()
+            "usage: peaceemu-nes-desktop <game.nes> [--scale 1..6] [--audio-rate 8000..192000] [--keys A,B,SELECT,START,UP,DOWN,LEFT,RIGHT]".to_owned()
         })?;
         let mut scale = 3i32;
-        let mut audio_rate = 44_100u32;
+        let mut audio_rate = 44_100u32;\n        let mut keys = [0x5A, 0x58, 0x10, 0x0D, 0x26, 0x28, 0x25, 0x27];
         while let Some(argument) = args.next() {
             let value = args.next().ok_or_else(|| format!("missing value for {}", argument.to_string_lossy()))?;
             match argument.to_string_lossy().as_ref() {
@@ -276,6 +273,14 @@ mod win {
                 "--audio-rate" => {
                     audio_rate = value.to_string_lossy().parse().map_err(|_| "invalid --audio-rate value".to_owned())?;
                     if !(8_000..=192_000).contains(&audio_rate) { return Err("--audio-rate must be between 8000 and 192000".into()); }
+                }
+                "--keys" => {
+                    let parsed: Result<Vec<i32>, _> = value.to_string_lossy().split(',').map(str::parse).collect();
+                    let parsed = parsed.map_err(|_| "--keys must contain eight comma-separated virtual-key codes".to_owned())?;
+                    if parsed.len() != 8 || parsed.iter().any(|key| !(0..=255).contains(key)) {
+                        return Err("--keys needs eight virtual-key codes from 0 to 255 in A,B,Select,Start,Up,Down,Left,Right order".into());
+                    }
+                    keys.copy_from_slice(&parsed);
                 }
                 _ => return Err(format!("unknown option: {}", argument.to_string_lossy())),
             }
@@ -335,7 +340,7 @@ mod win {
             }
             if !running { break; }
 
-            machine.set_controller_state(0, controller_state());
+            machine.set_controller_state(0, controller_state(&keys));
             if let Err(error) = machine.step_frame() {
                 runtime_error = Some(format!("emulation stopped: {error}"));
                 break;
