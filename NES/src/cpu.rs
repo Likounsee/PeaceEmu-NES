@@ -1284,7 +1284,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn unofficial_rmw_updates_memory_accumulator_and_carry() {
         let (mut cpu, mut bus) = setup(&[
             0xA9, 0x01,       // LDA #$01
@@ -1298,6 +1297,7 @@ mod tests {
         assert_ne!(cpu.state().status & flags::CARRY, 0);
     }
 
+    #[test]
     fn indirect_addressing_wraps_pointer_reads_inside_zero_page() {
         let (mut cpu, mut bus) = setup(&[
             0xA2, 0x01, // LDX #1
