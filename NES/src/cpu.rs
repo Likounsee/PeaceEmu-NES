@@ -218,6 +218,60 @@ impl Cpu {
             0xAC => { let a = self.fetch_word(bus); let v = bus.read(a); self.state.y = v; self.set_nz(v); 4 }
             0xB4 => { let a = self.fetch(bus).wrapping_add(self.state.x) as u16; let v = bus.read(a); self.state.y = v; self.set_nz(v); 4 }
             0xBC => { let base = self.fetch_word(bus); let a = base.wrapping_add(self.state.x as u16); let v = bus.read(a); self.state.y = v; self.set_nz(v); 4 + u8::from(base & 0xFF00 != a & 0xFF00) }
+            // Unstable NMOS 2A03 stores. Following established opcode-table behavior,
+            // the data mask uses the base address high byte + 1; crossing a page also
+            // corrupts the destination high byte to the value written.
+            0x93 => {
+                let base = self.indirect_y(bus);
+                let address = base.wrapping_add(self.state.y as u16);
+                let value = self.state.a & self.state.x & ((base >> 8) as u8).wrapping_add(1);
+                let target = if base & 0xFF00 != address & 0xFF00 {
+                    (u16::from(value) << 8) | (address & 0x00FF)
+                } else { address };
+                bus.write(target, value);
+                6
+            }
+            0x9F => {
+                let base = self.fetch_word(bus);
+                let address = base.wrapping_add(self.state.y as u16);
+                let value = self.state.a & self.state.x & ((base >> 8) as u8).wrapping_add(1);
+                let target = if base & 0xFF00 != address & 0xFF00 {
+                    (u16::from(value) << 8) | (address & 0x00FF)
+                } else { address };
+                bus.write(target, value);
+                5
+            }
+            0x9B => {
+                let base = self.fetch_word(bus);
+                let address = base.wrapping_add(self.state.y as u16);
+                self.state.sp = self.state.a & self.state.x;
+                let value = self.state.sp & ((base >> 8) as u8).wrapping_add(1);
+                let target = if base & 0xFF00 != address & 0xFF00 {
+                    (u16::from(value) << 8) | (address & 0x00FF)
+                } else { address };
+                bus.write(target, value);
+                5
+            }
+            0x9C => {
+                let base = self.fetch_word(bus);
+                let address = base.wrapping_add(self.state.x as u16);
+                let value = self.state.y & ((base >> 8) as u8).wrapping_add(1);
+                let target = if base & 0xFF00 != address & 0xFF00 {
+                    (u16::from(value) << 8) | (address & 0x00FF)
+                } else { address };
+                bus.write(target, value);
+                5
+            }
+            0x9E => {
+                let base = self.fetch_word(bus);
+                let address = base.wrapping_add(self.state.y as u16);
+                let value = self.state.x & ((base >> 8) as u8).wrapping_add(1);
+                let target = if base & 0xFF00 != address & 0xFF00 {
+                    (u16::from(value) << 8) | (address & 0x00FF)
+                } else { address };
+                bus.write(target, value);
+                5
+            }
             0x85 => { let a = self.fetch(bus) as u16; bus.write(a, self.state.a); 3 }
             0x8D => { let a = self.fetch_word(bus); bus.write(a, self.state.a); 4 }
             0x86 => { let a = self.fetch(bus) as u16; bus.write(a, self.state.x); 3 }
@@ -1204,4 +1258,39 @@ mod tests {
         assert_eq!(bus.read(0x0201), 0x04); // Two RMW instructions target this byte.
         assert_eq!(bus.read(0x0024), 0x04); // Zero-page and zero-page,X forms.
     }
-}
+} 
+    #[test]
+    fn unstable_indexed_stores_mask_data_and_model_page_cross_corruption() {
+        let (mut cpu, mut bus) = setup(&[
+            0xA2, 0x0F,       // LDX #$0F
+            0xA0, 0x02,       // LDY #$02
+            0x9E, 0xFF, 0x20, // SHX $20FF,Y -> crossing writes $01 to $0101
+            0xA9, 0xFF,       // LDA #$FF
+            0x9F, 0x10, 0x20, // AHX $2010,Y -> $2012, mask $21, value $01
+            0x9C, 0x10, 0x20, // SHY $2010,X -> $201F, value $21 & Y = $02
+        ]);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(bus.read(0x0101), 0x01);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 2);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(bus.read(0x2012), 0x01);
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(bus.read(0x201F), 0x02);
+    }
+
+    #[test]
+    fn tas_sets_stack_pointer_before_masked_store() {
+        let (mut cpu, mut bus) = setup(&[
+            0xA9, 0x3F,       // LDA #$3F
+            0xA2, 0x1F,       // LDX #$1F
+            0xA0, 0x01,       // LDY #$01
+            0x9B, 0x00, 0x20, // TAS $2000,Y: SP=A&X=$1F; value=$1F & $21=$01
+        ]);
+        for _ in 0..3 { cpu.step(&mut bus).unwrap(); }
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(cpu.state().sp, 0x1F);
+        assert_eq!(bus.read(0x2001), 0x01);
+    }
+
