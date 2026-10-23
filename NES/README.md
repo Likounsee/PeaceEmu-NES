@@ -8,7 +8,7 @@ PeaceEmu est le seul point d'entrée utilisateur. Il importe et affiche les ROMs
 
 Le dépôt principal PeaceEmu contient l'adaptateur vers le contrat partagé `EmulationCore`, l'enregistrement du système `nes`, la détection des ROMs iNES et le filtre NES de la bibliothèque. La session `NesSession` de ce dépôt reste indépendante de l'interface et fournit une frame 256×240, le PCM mono, les commandes de manette et l'accès à la RAM batterie.
 
-Le parcours visé est strictement : **bibliothèque PeaceEmu → sélectionner une ROM NES → Lancer → session NES intégrée**. Le module ne doit pas être lancé directement par l'utilisateur. La fenêtre de jeu dédiée et sans interface ajoutée reste à finaliser dans l'hôte ; elle devra afficher uniquement l'image du jeu, HUD original compris.
+Le parcours visé est strictement : **bibliothèque PeaceEmu → sélectionner une ROM NES → Lancer → session NES intégrée**. Le module ne doit pas être lancé directement par l'utilisateur. La fenêtre de jeu dédiée sans interface ajoutée est maintenant reliée au lancement de session côté hôte ; son fonctionnement réel et le comportement sur les jeux doivent encore être validés.
 
 ### Contrat d'intégration
 
@@ -94,7 +94,7 @@ Le dernier lot ajoute BNROM (mapper 34, variante BNROM uniquement), en plus de C
 - **PPU : 62 %** — rendu des lignes visible pendant la frame, scroll capturé à chaque ligne et indicateurs sprite-0 hit/overflow consultables avant la fin de frame ; fetchs pixel/dot et effets de registre en milieu de ligne encore approximatifs.
 - **APU : 58 %** — canaux principaux, mixage approximatif, sortie PCM configurable et blocage CPU/horloges PPU lors des rechargements DMC ; filtrage et arbitrage DMA précis restent incomplets.
 - **Cartouches et mappers : 97 %** — nombreuses familles iNES legacy et premiers cas NES 2.0 pris en charge ; variantes et plusieurs mappers restent absents.
-- **Intégration / lancement jouable : 72 %** — adaptateur `EmulationCore`, enregistrement du système NES et filtre de bibliothèque ajoutés dans PeaceEmu ; les tests de bout en bout, la fenêtre de jeu dédiée et la validation de compatibilité restent à faire.
+- **Intégration / lancement jouable : 75 %** — dépendance Rust du module, adaptateur `EmulationCore`, enregistrement du système NES, filtre de bibliothèque, lancement depuis la bibliothèque uniquement, fenêtre dédiée sans HUD ajouté, entrées et sauvegardes gérées par l'hôte ; la validation CI complète et les essais de jeux réels restent à confirmer.
 
 
 UNROM-512 (mapper 30) prend en charge les images iNES legacy à 256/512 Kio de PRG-ROM et sans CHR-ROM : banque PRG de 16 Kio sélectionnable (bits 0–4), banque finale fixe, quatre banques CHR-RAM de 8 Kio (bits 5–6) et bit 7 de sélection one-screen lorsque l'en-tête indique cette configuration. La variante ajoutée n'émule pas le flash interne, les sous-mappers NES 2.0 ni les conflits de bus des cartes physiques ; elle n'expose pas de PRG-RAM, conformément à la fiche de carte documentée.
