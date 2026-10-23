@@ -135,3 +135,11 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - Adaptation locale : `Camerica` fournit une banque PRG de 16 Kio commutable dans $8000-$BFFF, une dernière banque fixe dans $C000-$FFFF, 8 Kio de CHR-RAM, PRG-RAM et la sélection one-screen sur les écritures de la zone $9000. Le chargement reste limité aux images iNES legacy, 2 à 16 banques PRG et CHR-RAM.
 - Tests : banque basse/fixe, bornes CPU, mirroring vertical initial et one-screen supérieur, lecture/écriture CHR-RAM, et rejet des tailles PRG/CHR non prises en charge.
 - Limites : les variantes de cartes Camerica et leurs décodages précis ne sont pas toutes modélisées ; le test valide notre sous-ensemble documenté, pas une compatibilité commerciale exhaustive.
+
+
+## Onzième adaptation réalisée : Color Dreams (mapper 11)
+
+- Référence de comportement : spécification publique NESdev du mapper Color Dreams, comparée au modèle de commutation PRG/CHR déjà présent pour GxROM (mapper 66).
+- Adaptation locale : un registre d'écriture sélectionne une fenêtre PRG de 32 Kio via les bits 0–3 et une banque CHR-ROM de 8 Kio via les bits 4–7. La RAM PRG, le mirroring iNES, les trainers et les bornes de ROM suivent les conventions locales de `Cartridge`.
+- Tests : commutation PRG et CHR indépendante, limites des deux fenêtres, protection en écriture de CHR-ROM, absence de CHR-ROM et tailles PRG non prises en charge.
+- Limites : iNES legacy uniquement ; NES 2.0 et les variantes de cartes ne sont pas implémentés. Aucune source d'émulateur externe n'a été copiée.
