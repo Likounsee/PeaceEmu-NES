@@ -97,17 +97,20 @@ impl CpuBus {
     /// Returns the current PPU scanline and dot, for frame scheduling and diagnostics.
     pub fn ppu_position(&self) -> (u16, u16) { self.ppu.position() }
     /// Advances the APU by CPU cycles and services pending DMC sample reads.
-    /// DMC fetches currently use the bus immediately; their CPU stall timing is approximate.
-    pub fn tick_apu(&mut self, cycles: u32) {
-        // Service fetch requests between CPU cycles so a DMC buffer refill can affect
-        // later timer clocks in the same batch. DMA stall/arbitration cycles are not yet modelled.
+    ///
+    /// Returns the CPU stall cycles caused by DMC DMA. Each sample-buffer refill
+    /// occupies four CPU cycles; alignment-specific details remain approximate.
+    pub fn tick_apu(&mut self, cycles: u32) -> u32 {
+        let mut stall_cycles = 0u32;
         for _ in 0..cycles {
             self.apu.tick_cpu_cycles(1);
             if let Some(address) = self.apu.take_dmc_dma_request() {
                 let value = self.read(address);
                 self.apu.supply_dmc_byte(value);
+                stall_cycles = stall_cycles.saturating_add(4);
             }
         }
+        stall_cycles
     }
     /// Returns one approximate normalized mono sample from the APU mixer.
     pub fn apu_sample(&self) -> f32 { self.apu.sample() }
@@ -151,6 +154,22 @@ impl CpuBus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dmc_sample_fetch_reports_four_cpu_stall_cycles() {
+        let mut bus = CpuBus::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x1000] = 0xA5;
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0x4010, 0x00);
+        bus.write(0x4012, 0x00);
+        bus.write(0x4013, 0x00);
+        bus.write(0x4015, 0x10);
+        assert_eq!(bus.tick_apu(1), 4);
+        assert_eq!(bus.tick_apu(1), 0, "a filled sample buffer must not repeatedly stall the CPU");
+    }
 
     #[test]
     fn mmc3_mapper_irq_is_visible_on_the_cpu_irq_line() {
