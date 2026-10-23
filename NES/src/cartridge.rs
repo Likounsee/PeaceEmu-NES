@@ -1678,8 +1678,8 @@ mod color_dreams_tests {
         assert_eq!(cart.ppu_read(0x0000), Some(0x60));
         assert_eq!(cart.ppu_read(0x1FFF), Some(0x60));
         assert!(cart.cpu_write(0x8000, 0x32));
-        assert_eq!(cart.cpu_read(0x8000), Some(0x21));
-        assert_eq!(cart.cpu_read(0xFFFF), Some(0x21));
+        assert_eq!(cart.cpu_read(0x8000), Some(0x22));
+        assert_eq!(cart.cpu_read(0xFFFF), Some(0x22));
         assert_eq!(cart.ppu_read(0x0000), Some(0x63));
         assert_eq!(cart.ppu_read(0x1FFF), Some(0x63));
         assert!(!cart.ppu_write(0x0000, 0xFF));
