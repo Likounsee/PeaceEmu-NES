@@ -1279,6 +1279,97 @@ impl Mmc2 {
     pub fn ppu_write(&mut self, _address: u16, _value: u8) -> bool { false }
 }
 
+
+/// UNROM-512 (mapper 30): switchable 16 KiB PRG, 32 KiB banked CHR-RAM and one-screen mirroring.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Unrom512 {
+    prg_rom: Vec<u8>,
+    prg_ram: Vec<u8>,
+    chr_ram: Vec<u8>,
+    prg_bank: usize,
+    chr_bank: usize,
+    mirroring: Mirroring,
+}
+
+impl Unrom512 {
+    /// Parses the legacy iNES mapper-30 subset with PRG-ROM and CHR-RAM.
+    pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
+        if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
+        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
+        let mapper = ((image[6] >> 4) as u16)
+            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        if mapper != 30 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
+        let prg_len = image[4] as usize * PRG_BANK_LEN;
+        if !(8..=32).contains(&image[4]) { return Err(CartridgeError::InvalidPrgSize(prg_len)); }
+        let chr_len = image[5] as usize * CHR_BANK_LEN;
+        if chr_len != 0 { return Err(CartridgeError::InvalidChrSize(chr_len)); }
+        let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
+        let expected = INES_HEADER_LEN + trainer_len + prg_len;
+        if image.len() < expected {
+            return Err(CartridgeError::TruncatedImage { expected, actual: image.len() });
+        }
+        let prg_start = INES_HEADER_LEN + trainer_len;
+        let mut prg_ram = vec![0; PRG_RAM_LEN];
+        if trainer_len != 0 {
+            prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
+        }
+        Ok(Self {
+            prg_rom: image[prg_start..prg_start + prg_len].to_vec(),
+            prg_ram,
+            chr_ram: vec![0; 4 * CHR_BANK_LEN],
+            prg_bank: 0,
+            chr_bank: 0,
+            mirroring: Mirroring::OneScreenLower,
+        })
+    }
+
+    /// Reads PRG-RAM, a selectable 16 KiB bank, or the fixed final 16 KiB bank.
+    pub fn cpu_read(&self, address: u16) -> Option<u8> {
+        match address {
+            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+            0x8000..=0xBFFF => {
+                let bank_count = self.prg_rom.len() / PRG_BANK_LEN;
+                Some(self.prg_rom[(self.prg_bank % (bank_count - 1)) * PRG_BANK_LEN + address as usize - 0x8000])
+            }
+            0xC000..=0xFFFF => Some(self.prg_rom[self.prg_rom.len() - PRG_BANK_LEN + address as usize - 0xC000]),
+            _ => None,
+        }
+    }
+
+    /// Selects PRG bank (bits 0-3), one-screen page (bit 4), and CHR-RAM bank (bits 5-6).
+    pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
+        match address {
+            0x6000..=0x7FFF => { self.prg_ram[address as usize - 0x6000] = value; true }
+            0x8000..=0xFFFF => {
+                self.prg_bank = (value & 0x0F) as usize;
+                self.mirroring = if value & 0x10 == 0 { Mirroring::OneScreenLower } else { Mirroring::OneScreenUpper };
+                self.chr_bank = ((value >> 5) & 3) as usize;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns the current one-screen nametable page.
+    pub fn mirroring(&self) -> Mirroring { self.mirroring }
+    /// UNROM-512 stores pattern data in CHR-RAM.
+    pub fn chr_is_ram(&self) -> bool { true }
+
+    /// Reads from the selected 8 KiB CHR-RAM bank.
+    pub fn ppu_read(&self, address: u16) -> Option<u8> {
+        if address >= 0x2000 { return None; }
+        Some(self.chr_ram[self.chr_bank * CHR_BANK_LEN + address as usize])
+    }
+
+    /// Writes to the selected 8 KiB CHR-RAM bank.
+    pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
+        if address >= 0x2000 { return false; }
+        self.chr_ram[self.chr_bank * CHR_BANK_LEN + address as usize] = value;
+        true
+    }
+}
+
 /// Supported cartridge mapper implementations.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Cartridge {
@@ -1306,6 +1397,8 @@ pub enum Cartridge {
     Cprom(Cprom),
     /// Mapper 9 MMC2 latch-controlled CHR and switchable PRG.
     Mmc2(Mmc2),
+    /// Mapper 30 UNROM-512 with banked CHR-RAM.
+    Unrom512(Unrom512),
 }
 
 impl Cartridge {
@@ -1329,25 +1422,26 @@ impl Cartridge {
             34 => Bnrom::parse(image).map(Self::Bnrom),
             13 => Cprom::parse(image).map(Self::Cprom),
             9 => Mmc2::parse(image).map(Self::Mmc2),
+            30 => Unrom512::parse(image).map(Self::Unrom512),
             other => Err(CartridgeError::UnsupportedMapper(other)),
         }
     }
 
     /// Reads a byte from the CPU address space.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
-        match self { Self::Nrom(c) => c.cpu_read(address), Self::Mmc1(c) => c.cpu_read(address), Self::Uxrom(c) => c.cpu_read(address), Self::Cnrom(c) => c.cpu_read(address), Self::Mmc3(c) => c.cpu_read(address), Self::Axrom(c) => c.cpu_read(address), Self::Gxrom(c) => c.cpu_read(address), Self::Camerica(c) => c.cpu_read(address), Self::ColorDreams(c) => c.cpu_read(address), Self::Bnrom(c) => c.cpu_read(address), Self::Cprom(c) => c.cpu_read(address), Self::Mmc2(c) => c.cpu_read(address) }
+        match self { Self::Nrom(c) => c.cpu_read(address), Self::Mmc1(c) => c.cpu_read(address), Self::Uxrom(c) => c.cpu_read(address), Self::Cnrom(c) => c.cpu_read(address), Self::Mmc3(c) => c.cpu_read(address), Self::Axrom(c) => c.cpu_read(address), Self::Gxrom(c) => c.cpu_read(address), Self::Camerica(c) => c.cpu_read(address), Self::ColorDreams(c) => c.cpu_read(address), Self::Bnrom(c) => c.cpu_read(address), Self::Cprom(c) => c.cpu_read(address), Self::Mmc2(c) => c.cpu_read(address), Self::Unrom512(c) => c.cpu_read(address) }
     }
     /// Writes cartridge RAM or mapper registers.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
-        match self { Self::Nrom(c) => c.cpu_write(address, value), Self::Mmc1(c) => c.cpu_write(address, value), Self::Uxrom(c) => c.cpu_write(address, value), Self::Cnrom(c) => c.cpu_write(address, value), Self::Mmc3(c) => c.cpu_write(address, value), Self::Axrom(c) => c.cpu_write(address, value), Self::Gxrom(c) => c.cpu_write(address, value), Self::Camerica(c) => c.cpu_write(address, value), Self::ColorDreams(c) => c.cpu_write(address, value), Self::Bnrom(c) => c.cpu_write(address, value), Self::Cprom(c) => c.cpu_write(address, value), Self::Mmc2(c) => c.cpu_write(address, value) }
+        match self { Self::Nrom(c) => c.cpu_write(address, value), Self::Mmc1(c) => c.cpu_write(address, value), Self::Uxrom(c) => c.cpu_write(address, value), Self::Cnrom(c) => c.cpu_write(address, value), Self::Mmc3(c) => c.cpu_write(address, value), Self::Axrom(c) => c.cpu_write(address, value), Self::Gxrom(c) => c.cpu_write(address, value), Self::Camerica(c) => c.cpu_write(address, value), Self::ColorDreams(c) => c.cpu_write(address, value), Self::Bnrom(c) => c.cpu_write(address, value), Self::Cprom(c) => c.cpu_write(address, value), Self::Mmc2(c) => c.cpu_write(address, value), Self::Unrom512(c) => c.cpu_write(address, value) }
     }
     /// Returns cartridge nametable mirroring.
     pub fn mirroring(&self) -> Mirroring {
-        match self { Self::Nrom(c) => c.mirroring(), Self::Mmc1(c) => c.mirroring(), Self::Uxrom(c) => c.mirroring(), Self::Cnrom(c) => c.mirroring(), Self::Mmc3(c) => c.mirroring(), Self::Axrom(c) => c.mirroring(), Self::Gxrom(c) => c.mirroring(), Self::Camerica(c) => c.mirroring(), Self::ColorDreams(c) => c.mirroring(), Self::Bnrom(c) => c.mirroring(), Self::Cprom(c) => c.mirroring(), Self::Mmc2(c) => c.mirroring() }
+        match self { Self::Nrom(c) => c.mirroring(), Self::Mmc1(c) => c.mirroring(), Self::Uxrom(c) => c.mirroring(), Self::Cnrom(c) => c.mirroring(), Self::Mmc3(c) => c.mirroring(), Self::Axrom(c) => c.mirroring(), Self::Gxrom(c) => c.mirroring(), Self::Camerica(c) => c.mirroring(), Self::ColorDreams(c) => c.mirroring(), Self::Bnrom(c) => c.mirroring(), Self::Cprom(c) => c.mirroring(), Self::Mmc2(c) => c.mirroring(), Self::Unrom512(c) => c.mirroring() }
     }
     /// Returns true when character memory is RAM.
     pub fn chr_is_ram(&self) -> bool {
-        match self { Self::Nrom(c) => c.chr_is_ram(), Self::Mmc1(c) => c.chr_is_ram(), Self::Uxrom(c) => c.chr_is_ram(), Self::Cnrom(c) => c.chr_is_ram(), Self::Mmc3(c) => c.chr_is_ram(), Self::Axrom(c) => c.chr_is_ram(), Self::Gxrom(c) => c.chr_is_ram(), Self::Camerica(c) => c.chr_is_ram(), Self::ColorDreams(c) => c.chr_is_ram(), Self::Bnrom(c) => c.chr_is_ram(), Self::Cprom(c) => c.chr_is_ram(), Self::Mmc2(c) => c.chr_is_ram() }
+        match self { Self::Nrom(c) => c.chr_is_ram(), Self::Mmc1(c) => c.chr_is_ram(), Self::Uxrom(c) => c.chr_is_ram(), Self::Cnrom(c) => c.chr_is_ram(), Self::Mmc3(c) => c.chr_is_ram(), Self::Axrom(c) => c.chr_is_ram(), Self::Gxrom(c) => c.chr_is_ram(), Self::Camerica(c) => c.chr_is_ram(), Self::ColorDreams(c) => c.chr_is_ram(), Self::Bnrom(c) => c.chr_is_ram(), Self::Cprom(c) => c.chr_is_ram(), Self::Mmc2(c) => c.chr_is_ram(), Self::Unrom512(c) => c.chr_is_ram() }
     }
     /// Clocks a mapper IRQ counter once per approximated scanline boundary.
     pub fn clock_irq_counter(&mut self) { if let Self::Mmc3(c) = self { c.clock_irq_counter(); } }
@@ -1355,11 +1449,11 @@ impl Cartridge {
     pub fn irq_pending(&self) -> bool { matches!(self, Self::Mmc3(c) if c.irq_pending()) }
     /// Reads a byte from PPU pattern memory.
     pub fn ppu_read(&self, address: u16) -> Option<u8> {
-        match self { Self::Nrom(c) => c.ppu_read(address), Self::Mmc1(c) => c.ppu_read(address), Self::Uxrom(c) => c.ppu_read(address), Self::Cnrom(c) => c.ppu_read(address), Self::Mmc3(c) => c.ppu_read(address), Self::Axrom(c) => c.ppu_read(address), Self::Gxrom(c) => c.ppu_read(address), Self::Camerica(c) => c.ppu_read(address), Self::ColorDreams(c) => c.ppu_read(address), Self::Bnrom(c) => c.ppu_read(address), Self::Cprom(c) => c.ppu_read(address), Self::Mmc2(c) => c.ppu_read(address) }
+        match self { Self::Nrom(c) => c.ppu_read(address), Self::Mmc1(c) => c.ppu_read(address), Self::Uxrom(c) => c.ppu_read(address), Self::Cnrom(c) => c.ppu_read(address), Self::Mmc3(c) => c.ppu_read(address), Self::Axrom(c) => c.ppu_read(address), Self::Gxrom(c) => c.ppu_read(address), Self::Camerica(c) => c.ppu_read(address), Self::ColorDreams(c) => c.ppu_read(address), Self::Bnrom(c) => c.ppu_read(address), Self::Cprom(c) => c.ppu_read(address), Self::Mmc2(c) => c.ppu_read(address), Self::Unrom512(c) => c.ppu_read(address) }
     }
     /// Writes pattern memory only when it is CHR-RAM.
     pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
-        match self { Self::Nrom(c) => c.ppu_write(address, value), Self::Mmc1(c) => c.ppu_write(address, value), Self::Uxrom(c) => c.ppu_write(address, value), Self::Cnrom(c) => c.ppu_write(address, value), Self::Mmc3(c) => c.ppu_write(address, value), Self::Axrom(c) => c.ppu_write(address, value), Self::Gxrom(c) => c.ppu_write(address, value), Self::Camerica(c) => c.ppu_write(address, value), Self::ColorDreams(c) => c.ppu_write(address, value), Self::Bnrom(c) => c.ppu_write(address, value), Self::Cprom(c) => c.ppu_write(address, value), Self::Mmc2(c) => c.ppu_write(address, value) }
+        match self { Self::Nrom(c) => c.ppu_write(address, value), Self::Mmc1(c) => c.ppu_write(address, value), Self::Uxrom(c) => c.ppu_write(address, value), Self::Cnrom(c) => c.ppu_write(address, value), Self::Mmc3(c) => c.ppu_write(address, value), Self::Axrom(c) => c.ppu_write(address, value), Self::Gxrom(c) => c.ppu_write(address, value), Self::Camerica(c) => c.ppu_write(address, value), Self::ColorDreams(c) => c.ppu_write(address, value), Self::Bnrom(c) => c.ppu_write(address, value), Self::Cprom(c) => c.ppu_write(address, value), Self::Mmc2(c) => c.ppu_write(address, value), Self::Unrom512(c) => c.ppu_write(address, value) }
     }
 }
 
@@ -2174,6 +2268,76 @@ mod mmc2_tests {
         c.cpu_write(0xA000, 6);
         assert_eq!(c.cpu_read(0x8000), Some(6));
         assert_eq!(c.ppu_read(0), Some(0x20));
+    }
+}
+
+
+
+#[cfg(test)]
+mod unrom512_tests {
+    use super::*;
+
+    fn image(prg_banks: u8, chr_banks: u8) -> Vec<u8> {
+        let mut data = vec![0; INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN + chr_banks as usize * CHR_BANK_LEN];
+        data[0..4].copy_from_slice(b"NES\\x1A");
+        data[4] = prg_banks;
+        data[5] = chr_banks;
+        data[6] = 0xE0;
+        data[7] = 0x10;
+        for bank in 0..prg_banks as usize {
+            let start = INES_HEADER_LEN + bank * PRG_BANK_LEN;
+            data[start..start + PRG_BANK_LEN].fill(bank as u8);
+        }
+        data
+    }
+
+    #[test]
+    fn mapper_30_switches_lower_prg_and_keeps_last_bank_fixed() {
+        let mut c = Cartridge::parse(&image(16, 0)).unwrap();
+        assert_eq!(c.cpu_read(0x8000), Some(0));
+        assert_eq!(c.cpu_read(0xC000), Some(15));
+        c.cpu_write(0x8000, 7);
+        assert_eq!(c.cpu_read(0x8000), Some(7));
+        assert_eq!(c.cpu_read(0xBFFF), Some(7));
+        assert_eq!(c.cpu_read(0xC000), Some(15));
+        assert_eq!(c.cpu_read(0xFFFF), Some(15));
+    }
+
+    #[test]
+    fn mapper_30_switches_chr_ram_banks_and_one_screen_page() {
+        let mut c = Cartridge::parse(&image(8, 0)).unwrap();
+        assert_eq!(c.mirroring(), Mirroring::OneScreenLower);
+        c.ppu_write(0x0123, 0x11);
+        c.cpu_write(0x8000, 0x20);
+        assert_eq!(c.mirroring(), Mirroring::OneScreenLower);
+        assert_eq!(c.ppu_read(0x0123), Some(0));
+        c.ppu_write(0x0123, 0x22);
+        c.cpu_write(0x8000, 0x50);
+        assert_eq!(c.mirroring(), Mirroring::OneScreenUpper);
+        assert_eq!(c.ppu_read(0x0123), Some(0x11));
+        c.cpu_write(0x8000, 0x60);
+        assert_eq!(c.ppu_read(0x0123), Some(0));
+        c.ppu_write(0x0123, 0x33);
+        c.cpu_write(0x8000, 0x20);
+        assert_eq!(c.ppu_read(0x0123), Some(0x22));
+    }
+
+    #[test]
+    fn mapper_30_trainer_and_prg_ram_are_available() {
+        let mut data = image(8, 0);
+        data[6] |= 0x04;
+        data.splice(16..16, vec![0xA5; TRAINER_LEN]);
+        let mut c = Cartridge::parse(&data).unwrap();
+        assert_eq!(c.cpu_read(0x7000), Some(0xA5));
+        c.cpu_write(0x6000, 0x5A);
+        assert_eq!(c.cpu_read(0x6000), Some(0x5A));
+    }
+
+    #[test]
+    fn mapper_30_rejects_chr_rom_and_unsupported_prg_sizes() {
+        assert!(matches!(Cartridge::parse(&image(7, 0)), Err(CartridgeError::InvalidPrgSize(_))));
+        assert!(matches!(Cartridge::parse(&image(33, 0)), Err(CartridgeError::InvalidPrgSize(_))));
+        assert!(matches!(Cartridge::parse(&image(8, 1)), Err(CartridgeError::InvalidChrSize(_))));
     }
 }
 
