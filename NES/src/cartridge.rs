@@ -1352,7 +1352,7 @@ mod mmc3_tests {
         assert_eq!(cart.ppu_read(0), Some(0x40));
         cart.cpu_write(0x8000, 2);
         cart.cpu_write(0x8001, 5);
-        assert_eq!(cart.ppu_read(0), Some(0x45));
+        assert_eq!(cart.ppu_read(0x1000), Some(0x45));
         cart.cpu_write(0x8000, 0x82);
         cart.cpu_write(0x8001, 6);
         assert_eq!(cart.ppu_read(0), Some(0x46));
