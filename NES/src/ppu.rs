@@ -869,6 +869,8 @@ mod tests {
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap();
         ppu.mask = 0x1E;
+        ppu.scanline = 0;
+        ppu.dot = 0;
         ppu.frame_scroll_valid = true;
         ppu.frame_scroll_v = 0;
         ppu.frame_fine_x = 0;
