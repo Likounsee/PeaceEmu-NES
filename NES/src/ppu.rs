@@ -684,6 +684,35 @@ mod tests {
     }
 
     #[test]
+    fn sprite_zero_hit_requires_visible_background_and_never_occurs_at_x_255() {
+        // Sprite 0 hit is a background/sprite opaque-pixel overlap, not merely
+        // a sprite pixel being drawn. Keep the test fixture local to our PPU.
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+
+        let mut background_disabled = Ppu::new();
+        background_disabled.mask = 0x14; // Sprites enabled, background disabled.
+        background_disabled.mem_write(0x0000, 0x80, Some(&mut cartridge));
+        background_disabled.mem_write(0x0010, 0x80, Some(&mut cartridge));
+        background_disabled.oam[0..4].copy_from_slice(&[255, 1, 0, 0]);
+        background_disabled.render_frame(Some(&cartridge));
+        assert_eq!(background_disabled.status & 0x40, 0);
+
+        let mut rightmost_pixel = Ppu::new();
+        rightmost_pixel.mask = 0x1E;
+        rightmost_pixel.mem_write(0x0000, 0x01, Some(&mut cartridge));
+        rightmost_pixel.mem_write(0x0010, 0x01, Some(&mut cartridge));
+        rightmost_pixel.mem_write(0x3F01, 0x22, Some(&mut cartridge));
+        rightmost_pixel.mem_write(0x3F11, 0x30, Some(&mut cartridge));
+        // OAM X=248 puts the pattern's rightmost set bit at screen x=255.
+        rightmost_pixel.oam[0..4].copy_from_slice(&[255, 1, 0, 248]);
+        rightmost_pixel.render_frame(Some(&cartridge));
+        assert_eq!(rightmost_pixel.status & 0x40, 0);
+    }
+
+    #[test]
     fn sprite_8x16_mode_uses_tile_bit_for_pattern_table_and_next_tile_for_lower_half() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
