@@ -2,7 +2,7 @@
 name = "peaceemu-nes"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.78"
+rust-version = "1.99"
 license = "LicenseRef-Proprietary"
 description = "Nintendo Entertainment System emulation core for PeaceEmu"
 
