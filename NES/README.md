@@ -64,7 +64,7 @@ Le dernier lot ajoute BNROM (mapper 34, variante BNROM uniquement), en plus de C
 | Structure Rust et build initial | En place |
 | CPU Ricoh 2A03 | Partiel — sous-ensemble élargi, opcodes non officiels composites et stores instables ciblés ; pile/flags, NMI et IRQ APU testés ; cycles bus-exacts et certains opcodes encore à faire |
 | Bus RAM, DMA OAM et manettes | RAM miroir, registres PPU, transfert DMA/blocage CPU, deux ports série manette |
-| Cartouches iNES legacy | NROM, MMC1, UxROM, CNROM, MMC3 (mapper 4), AxROM, GxROM (mapper 66), Camerica (mapper 71, sous-ensemble iNES/CHR-RAM), Color Dreams (mapper 11, banques PRG/CHR) BNROM (mapper 34, variante BNROM uniquement) et CPROM (mapper 13) ; NES 2.0 et autres mappers à faire |
+| Cartouches iNES legacy | NROM, MMC1, UxROM, CNROM, MMC3 (mapper 4), AxROM, GxROM (mapper 66), Camerica (mapper 71, sous-ensemble iNES/CHR-RAM), Color Dreams (mapper 11, banques PRG/CHR), BNROM (mapper 34, variante BNROM uniquement) CPROM (mapper 13), MMC2 (mapper 9) et UNROM-512 (mapper 30, sous-ensemble iNES) ; NES 2.0 et autres mappers à faire |
 | Machine et reset vector | Première version — charge NROM, exécute le CPU, synchronise les dots PPU à 3:1 et gère les deux parités de stall DMA OAM |
 | PPU | Registres/mémoire/VBlank-NMI ; incréments/copies de scroll aux points clés, y compris fetchs 328/336 ; hit/overflow sprite recalculés ; rendu snapshot, pipeline pixel/fetch par dot à faire |
 | APU | Partiel — registres, compteurs, enveloppes pulse, sweep, compteur linéaire triangle et premier DMC (lecture mémoire, buffer, démarrage silencieux, sortie delta, bouclage/IRQ, arrêt/acquittement testés) ; arbitrage DMA, filtrage, resampling et timing exact à faire |
@@ -76,9 +76,12 @@ Le dernier lot ajoute BNROM (mapper 34, variante BNROM uniquement), en plus de C
 
 ### Estimation de complétion
 
-- **Cœur global : 78 %** — estimation d’ingénierie, pas un pourcentage de jeux compatibles.
+- **Cœur global : 79 %** — estimation d’ingénierie, pas un pourcentage de jeux compatibles.
 - **CPU : 68 %** — couverture d’opcodes étendue, mais exécution bus-cycle-exacte et interruptions/timing encore incomplets.
 - **PPU : 51 %** — rendu snapshot et timing de registres, pipeline par dot encore à construire.
 - **APU : 48 %** — canaux principaux présents, timing/mixage et cas limites encore incomplets.
-- **Cartouches et mappers : 94 %** — nombreux mappers iNES legacy pris en charge, dont MMC2 ajouté dans cette tranche ; variantes, NES 2.0 et plusieurs mappers restent absents.
+- **Cartouches et mappers : 95 %** — nombreux mappers iNES legacy pris en charge, dont MMC2 et UNROM-512 ajoutés récemment ; variantes, NES 2.0 et plusieurs mappers restent absents.
 - **Intégration PeaceEmu : 14 %** — adaptateur au contrat hôte et transfert image/audio restent à faire.
+
+
+UNROM-512 (mapper 30) prend en charge les images iNES legacy à 256/512 Kio de PRG-ROM et sans CHR-ROM : banque PRG de 16 Kio sélectionnable (bits 0–4), banque finale fixe, quatre banques CHR-RAM de 8 Kio (bits 5–6) et bit 7 de sélection one-screen lorsque l'en-tête indique cette configuration. La variante ajoutée n'émule pas le flash interne, les sous-mappers NES 2.0 ni les conflits de bus des cartes physiques ; elle n'expose pas de PRG-RAM, conformément à la fiche de carte documentée.
