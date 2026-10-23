@@ -30,6 +30,7 @@ pub struct Ppu {
     frame_scroll_valid: bool,
     nmi_pending: bool,
     nmi_line: bool,
+    suppress_vblank: bool,
     /// Completed 256x240 background image, stored as 6-bit NES palette indices.
     framebuffer: Vec<u8>,
     background_opaque: Vec<bool>,
@@ -42,7 +43,7 @@ impl Default for Ppu {
             nametables: [0; 4096], palette: [0; 32], v: 0, t: 0,
             fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
             scanline: 261, dot: 0, odd_frame: false, frame_scroll_v: 0, frame_fine_x: 0,
-            frame_scroll_valid: false, nmi_pending: false, nmi_line: false,
+            frame_scroll_valid: false, nmi_pending: false, nmi_line: false, suppress_vblank: false,
             framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
         }
     }
@@ -57,6 +58,11 @@ impl Ppu {
         let value = match register & 7 {
             2 => {
                 let value = (self.status & 0xE0) | (self.open_bus & 0x1F);
+                // A status read immediately before the vblank-set dot suppresses
+                // this frame's vblank flag and therefore its NMI edge.
+                if self.scanline == 241 && self.dot == 0 {
+                    self.suppress_vblank = true;
+                }
                 self.status &= !0x80;
                 self.update_nmi_line();
                 self.write_latch = false;
@@ -152,8 +158,11 @@ impl Ppu {
             }
 
             if self.scanline == 241 && self.dot == 1 {
-                self.status |= 0x80;
-                self.update_nmi_line();
+                if !self.suppress_vblank {
+                    self.status |= 0x80;
+                    self.update_nmi_line();
+                }
+                self.suppress_vblank = false;
             }
             if self.scanline == 261 && self.dot == 1 {
                 self.status &= !0xE0;
@@ -1022,6 +1031,36 @@ mod tests {
         ppu.cpu_write_register(6, 0x00, None);
         ppu.cpu_write_register(7, 0x55, None);
         assert_eq!(ppu.mem_read(0x2000, None), 0x55);
+    }
+
+    #[test]
+    fn status_read_on_vblank_boundary_suppresses_flag_and_nmi() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 241;
+        ppu.dot = 0;
+        ppu.ctrl = 0x80;
+
+        let status = ppu.cpu_read_register(2, None);
+        assert_eq!(status & 0x80, 0);
+        ppu.tick(1);
+
+        assert_eq!(ppu.position(), (241, 1));
+        assert_eq!(ppu.status & 0x80, 0);
+        assert!(!ppu.take_nmi_request());
+        assert!(!ppu.suppress_vblank);
+    }
+
+    #[test]
+    fn vblank_still_sets_flag_and_nmi_when_status_is_not_read_early() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 241;
+        ppu.dot = 0;
+        ppu.ctrl = 0x80;
+
+        ppu.tick(1);
+
+        assert_ne!(ppu.status & 0x80, 0);
+        assert!(ppu.take_nmi_request());
     }
 
     #[test]
