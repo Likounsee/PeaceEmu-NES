@@ -88,3 +88,10 @@ Ne pas intégrer de code ou de dépendance uniquement parce qu'un émulateur est
 - `NES/rust-toolchain.toml` sélectionne `stable` et installe `rustfmt`/`clippy`, afin que les outils locaux suivent la dernière version stable disponible avec rustup.
 - `NES/Cargo.toml` fixe `rust-version = "1.99"`, la version minimale compatible visée par le projet depuis la mise à niveau vers Rust 1.99.x.
 - La CI utilise également `dtolnay/rust-toolchain@stable` : elle valide donc le cœur avec la dernière stable disponible au moment de l'exécution, pas avec Nightly.
+
+## Septième adaptation réalisée : MMC1 (mapper 1)
+
+- Références de comportement : documentation matérielle NESdev sur MMC1 et organisation des registres/banques observée dans TetaNES (licence permissive MIT/Apache-2.0).
+- Adaptation locale dans `NES/src/cartridge.rs` : registre série 5 bits et bit de reset, modes PRG 16/32 Kio, banques CHR 4/8 Kio, désactivation de PRG-RAM, et mirroring one-screen/vertical/horizontal. Le dispatch statique `Cartridge` et le bus existant restent inchangés dans leur contrat public.
+- Tests ajoutés : sélection PRG dans les modes commutables/fixes, sélection des deux fenêtres CHR 4 Kio, écriture CHR-RAM, mirroring, protection PRG-RAM et reset du registre série. Un test au niveau `NesMachine` vérifie également le chargement iNES, le vecteur de reset et les écritures sérielles à travers le bus CPU.
+- Limites : images iNES classiques uniquement ; cette version accepte 2, 4, 8 ou 16 banques PRG de 16 Kio et jusqu'à 16 banques CHR de 8 Kio (ou CHR-RAM). Les variantes MMC1 spécifiques à certaines cartes, la gestion temporelle des écritures consécutives, l'horloge cycle-exacte et NES 2.0 ne sont pas encore modélisées. Aucun code source TetaNES n'a été copié : les règles matérielles ont été adaptées aux types et méthodes PeaceEmu.
