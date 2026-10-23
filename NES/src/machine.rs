@@ -184,7 +184,7 @@ mod tests {
     fn machine_loads_mmc1_and_routes_serial_mapper_writes() {
         const BANK_LEN: usize = 16 * 1024;
         let mut image = vec![0; 16 + 4 * BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 4;
         image[6] = 0x10; // Mapper 1 (MMC1), horizontal initial mirroring.
         for bank in 0..4 {
