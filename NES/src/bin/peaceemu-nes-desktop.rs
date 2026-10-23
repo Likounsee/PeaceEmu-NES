@@ -253,7 +253,13 @@ mod win {
         if !machine.set_audio_sample_rate(audio_rate) {
             return Err(format!("unsupported audio sample rate: {audio_rate}"));
         }
-        let mut audio = AudioOutput::open(audio_rate)?;
+        let mut audio = match AudioOutput::open(audio_rate) {
+            Ok(output) => Some(output),
+            Err(error) => {
+                eprintln!("audio disabled; game will continue silently: {error}");
+                None
+            }
+        };
         let mut save_path = std::path::PathBuf::from(&path);
         save_path.set_extension("sav");
         if machine.has_battery_backed_ram() && save_path.exists() {
@@ -303,9 +309,11 @@ mod win {
                 break;
             }
             let audio_samples = machine.drain_audio_samples();
-            if let Err(error) = audio.play(&audio_samples) {
-                runtime_error = Some(format!("audio output failed: {error}"));
-                break;
+            if let Some(output) = audio.as_mut() {
+                if let Err(error) = output.play(&audio_samples) {
+                    eprintln!("audio disabled after playback error: {error}");
+                    audio = None;
+                }
             }
             for (i, &index) in machine.framebuffer().iter().enumerate() {
                 let rgb = PALETTE[(index & 0x3F) as usize];
