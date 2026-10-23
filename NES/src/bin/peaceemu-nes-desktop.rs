@@ -156,6 +156,12 @@ mod win {
             .ok_or_else(|| "usage: peaceemu-nes-desktop <game.nes>".to_owned())?;
         let image = fs::read(&path).map_err(|e| format!("cannot read ROM: {e}"))?;
         let mut machine = NesMachine::from_ines(&image).map_err(|e| e.to_string())?;
+        let mut save_path = std::path::PathBuf::from(&path);
+        save_path.set_extension("sav");
+        if machine.has_battery_backed_ram() && save_path.exists() {
+            let save = fs::read(&save_path).map_err(|e| format!("cannot read save RAM: {e}"))?;
+            machine.load_battery_ram(&save).map_err(|e| format!("invalid save RAM: {e}"))?;
+        }
 
         let class_name: Vec<u16> = "PeaceEmuNesWindow\0".encode_utf16().collect();
         let title: Vec<u16> = format!("PeaceEmu-NES — {}", std::path::Path::new(&path).file_name().unwrap_or_default().to_string_lossy())
@@ -184,6 +190,7 @@ mod win {
         let frame_time = Duration::from_micros(16_639);
         let mut next_frame = Instant::now();
         let mut running = true;
+        let mut runtime_error = None;
         while running {
             let mut msg: Msg = unsafe { zeroed() };
             while unsafe { PeekMessageW(&mut msg, null_mut(), 0, 0, PM_REMOVE) } != 0 {
@@ -193,7 +200,10 @@ mod win {
             if !running { break; }
 
             machine.set_controller_state(0, controller_state());
-            machine.step_frame().map_err(|e| format!("emulation stopped: {e}"))?;
+            if let Err(error) = machine.step_frame() {
+                runtime_error = Some(format!("emulation stopped: {error}"));
+                break;
+            }
             for (i, &index) in machine.framebuffer().iter().enumerate() {
                 let rgb = PALETTE[(index & 0x3F) as usize];
                 let at = i * 4;
@@ -221,6 +231,11 @@ mod win {
                 next_frame = now;
             }
         }
+        if machine.has_battery_backed_ram() {
+            let save = machine.save_battery_ram().map_err(|e| e.to_string())?;
+            fs::write(&save_path, save).map_err(|e| format!("cannot write save RAM: {e}"))?;
+        }
+        if let Some(error) = runtime_error { return Err(error); }
         Ok(())
     }
 }
