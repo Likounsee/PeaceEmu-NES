@@ -688,7 +688,7 @@ mod tests {
         // Sprite 0 hit is a background/sprite opaque-pixel overlap, not merely
         // a sprite pixel being drawn. Keep the test fixture local to our PPU.
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap();
 
