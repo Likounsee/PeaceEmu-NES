@@ -94,7 +94,8 @@ Le dernier lot ajoute BNROM (mapper 34, variante BNROM uniquement), en plus de C
 | APU | Partiel — registres, compteurs, enveloppes pulse, sweep, compteur linéaire triangle et premier DMC (lecture mémoire, buffer, démarrage silencieux, sortie delta, bouclage/IRQ, arrêt/acquittement testés) ; arbitrage DMA, filtrage, resampling et timing exact à faire |
 | Contrôleurs | Première version — ports série $4016/$4017, huit boutons et latch |
 | Timing complet | À faire |
-| API de session hôte | En place — chargement ROM, configuration audio, commandes manettes, framebuffer et PCM par frame, accès à la RAM batterie ; tests automatisés |\n| Adaptateur EmulationCore | À faire — branchement au contrat partagé de PeaceEmu et conversion vers ses types vidéo/audio |
+| API de session hôte | En place — chargement ROM, configuration audio, commandes manettes, framebuffer et PCM par frame, accès à la RAM batterie ; tests automatisés |
+| Adaptateur EmulationCore | À faire — branchement au contrat partagé de PeaceEmu et conversion vers ses types vidéo/audio |
 | Tests de compatibilité | À faire |
 
 
