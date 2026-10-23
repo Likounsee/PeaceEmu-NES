@@ -20,7 +20,7 @@ cargo run --release --bin peaceemu-nes-desktop -- "C:\chemin\vers\jeu.nes" --sca
 - `--keys2 A,B,SELECT,START,UP,DOWN,LEFT,RIGHT` configure la manette 2 (défaut : `97,99,96,110,104,98,100,102`, pavé numérique).
 - Les manettes Xbox/XInput 1 et 2 sont détectées automatiquement ; A/B, Back/Start, la croix directionnelle et le stick gauche sont pris en charge. Les entrées sont ignorées quand la fenêtre de jeu n'est pas au premier plan.
 - Flèches : directions ; **Z** : A ; **X** : B ; **Maj droite** : Select ; **Entrée** : Start.
-- Les sauvegardes RAM des cartouches avec batterie sont chargées/enregistrées dans un fichier `.sav` à côté de la ROM.
+- Les sauvegardes RAM des cartouches avec batterie sont chargées depuis un fichier `.sav` à côté de la ROM, autosauvegardées toutes les 5 secondes pendant le jeu et réécrites à la fermeture.
 - Le son utilise la sortie PCM Windows ; si aucun périphérique audio n'est disponible, le jeu continue en silence.
 
 PeaceEmu pourra transmettre ses réglages au lancement en construisant ces arguments ; l'UI de configuration reste dans PeaceEmu, jamais dans la fenêtre de jeu.
@@ -109,7 +109,7 @@ Le dernier lot ajoute BNROM (mapper 34, variante BNROM uniquement), en plus de C
 - **PPU : 62 %** — rendu des lignes visible pendant la frame, scroll capturé à chaque ligne et indicateurs sprite-0 hit/overflow consultables avant la fin de frame ; fetchs pixel/dot et effets de registre en milieu de ligne encore approximatifs.
 - **APU : 58 %** — canaux principaux, mixage approximatif, sortie PCM configurable et blocage CPU/horloges PPU lors des rechargements DMC ; filtrage et arbitrage DMA précis restent incomplets.
 - **Cartouches et mappers : 97 %** — nombreuses familles iNES legacy et premiers cas NES 2.0 pris en charge ; variantes et plusieurs mappers restent absents.
-- **Intégration / lancement jouable : 60 %** — fenêtre de jeu sans HUD ajouté, sortie audio PCM Windows, mise à l'échelle, taux audio et mapping clavier configurables au lancement, sauvegardes RAM batterie ; le lancement orchestré par PeaceEmu et le contrat EmulationCore partagé restent à raccorder.
+- **Intégration / lancement jouable : 62 %** — fenêtre de jeu sans HUD ajouté, sortie audio PCM Windows, mise à l'échelle, taux audio et mapping clavier configurables au lancement, sauvegardes RAM batterie ; le lancement orchestré par PeaceEmu et le contrat EmulationCore partagé restent à raccorder.
 
 
 UNROM-512 (mapper 30) prend en charge les images iNES legacy à 256/512 Kio de PRG-ROM et sans CHR-ROM : banque PRG de 16 Kio sélectionnable (bits 0–4), banque finale fixe, quatre banques CHR-RAM de 8 Kio (bits 5–6) et bit 7 de sélection one-screen lorsque l'en-tête indique cette configuration. La variante ajoutée n'émule pas le flash interne, les sous-mappers NES 2.0 ni les conflits de bus des cartes physiques ; elle n'expose pas de PRG-RAM, conformément à la fiche de carte documentée.
