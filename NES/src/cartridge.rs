@@ -1798,7 +1798,7 @@ mod bnrom_tests {
         image[0..4].copy_from_slice(b"NES\\x1A");
         image[4] = prg_banks;
         image[6] = 0x20 | 0x01;
-        image[7] = 0x80; // Mapper 34 high nibble.
+        image[7] = 0x20; // Mapper 34 high nibble.
         for bank in 0..prg_banks as usize / 2 {
             let start = INES_HEADER_LEN + bank * 2 * PRG_BANK_LEN;
             image[start..start + 2 * PRG_BANK_LEN].fill((0x40 + bank) as u8);
