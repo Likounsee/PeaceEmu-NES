@@ -473,6 +473,45 @@ mod tests {
     }
 
     #[test]
+    fn frame_counter_reset_delay_tracks_cpu_cycle_parity() {
+        let mut even = Apu::new();
+        even.write(0x4017, 0x80);
+        assert_eq!(even.frame_reset_delay, 4);
+
+        let mut odd = Apu::new();
+        odd.tick_cpu_cycles(1);
+        odd.write(0x4017, 0x80);
+        assert_eq!(odd.frame_reset_delay, 3);
+    }
+
+    #[test]
+    fn frame_irq_inhibit_clears_irq_before_delayed_sequencer_reset() {
+        let mut apu = Apu::new();
+        apu.frame_irq = true;
+        apu.frame_cycles = 123;
+        apu.write(0x4017, 0x40);
+
+        assert!(!apu.frame_irq, "IRQ inhibit takes effect on the register write");
+        assert!(apu.frame_reset_pending, "sequencer reset remains delayed");
+        assert_eq!(apu.frame_cycles, 123, "frame phase is preserved until reset");
+    }
+
+    #[test]
+    fn replacing_frame_counter_write_restarts_the_pending_delay() {
+        let mut apu = Apu::new();
+        apu.write(0x4017, 0x80);
+        apu.tick_cpu_cycles(2);
+        apu.write(0x4017, 0x00);
+
+        assert!(apu.frame_reset_pending);
+        assert!(!apu.pending_five_step_mode);
+        assert_eq!(apu.frame_reset_delay, if apu.cpu_cycle_odd { 3 } else { 4 });
+        apu.tick_cpu_cycles(u32::from(apu.frame_reset_delay));
+        assert!(!apu.five_step_mode, "the most recent write wins");
+        assert!(!apu.frame_reset_pending);
+    }
+
+    #[test]
     fn five_step_reset_clocks_envelopes_and_length_units_immediately() {
         let mut apu = Apu::new();
         apu.write(0x4015, 0x09); // Enable pulse 1 and noise.
