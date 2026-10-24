@@ -239,10 +239,14 @@ impl NesMachine {
     /// scanline boundaries in one large PPU/APU batch.
     fn clock_devices_for_cpu_cycles(&mut self, mut cycles: u32) {
         while cycles != 0 {
+            let rendering_enabled = self.bus.ppu_rendering_enabled();
             let crossed_scanlines = self.bus.tick_ppu(3);
-            for _ in 0..crossed_scanlines {
-                // MMC3 remains scanline-clocked until the PPU exposes real A12 fetch edges.
-                self.bus.clock_mapper_irq();
+            if rendering_enabled {
+                for _ in 0..crossed_scanlines {
+                    // Approximation: MMC3 is clocked per rendered scanline until the PPU
+                    // exposes real pattern-fetch A12 edges. Idle scanlines must not clock it.
+                    self.bus.clock_mapper_irq();
+                }
             }
             let dmc_stalls = self.bus.tick_apu(1);
             cycles -= 1;
@@ -673,6 +677,29 @@ mod tests {
         let after_position = machine.bus.ppu_position();
         assert_eq!(after_position.0, before_position.0);
         assert_eq!(after_position.1 - before_position.1, 18, "the PPU must advance three dots for each of six elapsed CPU cycles");
+    }
+
+    #[test]
+    fn mapper_irq_does_not_advance_when_ppu_rendering_is_disabled() {
+        let mut image = vec![0; 16 + 2 * 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 2;
+        image[5] = 1;
+        image[6] = 0x40; // MMC3 / mapper 4.
+        image[16 + 0x3FFC] = 0x00;
+        image[16 + 0x3FFD] = 0x80;
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+
+        machine.write_cpu(0xC000, 0); // IRQ latch = 0.
+        machine.write_cpu(0xC001, 0); // Reload counter.
+        machine.write_cpu(0xE001, 0); // Enable IRQ.
+        machine.write_cpu(0x2001, 0); // Rendering disabled.
+        machine.clock_devices_for_cpu_cycles(114); // Cross one scanline.
+        assert!(!machine.bus.irq_pending(), "idle PPU scanlines must not clock the MMC3 IRQ counter");
+
+        machine.write_cpu(0x2001, 0x08); // Enable background rendering.
+        machine.clock_devices_for_cpu_cycles(114); // Cross another scanline.
+        assert!(machine.bus.irq_pending(), "rendered scanlines should clock the approximate MMC3 IRQ counter");
     }
 
     #[test]

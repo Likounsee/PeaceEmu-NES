@@ -515,6 +515,10 @@ impl Ppu {
     /// Returns the most recently rendered 256x240 image as NES palette indices.
     pub fn framebuffer(&self) -> &[u8] { &self.framebuffer }
 
+    /// Returns whether either background or sprite rendering is enabled in PPUMASK.
+    /// MMC3 scanline IRQ approximation must not advance while the PPU is idle.
+    pub fn rendering_enabled(&self) -> bool { self.mask & 0x18 != 0 }
+
     /// Returns the current scanline and dot for diagnostics and tests.
     pub fn position(&self) -> (u16, u16) { (self.scanline, self.dot) }
 

@@ -111,6 +111,8 @@ impl CpuBus {
     pub fn tick_ppu(&mut self, dots: u32) -> u32 { self.ppu.tick_with_cartridge(dots, self.cartridge.as_ref()) }
     /// Advances the mapper's approximate scanline IRQ counter.
     pub fn clock_mapper_irq(&mut self) { if let Some(cartridge) = self.cartridge.as_mut() { cartridge.clock_irq_counter(); } }
+    /// Returns whether background or sprite rendering is enabled in PPUMASK.
+    pub fn ppu_rendering_enabled(&self) -> bool { self.ppu.rendering_enabled() }
     /// Returns the current PPU scanline and dot, for frame scheduling and diagnostics.
     pub fn ppu_position(&self) -> (u16, u16) { self.ppu.position() }
     /// Advances the APU by CPU cycles and services pending DMC sample reads.
