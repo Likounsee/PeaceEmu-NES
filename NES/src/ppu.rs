@@ -1562,7 +1562,7 @@ mod tests {
     fn enabling_nmi_during_vblank_raises_one_edge_immediately() {
         let mut ppu = Ppu::new();
         ppu.scanline = 241;
-        ppu.dot = 1;
+        ppu.dot = 0;
         ppu.tick(1);
         assert_ne!(ppu.status & 0x80, 0);
         assert!(!ppu.take_nmi_request(), "vblank with NMI disabled must not raise an edge");
