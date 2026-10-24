@@ -1412,7 +1412,7 @@ impl Mapper15 {
     /// Parses a legacy iNES mapper-15 image with PRG-ROM and 8 KiB CHR-RAM.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
         if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
         let mapper = ((image[6] >> 4) as u16)
             | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
