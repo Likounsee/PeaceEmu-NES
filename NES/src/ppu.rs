@@ -160,9 +160,13 @@ impl Ppu {
                 if self.status & 0x40 == 0 && self.sprite_zero_hit_at(x, y, cartridge) {
                     self.status |= 0x40;
                 }
+                // Composite sprites at the beam position rather than painting the
+                // entire row at dot 256. Mid-scanline OAM, CHR-RAM and palette writes
+                // can then affect only pixels the PPU has not emitted yet.
+                self.render_sprite_pixel(x, y, cartridge);
             }
             if self.dot == 256 && self.scanline < 240 {
-                self.render_scanline(self.scanline as usize, cartridge);
+                self.update_sprite_overflow(self.scanline as usize);
             }
 
             // During visible and pre-render scanlines, the rendering pipeline advances
@@ -308,46 +312,70 @@ impl Ppu {
         }
     }
 
-    /// Composites sprites for a completed visible scanline.
+    /// Draws the highest-priority opaque sprite pixel at the current beam position.
     ///
-    /// Background pixels have already been emitted as the beam advanced to each dot.
-    fn render_scanline(&mut self, y: usize, cartridge: Option<&Cartridge>) {
-        if y >= 240 || self.mask & 0x10 == 0 { return; }
-        let show_sprites_left = self.mask & 0x04 != 0;
+    /// The first eight sprites intersecting a scanline participate, in OAM order.
+    /// Pixel composition uses current sprite/palette memory so later writes do not
+    /// retroactively change already-emitted pixels.
+    fn render_sprite_pixel(&mut self, x: usize, y: usize, cartridge: Option<&Cartridge>) {
+        if x >= 256 || y >= 240 || self.mask & 0x10 == 0
+            || (x < 8 && self.mask & 0x04 == 0)
+        {
+            return;
+        }
+
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
-        let mut count = 0usize;
-        let mut claimed = [false; 256];
+        let mut in_range = 0usize;
         for sprite in 0..64usize {
             let base = sprite * 4;
             let top = (self.oam[base] as usize + 1) & 0xFF;
             if y < top || y >= top + height { continue; }
-            count += 1;
-            if count > 8 { self.status |= 0x20; continue; }
-            let tile = self.oam[base + 1] as usize;
-            let attr = self.oam[base + 2];
+            in_range += 1;
+            if in_range > 8 { break; }
+
             let left = self.oam[base + 3] as usize;
+            if x < left || x >= left + 8 { continue; }
+
+            let tile = self.oam[base + 1] as usize;
+            let attributes = self.oam[base + 2];
             let row_in_sprite = y - top;
-            let source_y = if attr & 0x80 != 0 { height - 1 - row_in_sprite } else { row_in_sprite };
-            let (table, tile_index, row) = if height == 16 {
-                (if tile & 1 != 0 { 0x1000u16 } else { 0 }, (tile & 0xFE) + source_y / 8, source_y % 8)
+            let source_y = if attributes & 0x80 != 0 { height - 1 - row_in_sprite } else { row_in_sprite };
+            let (pattern_base, tile_index, row) = if height == 16 {
+                (if tile & 1 != 0 { 0x1000u16 } else { 0 },
+                 (tile & 0xFE) + source_y / 8, source_y % 8)
             } else {
                 (if self.ctrl & 0x08 != 0 { 0x1000u16 } else { 0 }, tile, source_y)
             };
-            let addr = table + (tile_index * 16 + row) as u16;
-            let low = self.mem_read(addr, cartridge);
-            let high = self.mem_read(addr + 8, cartridge);
-            for sx in 0..8usize {
-                let x = left + sx;
-                if x >= 256 || (x < 8 && !show_sprites_left) { continue; }
-                let bit = if attr & 0x40 != 0 { sx } else { 7 - sx };
-                let pixel = ((low >> bit) & 1) | (((high >> bit) & 1) << 1);
-                if pixel == 0 || claimed[x] { continue; }
-                claimed[x] = true;
-                if attr & 0x20 == 0 || !self.background_opaque[y * 256 + x] {
-                    let palette_index = 0x10 + ((attr as usize & 3) * 4) + pixel as usize;
-                    self.framebuffer[y * 256 + x] = self.output_color(
-                        self.palette[Self::palette_index(0x3F00 + palette_index as u16)]
-                    );
+            let address = pattern_base + (tile_index * 16 + row) as u16;
+            let low = self.mem_read(address, cartridge);
+            let high = self.mem_read(address + 8, cartridge);
+            let offset_x = x - left;
+            let bit = if attributes & 0x40 != 0 { offset_x } else { 7 - offset_x };
+            let pixel = ((low >> bit) & 1) | (((high >> bit) & 1) << 1);
+            if pixel == 0 { continue; }
+
+            // Even a sprite hidden behind opaque background claims this pixel, so
+            // lower-priority sprites cannot incorrectly appear through it.
+            if attributes & 0x20 == 0 || !self.background_opaque[y * 256 + x] {
+                let palette_index = 0x10 + ((attributes as usize & 3) * 4) + pixel as usize;
+                let color = self.palette[Self::palette_index(0x3F00 + palette_index as u16)];
+                self.framebuffer[y * 256 + x] = self.output_color(color);
+            }
+            return;
+        }
+    }
+
+    /// Sets the sticky overflow flag when more than eight sprites cover this scanline.
+    fn update_sprite_overflow(&mut self, y: usize) {
+        let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
+        let mut count = 0usize;
+        for sprite in 0..64usize {
+            let top = (self.oam[sprite * 4] as usize + 1) & 0xFF;
+            if y >= top && y < top + height {
+                count += 1;
+                if count > 8 {
+                    self.status |= 0x20;
+                    return;
                 }
             }
         }
@@ -985,6 +1013,50 @@ mod tests {
 
         assert!(ppu.framebuffer()[0..4].iter().all(|&pixel| pixel == 0x21));
         assert_eq!(ppu.framebuffer()[4], 0x22);
+    }
+
+    #[test]
+    fn sprite_pixels_keep_the_palette_seen_at_each_beam_dot() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        cartridge.ppu_write(16, 0xFF); // Sprite tile 1: opaque first row.
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x14; // Sprites enabled, including the leftmost eight pixels.
+        ppu.oam[0..4].copy_from_slice(&[255, 1, 0, 0]);
+        ppu.palette[0x11] = 0x21;
+
+        ppu.tick_with_cartridge(4, Some(&cartridge));
+        ppu.palette[0x11] = 0x22;
+        ppu.tick_with_cartridge(4, Some(&cartridge));
+
+        assert_eq!(&ppu.framebuffer()[0..4], &[0x21; 4]);
+        assert_eq!(&ppu.framebuffer()[4..8], &[0x22; 4]);
+    }
+
+    #[test]
+    fn first_opaque_sprite_keeps_priority_even_when_behind_background() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        cartridge.ppu_write(16, 0xFF); // Sprite tile 1.
+        cartridge.ppu_write(32, 0xFF); // Sprite tile 2.
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x1E; // Background/sprites and both left-edge enables.
+        ppu.background_opaque[0] = true;
+        ppu.oam[0..8].copy_from_slice(&[255, 1, 0x20, 0, 255, 2, 0, 0]);
+        ppu.palette[0x11] = 0x21;
+        ppu.palette[0x12] = 0x22;
+
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+
+        assert_eq!(ppu.framebuffer()[0], 0, "the first sprite is hidden by the opaque background");
     }
 
     #[test]
