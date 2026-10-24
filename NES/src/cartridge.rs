@@ -2995,7 +2995,7 @@ mod mmc3_chr_layout_regression_tests {
 
     fn image() -> Vec<u8> {
         let mut data = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN + 2 * CHR_BANK_LEN];
-        data[0..4].copy_from_slice(b"NES\\x1A");
+        data[0..4].copy_from_slice(b"NES\x1A");
         data[4] = 2;
         data[5] = 2;
         data[6] = 0x40;
@@ -3028,7 +3028,7 @@ mod mmc3_chr_layout_regression_tests {
     #[test]
     fn mmc3_chr_ram_writes_follow_the_current_bank_mapping() {
         let mut data = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
-        data[0..4].copy_from_slice(b"NES\\x1A");
+        data[0..4].copy_from_slice(b"NES\x1A");
         data[4] = 2;
         data[6] = 0x40;
         let mut cart = Cartridge::parse(&data).unwrap();

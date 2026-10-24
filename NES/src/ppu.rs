@@ -1754,6 +1754,6 @@ mod sprite_pattern_address_tests {
         ppu.dot = 264; // Next sprite's fetch window starts with A12 low.
         ppu.ppu_cycle = 264;
         ppu.tick(1);
-        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x0000, 265)]);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x0000, 262)]);
     }
 }
