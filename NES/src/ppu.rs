@@ -975,7 +975,7 @@ mod tests {
         cartridge.ppu_write(24, 0x00);
 
         let mut ppu = Ppu::new();
-        ppu.scanline = 0;
+        ppu.scanline = 1;
         ppu.dot = 0;
         ppu.mask = 0x1E; // Background, sprites, and both left-edge enables.
         ppu.oam[0..4].copy_from_slice(&[0, 1, 0, 8]); // Sprite zero begins at (8, 1).
