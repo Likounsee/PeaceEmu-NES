@@ -1,0 +1,38 @@
+name: NES module releases
+
+on:
+  push:
+    branches: [NES]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-module:
+    runs-on: windows-latest
+    steps:
+      - name: Check out module repository
+        uses: actions/checkout@v4
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build standalone NES module
+        working-directory: NES
+        run: cargo build --release --locked --bin peaceemu-nes-desktop
+      - name: Package executable and SHA-256
+        shell: pwsh
+        run: |
+          $exe = "NES/target/release/peaceemu-nes-desktop.exe"
+          if (!(Test-Path $exe)) { throw "NES executable was not produced" }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -NoNewline -Encoding ascii "NES/target/release/peaceemu-nes-desktop.exe.sha256" "$hash  peaceemu-nes-desktop.exe"
+      - name: Publish versioned downloadable module
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nes-module-0.1.${{ github.run_number }}
+          name: PeaceEmu NES module 0.1.${{ github.run_number }}
+          prerelease: true
+          make_latest: false
+          files: |
+            NES/target/release/peaceemu-nes-desktop.exe
+            NES/target/release/peaceemu-nes-desktop.exe.sha256
