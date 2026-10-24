@@ -27,6 +27,9 @@ pub struct Apu {
     frame_irq: bool,
     frame_irq_inhibit: bool,
     five_step_mode: bool,
+    // $4017 resets the frame sequencer after a hardware-delayed 3/4 CPU cycles.
+    frame_reset_delay: u8,
+    frame_reset_pending: bool,
     pulse_timer_counter: [u16; 2],
     pulse_sequence: [u8; 2],
     triangle_timer_counter: u16,
@@ -126,9 +129,9 @@ impl Apu {
             self.frame_irq_inhibit = value & 0x40 != 0;
             self.five_step_mode = value & 0x80 != 0;
             if self.frame_irq_inhibit { self.frame_irq = false; }
-            self.frame_cycles = 0;
-            self.half_frame_cycles = 0;
-            self.quarter_frame_cycles = 0;
+            // IRQ inhibition is immediate; the frame-sequencer reset is delayed.
+            self.frame_reset_delay = if self.cpu_cycle_odd { 3 } else { 4 };
+            self.frame_reset_pending = true;
         } else if address != 0x4014 && address != 0x4016 {
             self.registers[(address - 0x4000) as usize] = value;
             let channel = match address {
@@ -214,6 +217,15 @@ impl Apu {
                 }
             } else { self.dmc_timer_counter -= 1; }
             self.cpu_cycle_odd = !self.cpu_cycle_odd;
+            if self.frame_reset_pending {
+                self.frame_reset_delay = self.frame_reset_delay.saturating_sub(1);
+                if self.frame_reset_delay == 0 {
+                    self.frame_reset_pending = false;
+                    self.frame_cycles = 0;
+                    self.half_frame_cycles = 0;
+                    self.quarter_frame_cycles = 0;
+                }
+            }
             self.frame_cycles = self.frame_cycles.saturating_add(1);
             while self.frame_cycles >= if self.five_step_mode { FIVE_STEP_PERIOD } else { FOUR_STEP_PERIOD } {
                 self.frame_cycles -= if self.five_step_mode { FIVE_STEP_PERIOD } else { FOUR_STEP_PERIOD };
@@ -424,6 +436,25 @@ impl Apu {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn frame_counter_write_resets_sequencer_after_hardware_delay() {
+        let mut apu = Apu::new();
+        apu.tick_cpu_cycles(20);
+        assert_eq!(apu.frame_cycles, 20);
+
+        apu.write(0x4017, 0x80); // Five-step mode; reset is not immediate.
+        assert!(apu.frame_reset_pending);
+        assert_eq!(apu.frame_cycles, 20);
+        let delay = u32::from(apu.frame_reset_delay);
+        apu.tick_cpu_cycles(delay - 1);
+        assert!(apu.frame_reset_pending);
+        apu.tick_cpu_cycles(1);
+        assert!(!apu.frame_reset_pending);
+        assert_eq!(apu.frame_cycles, 1, "the sequencer resumes on the cycle after reset");
+        assert_eq!(apu.half_frame_cycles, 1);
+        assert_eq!(apu.quarter_frame_cycles, 1);
+    }
+
     #[test]
     fn reading_status_clears_frame_irq_without_disabling_the_sequencer() {
         let mut apu = Apu::new();
