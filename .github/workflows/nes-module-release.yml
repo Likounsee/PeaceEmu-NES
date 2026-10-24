@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: nes-module-development-release
+  cancel-in-progress: false
+
 jobs:
   windows-module:
     runs-on: windows-latest
