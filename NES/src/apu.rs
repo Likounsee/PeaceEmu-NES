@@ -459,7 +459,7 @@ mod tests {
     fn reading_status_clears_frame_irq_without_disabling_the_sequencer() {
         let mut apu = Apu::new();
         apu.write(0x4017, 0x00); // Four-step mode, frame IRQ enabled.
-        apu.tick_cpu_cycles(14_915);
+        apu.tick_cpu_cycles(14_919);
 
         assert_ne!(apu.read(0x4015) & 0x40, 0, "frame IRQ should be observable in $4015");
         assert_eq!(apu.read(0x4015) & 0x40, 0, "reading $4015 acknowledges frame IRQ");
@@ -470,7 +470,7 @@ mod tests {
     fn setting_frame_irq_inhibit_clears_a_pending_frame_irq() {
         let mut apu = Apu::new();
         apu.write(0x4017, 0x00);
-        apu.tick_cpu_cycles(14_915);
+        apu.tick_cpu_cycles(14_919);
         assert!(apu.irq_pending());
 
         apu.write(0x4017, 0x40); // Inhibit and acknowledge frame IRQ.
@@ -694,7 +694,7 @@ mod tests {
     fn five_step_mode_does_not_raise_frame_irq() {
         let mut apu = Apu::new();
         apu.write(0x4017, 0x80);
-        apu.tick_cpu_cycles(18_641);
+        apu.tick_cpu_cycles(18_645);
         assert!(!apu.frame_irq_pending());
     }
 
@@ -813,7 +813,7 @@ mod tests {
     fn enabling_frame_irq_inhibit_clears_an_already_pending_irq() {
         let mut apu = Apu::new();
         apu.write(0x4017, 0x00);
-        apu.tick_cpu_cycles(14_915);
+        apu.tick_cpu_cycles(14_919);
         assert!(apu.frame_irq_pending());
         apu.write(0x4017, 0x40);
         assert!(!apu.frame_irq_pending());
@@ -827,7 +827,7 @@ mod tests {
         apu.tick_cpu_cycles(18_641);
         assert!(!apu.frame_irq_pending(), "five-step mode must not assert frame IRQ");
         apu.write(0x4017, 0x00);
-        apu.tick_cpu_cycles(14_915);
+        apu.tick_cpu_cycles(14_919);
         assert!(apu.frame_irq_pending(), "four-step mode should resume frame IRQ generation");
     }
 
