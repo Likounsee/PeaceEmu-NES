@@ -2320,6 +2320,28 @@ mod mmc3_tests {
         assert_eq!(cart.cpu_read(0x6000), Some(0x64));
     }
 
+
+    #[test]
+    fn mapper_4_irq_latch_zero_reasserts_until_disabled_and_acknowledged() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        cart.cpu_write(0xC000, 0); // Latch zero.
+        cart.cpu_write(0xC001, 0); // Request reload on the next A12/scanline clock.
+        cart.cpu_write(0xE001, 0); // Enable IRQ.
+        assert!(!cart.irq_pending());
+        cart.clock_irq_counter();
+        assert!(cart.irq_pending(), "a zero latch asserts IRQ on the first counter clock");
+
+        cart.cpu_write(0xE001, 0);
+        assert!(cart.irq_pending(), "re-enabling does not acknowledge a pending IRQ");
+        cart.cpu_write(0xE000, 0);
+        assert!(!cart.irq_pending(), "the disable/acknowledge register clears the pending IRQ");
+        cart.clock_irq_counter();
+        assert!(!cart.irq_pending(), "a disabled counter cannot assert IRQ");
+        cart.cpu_write(0xE001, 0);
+        cart.clock_irq_counter();
+        assert!(cart.irq_pending(), "zero latch can assert again after re-enable and a new clock");
+    }
+
     #[test]
     fn mapper_4_four_screen_mirroring_cannot_be_overridden_by_register_write() {
         let mut image = mmc3_image(2, 1);

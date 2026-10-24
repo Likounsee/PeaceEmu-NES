@@ -486,4 +486,27 @@ mod tests {
         assert_eq!(bus.read(0x4016) & 0x20, 0, "bit 5 should retain the low open-bus value");
         assert_ne!(bus.read(0x4016) & 0x40, 0, "controller bit 6 is driven high");
     }
+    #[test]
+    fn reset_preserves_cartridge_ram_controller_levels_and_audio_rate_but_clears_pending_io() {
+        let mut image = vec![0; 16 + 16 * 1024];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0x6000, 0xA6);
+        bus.set_controller_state(0, 0x01);
+        bus.write(0x4014, 0x03);
+        assert!(bus.set_audio_sample_rate(48_000));
+
+        bus.reset();
+
+        assert_eq!(bus.read(0x6000), 0xA6, "reset must preserve cartridge RAM");
+        assert_eq!(bus.audio_sample_rate(), 48_000, "reset must preserve the host audio format");
+        assert_eq!(bus.take_oam_dma_request(), None, "reset must discard pending DMA");
+        assert_eq!(bus.ppu_position(), (261, 0), "PPU timing returns to pre-render");
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+        assert_eq!(bus.read(0x4016) & 1, 1, "live controller button levels survive reset");
+    }
+
 }
