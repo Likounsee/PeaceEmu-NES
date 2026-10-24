@@ -142,21 +142,16 @@ impl Ppu {
                 self.line_scroll_v = self.v;
             }
 
-            // Sprite-zero hit is a pixel-timed PPU event. Setting it only when the
-            // whole scanline is rendered at dot 256 makes games that split scrolling
-            // on this flag update their scroll far too late (often shifting tiles).
-            if (1..=256).contains(&self.dot)
-                && self.scanline < 240
-                && self.status & 0x40 == 0
-                && self.sprite_zero_hit_at((self.dot - 1) as usize, self.scanline as usize, cartridge)
-            {
-                self.status |= 0x40;
-            }
-
-            // Emit the background pixel at the current beam position. Rendering each
-            // pixel once prevents later register/palette writes from rewriting past pixels.
+            // Emit the background pixel before testing sprite zero, so hit detection
+            // uses the exact opacity/alignment of the pixel visible at this beam dot.
+            // Re-decoding the background independently here can disagree with the renderer.
             if (1..=256).contains(&self.dot) && self.scanline < 240 {
-                self.render_background_pixel((self.dot - 1) as usize, self.scanline as usize, cartridge);
+                let x = (self.dot - 1) as usize;
+                let y = self.scanline as usize;
+                self.render_background_pixel(x, y, cartridge);
+                if self.status & 0x40 == 0 && self.sprite_zero_hit_at(x, y, cartridge) {
+                    self.status |= 0x40;
+                }
             }
             if self.dot == 256 && self.scanline < 240 {
                 self.render_scanline(self.scanline as usize, cartridge);
@@ -234,24 +229,9 @@ impl Ppu {
             return false;
         }
 
-        let scroll_v = self.line_scroll_v;
-        let base_nt_x = ((scroll_v >> 10) & 1) as usize;
-        let nt_y = ((scroll_v >> 11) & 1) as usize;
-        let coarse_x = (scroll_v & 0x1F) as usize;
-        let coarse_y = ((scroll_v >> 5) & 0x1F) as usize;
-        let fine_y = ((scroll_v >> 12) & 7) as usize;
-        let scroll_x = coarse_x * 8 + self.fine_x as usize + x;
-        let tile_x = scroll_x / 8;
-        let nt_x = base_nt_x ^ ((tile_x / 32) & 1);
-        let nametable = 0x2000u16 + ((nt_y * 2 + nt_x) as u16) * 0x400;
-        let tile_col = tile_x % 32;
-        let tile = self.mem_read(nametable + (coarse_y * 32 + tile_col) as u16, cartridge) as u16;
-        let bg_table = if self.ctrl & 0x10 != 0 { 0x1000u16 } else { 0 };
-        let bg_addr = bg_table + tile * 16 + fine_y as u16;
-        let bg_bit = 7 - (scroll_x % 8);
-        let bg_pixel = ((self.mem_read(bg_addr, cartridge) >> bg_bit) & 1)
-            | (((self.mem_read(bg_addr + 8, cartridge) >> bg_bit) & 1) << 1);
-        if bg_pixel == 0 {
+        // Background opacity is taken from the pixel already emitted at this dot.
+        // This keeps sprite-zero hit in lockstep with fine-X, masking and scroll rendering.
+        if !self.background_opaque[y * 256 + x] {
             return false;
         }
 
