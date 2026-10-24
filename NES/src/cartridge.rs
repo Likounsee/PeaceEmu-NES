@@ -3032,16 +3032,16 @@ mod mmc3_chr_layout_regression_tests {
         data[4] = 2;
         data[6] = 0x40;
         let mut cart = Cartridge::parse(&data).unwrap();
-        cart.cpu_write(0x8000, 2);
-        cart.cpu_write(0x8001, 3);
+        cart.cpu_write(0x8000, 0); // R0 selects a paired 2 KiB window.
+        cart.cpu_write(0x8001, 2);
         assert!(cart.ppu_write(0x0000, 0xA1));
         assert_eq!(cart.ppu_read(0x0000), Some(0xA1));
-        cart.cpu_write(0x8001, 5);
+        cart.cpu_write(0x8001, 4);
         assert_eq!(cart.ppu_read(0x0000), Some(0));
         assert!(cart.ppu_write(0x0000, 0xB2));
-        cart.cpu_write(0x8001, 3);
+        cart.cpu_write(0x8001, 2);
         assert_eq!(cart.ppu_read(0x0000), Some(0xA1));
-        cart.cpu_write(0x8001, 5);
+        cart.cpu_write(0x8001, 4);
         assert_eq!(cart.ppu_read(0x0000), Some(0xB2));
     }
 }
