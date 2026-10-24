@@ -1568,4 +1568,33 @@ mod tests {
         }
     }
 
+    #[test]
+    fn unofficial_rmw_families_chain_shift_compare_and_arithmetic_flags() {
+        let (mut cpu, mut bus) = setup(&[
+            0xA9, 0xFF,       // LDA #$FF
+            0x07, 0x10,       // SLO $10
+            0x27, 0x11,       // RLA $11
+            0x47, 0x12,       // SRE $12
+            0x67, 0x13,       // RRA $13
+            0xC7, 0x14,       // DCP $14
+            0xE7, 0x15,       // ISC $15
+        ]);
+        bus.write(0x0010, 0x80);
+        bus.write(0x0011, 0x80);
+        bus.write(0x0012, 0x03);
+        bus.write(0x0013, 0x02);
+        bus.write(0x0014, 0x02);
+        bus.write(0x0015, 0x01);
+        for expected in [2, 5, 5, 5, 5, 5, 5] {
+            assert_eq!(cpu.step(&mut bus).unwrap().cycles, expected);
+        }
+        assert_eq!(bus.read(0x0010), 0x00);
+        assert_eq!(bus.read(0x0011), 0x01);
+        assert_eq!(bus.read(0x0012), 0x01);
+        assert_eq!(bus.read(0x0013), 0x81);
+        assert_eq!(bus.read(0x0014), 0x01);
+        assert_eq!(bus.read(0x0015), 0x02);
+        assert_ne!(cpu.state().status & flags::UNUSED, 0);
+    }
+
 }
