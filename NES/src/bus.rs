@@ -27,6 +27,21 @@ impl Default for CpuBus {
 impl CpuBus {
     /// Creates a bus without a cartridge.
     pub fn new() -> Self { Self::default() }
+
+    /// Resets volatile device state while preserving CPU RAM and the inserted cartridge.
+    ///
+    /// Controller button levels and the configured host audio sample rate are retained;
+    /// controller serial latches, pending DMA, PPU timing, and APU state are reset.
+    pub fn reset(&mut self) {
+        let sample_rate = self.apu.sample_rate();
+        self.open_bus = 0;
+        self.ppu = Ppu::new();
+        self.apu = Apu::new();
+        let _ = self.apu.set_sample_rate(sample_rate);
+        self.pending_oam_dma = None;
+        self.controller_shift = [0; 2];
+        self.controller_strobe = false;
+    }
     /// Attaches a parsed cartridge.
     pub fn insert_cartridge(&mut self, cartridge: Cartridge) { self.cartridge = Some(cartridge); }
     /// Reads a byte from the CPU address space.
