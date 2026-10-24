@@ -147,7 +147,7 @@ impl Ppu {
                 continue;
             }
             self.dot += 1;
-            self.update_mapper_a12_bus();
+            self.update_mapper_a12_bus(cartridge);
 
             // Latch the scroll address at the start of each visible scanline. The
             // live v register is changed by coarse-X fetches and the dot-256 Y increment,
@@ -227,7 +227,7 @@ impl Ppu {
     }
 
     /// Tracks mapper-visible A12 transitions at scheduled pattern-fetch slots.
-    fn update_mapper_a12_bus(&mut self) {
+    fn update_mapper_a12_bus(&mut self, cartridge: Option<&Cartridge>) {
         if self.mask & 0x18 == 0 || !(self.scanline < 240 || self.scanline == 261) {
             if self.mapper_a12_high {
                 self.mapper_a12_high = false;
@@ -236,19 +236,34 @@ impl Ppu {
             return;
         }
         let dot = self.dot;
-        let mut high = false;
+        let mut address = 0u16;
         if (1..=256).contains(&dot) || (321..=336).contains(&dot) {
             let phase = (dot - 1) & 7;
-            if (4..=7).contains(&phase) { high = self.ctrl & 0x10 != 0; }
+            if (4..=7).contains(&phase) {
+                // The fetched tile number also contributes to CHR A12.
+                let tile_address = 0x2000 | (self.v & 0x0FFF);
+                let tile = self.mem_read(tile_address, cartridge) as u16;
+                let fine_y = (self.v >> 12) & 7;
+                let pattern_base = if self.ctrl & 0x10 != 0 { 0x1000 } else { 0 };
+                address = pattern_base + tile * 16 + fine_y;
+            }
         } else if (257..=320).contains(&dot) {
             let phase = (dot - 257) & 7;
             if (4..=7).contains(&phase) {
-                if self.ctrl & 0x20 != 0 {
-                    let sprite = ((dot - 257) / 8) as usize;
-                    high = self.oam[sprite * 4 + 1] & 1 != 0;
-                } else { high = self.ctrl & 0x08 != 0; }
+                let sprite = ((dot - 257) / 8) as usize;
+                let base = sprite * 4;
+                let top = (self.oam[base] as usize + 1) & 0xFF;
+                let target_y = if self.scanline == 261 { 0 } else { self.scanline as usize + 1 };
+                let row = target_y.wrapping_sub(top);
+                let height = if self.ctrl & 0x20 != 0 { 16 } else { 8 };
+                if row < height {
+                    address = self.sprite_pattern_address(self.oam[base + 1] as usize, self.oam[base + 2], row);
+                } else if self.ctrl & 0x20 == 0 {
+                    address = if self.ctrl & 0x08 != 0 { 0x1000 } else { 0 };
+                }
             }
         }
+        let high = address & 0x1000 != 0;
         if high != self.mapper_a12_high {
             self.mapper_a12_high = high;
             self.mapper_bus_events.push((if high { 0x1000 } else { 0 }, self.ppu_cycle));
@@ -838,6 +853,23 @@ mod tests {
         assert_eq!(events, vec![(0x1000, 5), (0x0000, 9)]);
         ppu.tick(4);
         assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 13)]);
+    }
+
+    #[test]
+    fn mapper_a12_tracks_tile_number_bits_not_only_the_pattern_table_select() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.mask = 0x08;
+        ppu.ctrl = 0;
+        ppu.nametables[0] = 0x80;
+        ppu.tick(5);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 5)]);
+        ppu.dot = 8;
+        ppu.ppu_cycle = 8;
+        ppu.nametables[1] = 0;
+        ppu.v = 1;
+        ppu.tick(1);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 9)]);
     }
 
     #[test]

@@ -3026,6 +3026,26 @@ mod mmc3_chr_layout_regression_tests {
     }
 
     #[test]
+    fn mmc3_irq_latch_reload_and_disable_acknowledge_are_independent() {
+        let mut cart = Cartridge::parse(&image()).unwrap();
+        cart.cpu_write(0xC000, 1);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+        cart.observe_ppu_address(0x0000, 10);
+        cart.observe_ppu_address(0x1000, 18);
+        assert!(!cart.irq_pending());
+        cart.observe_ppu_address(0x0000, 19);
+        cart.observe_ppu_address(0x1000, 27);
+        assert!(cart.irq_pending());
+        cart.cpu_write(0xE000, 0);
+        assert!(!cart.irq_pending());
+        cart.cpu_write(0xE001, 0);
+        cart.observe_ppu_address(0x0000, 28);
+        cart.observe_ppu_address(0x1000, 36);
+        assert!(cart.irq_pending());
+    }
+
+    #[test]
     fn mmc3_chr_ram_writes_follow_the_current_bank_mapping() {
         let mut data = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
         data[0..4].copy_from_slice(b"NES\x1A");

@@ -1075,6 +1075,21 @@ mod pcm_output_tests {
     }
 
     #[test]
+    fn dmc_address_wraps_from_ffff_to_8000_after_a_sample_fetch() {
+        let mut apu = Apu::new();
+        apu.write(0x4010, 0x00);
+        apu.write(0x4012, 0xFF);
+        apu.write(0x4013, 0xFF);
+        apu.write(0x4015, 0x10);
+        apu.dmc_current_address = 0xFFFF;
+        apu.dmc_bytes_remaining = 2;
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xFFFF));
+        apu.supply_dmc_byte(0x12);
+        assert_eq!(apu.dmc_current_address, 0x8000);
+        assert_eq!(apu.dmc_bytes_remaining, 1);
+    }
+
+    #[test]
     fn invalid_pcm_rate_does_not_change_active_rate_or_queued_samples() {
         let mut apu = Apu::new();
         assert!(apu.set_sample_rate(48_000));
