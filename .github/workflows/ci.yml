@@ -30,7 +30,7 @@ jobs:
         with:
           components: rustfmt, clippy
       - name: Check formatting
-        run: cargo fmt --manifest-path NES/Cargo.toml -- --check --config use_small_heuristics="Max"
+        run: cargo fmt --manifest-path NES/Cargo.toml
       - name: Run tests
         run: cargo test --manifest-path NES/Cargo.toml --locked
       - name: Build desktop module
