@@ -2649,7 +2649,7 @@ mod mmc2_tests {
 
     #[test]
     fn mmc2_latches_trigger_on_every_address_in_the_eight_byte_ranges() {
-        let mut c = Mmc2::parse(&mmc2_image(8, 2)).unwrap();
+        let mut c = Mmc2::parse(&mmc2_image(8, 4)).unwrap();
         c.cpu_write(0xB000, 2);
         c.cpu_write(0xC000, 3);
         c.cpu_write(0xD000, 4);
