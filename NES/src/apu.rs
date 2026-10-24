@@ -506,7 +506,8 @@ mod tests {
         assert!(apu.frame_reset_pending);
         assert!(!apu.pending_five_step_mode);
         assert_eq!(apu.frame_reset_delay, if apu.cpu_cycle_odd { 3 } else { 4 });
-        apu.tick_cpu_cycles(u32::from(apu.frame_reset_delay));
+        let delay = u32::from(apu.frame_reset_delay);
+        apu.tick_cpu_cycles(delay);
         assert!(!apu.five_step_mode, "the most recent write wins");
         assert!(!apu.frame_reset_pending);
     }
