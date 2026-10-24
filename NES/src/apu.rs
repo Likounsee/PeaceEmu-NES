@@ -485,6 +485,23 @@ mod tests {
     }
 
     #[test]
+    fn frame_counter_reset_occurs_on_exact_final_delay_cycle() {
+        let mut apu = Apu::new();
+        apu.frame_cycles = 321;
+        apu.write(0x4017, 0x80);
+        let delay = u32::from(apu.frame_reset_delay);
+
+        apu.tick_cpu_cycles(delay - 1);
+        assert!(apu.frame_reset_pending);
+        assert_eq!(apu.frame_cycles, 321, "phase must not reset early");
+
+        apu.tick_cpu_cycles(1);
+        assert!(!apu.frame_reset_pending);
+        assert!(apu.five_step_mode);
+        assert_eq!(apu.frame_cycles, 0, "phase resets on the final delay cycle");
+    }
+
+    #[test]
     fn frame_irq_inhibit_clears_irq_before_delayed_sequencer_reset() {
         let mut apu = Apu::new();
         apu.frame_irq = true;
