@@ -2,6 +2,7 @@
 //!
 //! Run with: cargo run --release --bin peaceemu-nes-desktop -- path\to\game.nes
 #![allow(unsafe_code)]
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 #[cfg(not(windows))]
 fn main() {
@@ -123,6 +124,7 @@ mod win {
         fn GetAsyncKeyState(key: i32) -> i16;
         fn GetForegroundWindow() -> Hwnd;
         fn AdjustWindowRect(rect: *mut Rect, style: u32, menu: Bool) -> Bool;
+        fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, kind: u32) -> i32;
     }
     #[link(name = "gdi32")]
     extern "system" {
@@ -295,6 +297,17 @@ mod win {
         }
     }
 
+    /// Displays startup/runtime errors without opening a transient console window.
+    pub fn report_error(error: &str) {
+        let message: Vec<u16> = format!("Impossible de lancer le jeu NES : {error}\0")
+            .encode_utf16()
+            .collect();
+        let title: Vec<u16> = "PeaceEmu NES — erreur\0".encode_utf16().collect();
+        unsafe {
+            MessageBoxW(null_mut(), message.as_ptr(), title.as_ptr(), 0x0000_0010);
+        }
+    }
+
     pub fn run() -> Result<(), String> {
         let mut args = std::env::args_os().skip(1);
         let path = args.next().ok_or_else(|| {
@@ -460,7 +473,7 @@ mod win {
 #[cfg(windows)]
 fn main() {
     if let Err(error) = win::run() {
-        eprintln!("{error}");
+        win::report_error(&error);
         std::process::exit(1);
     }
 }
