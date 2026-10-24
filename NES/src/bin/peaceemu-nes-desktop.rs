@@ -259,7 +259,7 @@ mod win {
         fn reap_completed(&mut self) -> Result<(), String> {
             let header_size = size_of::<WaveHdr>() as u32;
             while self.queued.front().is_some_and(|buffer| {
-                unsafe { std::ptr::read_volatile(&buffer.header.flags) } & WHDR_DONE != 0
+                (unsafe { std::ptr::read_volatile(&buffer.header.flags) }) & WHDR_DONE != 0
             }) {
                 let mut buffer = self.queued.pop_front().expect("front was checked");
                 let result = unsafe { waveOutUnprepareHeader(self.handle, &mut buffer.header, header_size) };
