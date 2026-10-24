@@ -29,7 +29,6 @@ pub struct Ppu {
     frame_fine_x: u8,
     frame_scroll_valid: bool,
     line_scroll_v: u16,
-    line_fine_x: u8,
     nmi_pending: bool,
     nmi_line: bool,
     suppress_vblank: bool,
@@ -45,7 +44,7 @@ impl Default for Ppu {
             nametables: [0; 4096], palette: [0; 32], v: 0, t: 0,
             fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
             scanline: 261, dot: 0, odd_frame: false, frame_scroll_v: 0, frame_fine_x: 0,
-            frame_scroll_valid: false, line_scroll_v: 0, line_fine_x: 0,
+            frame_scroll_valid: false, line_scroll_v: 0,
             nmi_pending: false, nmi_line: false, suppress_vblank: false,
             framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
         }
@@ -141,7 +140,6 @@ impl Ppu {
             // so using it at the end of the line would shift the row being rendered.
             if self.dot == 1 && self.scanline < 240 {
                 self.line_scroll_v = self.v;
-                self.line_fine_x = self.fine_x;
             }
 
             // Sprite-zero hit is a pixel-timed PPU event. Setting it only when the
@@ -242,7 +240,7 @@ impl Ppu {
         let coarse_x = (scroll_v & 0x1F) as usize;
         let coarse_y = ((scroll_v >> 5) & 0x1F) as usize;
         let fine_y = ((scroll_v >> 12) & 7) as usize;
-        let scroll_x = coarse_x * 8 + self.line_fine_x as usize + x;
+        let scroll_x = coarse_x * 8 + self.fine_x as usize + x;
         let tile_x = scroll_x / 8;
         let nt_x = base_nt_x ^ ((tile_x / 32) & 1);
         let nametable = 0x2000u16 + ((nt_y * 2 + nt_x) as u16) * 0x400;
@@ -291,7 +289,7 @@ impl Ppu {
         }
 
         let scroll_v = self.line_scroll_v;
-        let fine_x = self.line_fine_x as usize;
+        let fine_x = self.fine_x as usize;
         let base_nt_x = ((scroll_v >> 10) & 1) as usize;
         let nt_y = ((scroll_v >> 11) & 1) as usize;
         let base_coarse_x = (scroll_v & 0x1F) as usize;
@@ -982,6 +980,28 @@ mod tests {
 
         assert!(ppu.framebuffer()[0..4].iter().all(|&pixel| pixel == 0x21));
         assert_eq!(ppu.framebuffer()[4], 0x22);
+    }
+
+    #[test]
+    fn fine_x_scroll_write_affects_only_pixels_not_yet_emitted() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x0A;
+        ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x0001, 0x40, Some(&mut cartridge));
+        ppu.palette[1] = 0x21;
+
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+        ppu.fine_x = 1;
+        ppu.tick_with_cartridge(255, Some(&cartridge));
+
+        assert_eq!(ppu.framebuffer()[0], 0x21, "the first pixel keeps the old fine-X alignment");
+        assert_eq!(ppu.framebuffer()[1], 0x21, "later pixels use the updated fine-X alignment");
     }
 
     #[test]
