@@ -1440,6 +1440,42 @@ mod tests {
     }
 
     #[test]
+    fn palette_addresses_mirror_universal_background_entries() {
+        for (address, expected) in [
+            (0x3F00, 0x00),
+            (0x3F10, 0x00),
+            (0x3F14, 0x04),
+            (0x3F18, 0x08),
+            (0x3F1C, 0x0C),
+            (0x3F20, 0x00),
+        ] {
+            assert_eq!(Ppu::palette_index(address), expected);
+        }
+    }
+
+    #[test]
+    fn nametable_address_range_above_3000_mirrors_the_first_three_kib() {
+        for mirroring in [Mirroring::Horizontal, Mirroring::Vertical, Mirroring::OneScreenLower, Mirroring::OneScreenUpper] {
+            for offset in [0x000u16, 0x123, 0x3FF] {
+                assert_eq!(
+                    Ppu::nametable_index(0x3000 + offset, mirroring),
+                    Ppu::nametable_index(0x2000 + offset, mirroring)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn grayscale_mask_limits_palette_output_to_two_high_bits() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x01;
+        assert_eq!(ppu.output_color(0x2F), 0x20);
+        assert_eq!(ppu.output_color(0x3C), 0x30);
+        ppu.mask = 0;
+        assert_eq!(ppu.output_color(0x2F), 0x2F);
+    }
+
+    #[test]
     fn snapshot_scroll_uses_hardware_coarse_y_rollover_rules() {
         assert_eq!(Ppu::scroll_coarse_y(29, 0, 1), (0, 1));
         assert_eq!(Ppu::scroll_coarse_y(31, 0, 1), (0, 0));

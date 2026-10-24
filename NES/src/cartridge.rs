@@ -2294,6 +2294,63 @@ mod mmc3_tests {
     }
 
     #[test]
+    fn mapper_4_irq_latch_reload_zero_and_acknowledge_behave_independently() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+
+        // A zero latch requests an IRQ on the next counter clock after enabling.
+        cart.cpu_write(0xC000, 0);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+        cart.clock_irq_counter();
+        assert!(cart.irq_pending());
+
+        // Disabling IRQ clears the pending line; re-enabling does not recreate it
+        // until a subsequent counter clock.
+        cart.cpu_write(0xE000, 0);
+        assert!(!cart.irq_pending());
+        cart.cpu_write(0xE001, 0);
+        assert!(!cart.irq_pending());
+        cart.clock_irq_counter();
+        assert!(cart.irq_pending());
+    }
+
+    #[test]
+    fn mapper_4_prg_bank_select_keeps_fixed_windows_in_both_modes() {
+        let mut cart = Cartridge::parse(&mmc3_image(4, 1)).unwrap();
+        cart.cpu_write(0x8000, 6);
+        cart.cpu_write(0x8001, 2);
+        assert_eq!(cart.cpu_read(0x8000), Some(2));
+        assert_eq!(cart.cpu_read(0xC000), Some(6));
+        assert_eq!(cart.cpu_read(0xE000), Some(7));
+
+        cart.cpu_write(0x8000, 0x46);
+        assert_eq!(cart.cpu_read(0x8000), Some(6));
+        assert_eq!(cart.cpu_read(0xC000), Some(2));
+        assert_eq!(cart.cpu_read(0xE000), Some(7));
+
+        // R6 is six bits wide and wraps safely when a board exposes fewer banks.
+        cart.cpu_write(0x8000, 6);
+        cart.cpu_write(0x8001, 0x3F);
+        assert_eq!(cart.cpu_read(0x8000), Some(7));
+    }
+
+    #[test]
+    fn mapper_4_chr_mode_switch_preserves_all_eight_kib_windows() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 4)).unwrap();
+        cart.cpu_write(0x8000, 0);
+        cart.cpu_write(0x8001, 4); // R0 maps an aligned pair (banks 4 and 5).
+        assert_eq!(cart.ppu_read(0x0000), Some(0x44));
+        assert_eq!(cart.ppu_read(0x0400), Some(0x45));
+
+        cart.cpu_write(0x8000, 0x80); // CHR inversion puts R2-R5 in the first 4 KiB.
+        cart.cpu_write(0x8000, 2);
+        cart.cpu_write(0x8001, 7);
+        assert_eq!(cart.ppu_read(0x0000), Some(0x47));
+        assert_eq!(cart.ppu_read(0x0400), Some(0x44));
+        assert_eq!(cart.ppu_read(0x1000), Some(0x44));
+    }
+
+    #[test]
     fn mapper_4_preserves_hardwired_four_screen_mirroring() {
         let mut image = mmc3_image(2, 1);
         image[6] |= 0x08;

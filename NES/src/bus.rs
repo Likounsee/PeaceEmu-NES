@@ -411,6 +411,27 @@ mod tests {
 
 
     #[test]
+    fn oam_dma_request_tracks_the_latest_page_and_is_consumed_once() {
+        let mut bus = CpuBus::new();
+        bus.write(0x4014, 0x02);
+        bus.write(0x4014, 0x7F);
+        assert_eq!(bus.take_oam_dma_request(), Some(0x7F));
+        assert_eq!(bus.take_oam_dma_request(), None);
+    }
+
+    #[test]
+    fn controller_serial_reads_shift_in_ones_after_eight_buttons() {
+        let mut bus = CpuBus::new();
+        bus.set_controller_state(0, 0b1010_0101);
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+        let bits: Vec<u8> = (0..8).map(|_| bus.read(0x4016) & 1).collect();
+        assert_eq!(bits, vec![1, 0, 1, 0, 0, 1, 0, 1]);
+        assert_eq!(bus.read(0x4016) & 1, 1, "controller reads return 1 after the eight latched buttons");
+        assert_eq!(bus.read(0x4016) & 1, 1, "post-button reads remain high");
+    }
+
+    #[test]
     fn controller_reads_preserve_cpu_open_bus_bit_five() {
         let mut bus = CpuBus::new();
         bus.set_controller_state(0, 0);
