@@ -2404,6 +2404,36 @@ mod mmc3_tests {
         assert!(cart.irq_pending(), "second qualified edge clocks the counter to zero");
     }
 
+
+    #[test]
+    fn mapper_4_prg_mode_swaps_r6_and_fixed_second_last_bank() {
+        let mut cart = Cartridge::parse(&mmc3_image(4, 1)).unwrap();
+        cart.cpu_write(0x8000, 0x06);
+        cart.cpu_write(0x8001, 1);
+        assert_eq!(cart.cpu_read(0x8000), Some(1));
+        assert_eq!(cart.cpu_read(0xC000), Some(6));
+
+        cart.cpu_write(0x8000, 0x46); // PRG mode 1.
+        assert_eq!(cart.cpu_read(0x8000), Some(6), "mode 1 fixes the first slot to second-last bank");
+        assert_eq!(cart.cpu_read(0xC000), Some(1), "mode 1 moves R6 to the third slot");
+        assert_eq!(cart.cpu_read(0xE000), Some(7), "last 8 KiB bank remains fixed in both modes");
+    }
+
+    #[test]
+    fn mapper_4_a12_edges_do_not_clock_when_irq_is_disabled() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        cart.cpu_write(0xC000, 0);
+        cart.cpu_write(0xC001, 0);
+        cart.observe_ppu_address(0x0000, 0);
+        cart.observe_ppu_address(0x1000, 8);
+        assert!(!cart.irq_pending());
+
+        cart.cpu_write(0xE001, 0);
+        cart.observe_ppu_address(0x0000, 9);
+        cart.observe_ppu_address(0x1000, 17);
+        assert!(cart.irq_pending(), "a subsequent qualified edge clocks the enabled counter");
+    }
+
     #[test]
     fn mapper_4_prg_ram_enable_and_write_protect_bits_are_independent() {
         let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
