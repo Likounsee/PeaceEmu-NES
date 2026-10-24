@@ -1664,7 +1664,7 @@ impl Cartridge {
     #[test]
     fn mmc1_surom_chr_ram_high_bit_selects_outer_prg_half() {
         let mut image = vec![0; INES_HEADER_LEN + 32 * PRG_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 32;
         image[6] = 0x10; // MMC1 with CHR-RAM.
         for bank in 0..32usize {
