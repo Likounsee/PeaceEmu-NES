@@ -1,0 +1,39 @@
+name: NES module CI
+
+on:
+  push:
+    branches: [NES]
+  pull_request:
+    branches: [NES]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nes-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust checks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --manifest-path NES/Cargo.toml -- --check
+      - name: Run tests
+        run: cargo test --manifest-path NES/Cargo.toml --locked
+      - name: Build desktop module
+        run: cargo build --manifest-path NES/Cargo.toml --bin peaceemu-nes-desktop --release --locked
+      - name: Run Clippy
+        run: cargo clippy --manifest-path NES/Cargo.toml --all-targets --locked -- -D warnings
