@@ -498,7 +498,7 @@ mod tests {
         apu.tick_cpu_cycles(1);
         assert!(!apu.frame_reset_pending);
         assert!(apu.five_step_mode);
-        assert_eq!(apu.frame_cycles, 0, "phase resets on the final delay cycle");
+        assert_eq!(apu.frame_cycles, 1, "the sequencer resumes on the cycle after reset");
     }
 
     #[test]
