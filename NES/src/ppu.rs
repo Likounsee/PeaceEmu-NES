@@ -811,6 +811,35 @@ mod tests {
         assert_eq!(ppu.v & 0x041F, 0x0400, "coarse X wraps and toggles horizontal nametable bit");
     }
 
+
+    #[test]
+    fn mapper_a12_events_follow_pattern_fetch_slots_and_use_monotonic_dot_timestamps() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.ctrl = 0x10; // Background pattern table at $1000.
+        ppu.mask = 0x08; // Background rendering enabled.
+        ppu.tick(10);
+        let events = ppu.take_mapper_bus_events();
+        assert_eq!(events, vec![(0x1000, 5), (0x0000, 9)]);
+        ppu.tick(4);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 13)]);
+    }
+
+    #[test]
+    fn mapper_a12_is_forced_low_when_rendering_is_disabled() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.ctrl = 0x10;
+        ppu.mask = 0x08;
+        ppu.tick(5);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 5)]);
+
+        ppu.mask = 0;
+        ppu.tick(1);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x0000, 6)]);
+    }
+
     #[test]
     fn rendering_pipeline_fetches_next_tiles_at_dots_328_and_336() {
         let mut ppu = Ppu::new();
