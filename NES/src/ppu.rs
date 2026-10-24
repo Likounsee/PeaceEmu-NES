@@ -144,6 +144,17 @@ impl Ppu {
                 self.line_fine_x = self.fine_x;
             }
 
+            // Sprite-zero hit is a pixel-timed PPU event. Setting it only when the
+            // whole scanline is rendered at dot 256 makes games that split scrolling
+            // on this flag update their scroll far too late (often shifting tiles).
+            if (1..=256).contains(&self.dot)
+                && self.scanline < 240
+                && self.status & 0x40 == 0
+                && self.sprite_zero_hit_at((self.dot - 1) as usize, self.scanline as usize, cartridge)
+            {
+                self.status |= 0x40;
+            }
+
             // Build the visible output as the emulated beam advances. Rendering a
             // blank line while both layers are disabled also prevents stale pixels from
             // a previous frame when a game toggles rendering during gameplay.
@@ -199,6 +210,67 @@ impl Ppu {
             }
         }
         crossed_scanlines
+    }
+
+    /// Checks sprite-zero/background opacity for one beam pixel.
+    ///
+    /// This is deliberately separate from scanline composition: games such as SMB poll
+    /// the hit flag mid-scanline and immediately change scroll registers. The flag must
+    /// become visible at the overlapping pixel, not after dot 256.
+    fn sprite_zero_hit_at(&self, x: usize, y: usize, cartridge: Option<&Cartridge>) -> bool {
+        if x >= 255 || self.mask & 0x18 != 0x18
+            || (x < 8 && self.mask & 0x06 != 0x06)
+        {
+            return false;
+        }
+
+        let sprite_top = (self.oam[0] as usize + 1) & 0xFF;
+        let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
+        if y < sprite_top || y >= sprite_top + height {
+            return false;
+        }
+        let sprite_left = self.oam[3] as usize;
+        if x < sprite_left || x >= sprite_left + 8 {
+            return false;
+        }
+
+        let scroll_v = self.line_scroll_v;
+        let base_nt_x = ((scroll_v >> 10) & 1) as usize;
+        let nt_y = ((scroll_v >> 11) & 1) as usize;
+        let coarse_x = (scroll_v & 0x1F) as usize;
+        let coarse_y = ((scroll_v >> 5) & 0x1F) as usize;
+        let fine_y = ((scroll_v >> 12) & 7) as usize;
+        let scroll_x = coarse_x * 8 + self.line_fine_x as usize + x;
+        let tile_x = scroll_x / 8;
+        let nt_x = base_nt_x ^ ((tile_x / 32) & 1);
+        let nametable = 0x2000u16 + ((nt_y * 2 + nt_x) as u16) * 0x400;
+        let tile_col = tile_x % 32;
+        let tile = self.mem_read(nametable + (coarse_y * 32 + tile_col) as u16, cartridge) as u16;
+        let bg_table = if self.ctrl & 0x10 != 0 { 0x1000u16 } else { 0 };
+        let bg_addr = bg_table + tile * 16 + fine_y as u16;
+        let bg_bit = 7 - (scroll_x % 8);
+        let bg_pixel = ((self.mem_read(bg_addr, cartridge) >> bg_bit) & 1)
+            | (((self.mem_read(bg_addr + 8, cartridge) >> bg_bit) & 1) << 1);
+        if bg_pixel == 0 {
+            return false;
+        }
+
+        let attributes = self.oam[2];
+        let row_in_sprite = y - sprite_top;
+        let source_y = if attributes & 0x80 != 0 { height - 1 - row_in_sprite } else { row_in_sprite };
+        let tile_index = self.oam[1] as usize;
+        let (sprite_table, sprite_tile, sprite_row) = if height == 16 {
+            (if tile_index & 1 != 0 { 0x1000u16 } else { 0 },
+             (tile_index & 0xFE) + source_y / 8, source_y % 8)
+        } else {
+            (if self.ctrl & 0x08 != 0 { 0x1000u16 } else { 0 }, tile_index, source_y)
+        };
+        let sprite_addr = sprite_table + (sprite_tile * 16 + sprite_row) as u16;
+        let sprite_x = x - sprite_left;
+        let sprite_bit = if attributes & 0x40 != 0 { sprite_x } else { 7 - sprite_x };
+        let sprite_pixel = ((self.mem_read(sprite_addr, cartridge) >> sprite_bit) & 1)
+            | (((self.mem_read(sprite_addr + 8, cartridge) >> sprite_bit) & 1) << 1);
+        sprite_pixel != 0
     }
 
     /// Renders one visible scanline as the PPU reaches dot 256. This lets software
@@ -281,11 +353,6 @@ impl Ppu {
                 let bit = if attr & 0x40 != 0 { sx } else { 7 - sx };
                 let pixel = ((low >> bit) & 1) | (((high >> bit) & 1) << 1);
                 if pixel == 0 { continue; }
-                if sprite == 0 && bg_enabled && self.background_opaque[y * 256 + x] && x < 255
-                    && (x >= 8 || (show_bg_left && show_sprites_left))
-                {
-                    self.status |= 0x40;
-                }
                 if claimed[x] { continue; }
                 claimed[x] = true;
                 if attr & 0x20 == 0 || !self.background_opaque[y * 256 + x] {
