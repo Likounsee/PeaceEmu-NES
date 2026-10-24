@@ -1007,4 +1007,32 @@ mod pcm_output_tests {
         let samples = apu.drain_audio_samples();
         assert_eq!(samples.len(), AUDIO_QUEUE_LIMIT);
     }
+    #[test]
+    fn dmc_loop_restarts_sample_without_raising_terminal_irq() {
+        let mut apu = Apu::new();
+        apu.write(0x4010, 0x40); // Loop enabled, IRQ disabled.
+        apu.write(0x4012, 0x00); // Start at $C000.
+        apu.write(0x4013, 0x00); // One-byte sample.
+        apu.write(0x4015, 0x10);
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xC000));
+        apu.supply_dmc_byte(0xA5);
+        assert_eq!(apu.dmc_bytes_remaining, 1, "loop mode immediately reloads the one-byte sample length");
+        assert_eq!(apu.dmc_current_address, 0xC000, "loop mode restarts from the configured sample address");
+        assert!(!apu.dmc_irq, "loop mode without IRQ enable must not raise DMC IRQ");
+        apu.dmc_sample_buffer = None;
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xC000));
+    }
+
+    #[test]
+    fn invalid_pcm_rate_does_not_change_active_rate_or_queued_samples() {
+        let mut apu = Apu::new();
+        assert!(apu.set_sample_rate(48_000));
+        apu.tick_cpu_cycles(2_000);
+        let queued = apu.audio_samples.len();
+        assert!(queued > 0);
+        assert!(!apu.set_sample_rate(7_999));
+        assert_eq!(apu.sample_rate(), 48_000);
+        assert_eq!(apu.audio_samples.len(), queued, "rejected rate must not clear queued PCM");
+    }
+
 }
