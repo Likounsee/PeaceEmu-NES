@@ -549,7 +549,7 @@ impl Axrom {
             | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
         if mapper != 7 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
         let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if image[4] < 2 || image[4] > 16 || !image[4].is_multiple_of(2) {
+        if image[4] < 2 || image[4] > 16 || image[4] % 2 != 0 {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         let chr_len = image[5] as usize * CHR_BANK_LEN;
@@ -643,7 +643,7 @@ impl Gxrom {
         if mapper != 66 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
 
         let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if image[4] < 2 || !image[4].is_multiple_of(2) || prg_len > 4 * 2 * PRG_BANK_LEN {
+        if image[4] < 2 || image[4] % 2 != 0 || prg_len > 4 * 2 * PRG_BANK_LEN {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         let chr_len = image[5] as usize * CHR_BANK_LEN;
@@ -733,7 +733,7 @@ impl Mmc3 {
         let mapper = ((image[6] >> 4) as u16) | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
         if mapper != 4 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
         let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if image[4] < 2 || !image[4].is_multiple_of(2) || prg_len > 32 * PRG_BANK_LEN {
+        if image[4] < 2 || image[4] % 2 != 0 || prg_len > 32 * PRG_BANK_LEN {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         let chr_len = image[5] as usize * CHR_BANK_LEN;
@@ -843,7 +843,7 @@ impl Bnrom {
             | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
         if mapper != 34 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
         let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if !(2..=8).contains(&image[4]) || !image[4].is_multiple_of(2) {
+        if !(2..=8).contains(&image[4]) || image[4] % 2 != 0 {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         let chr_len = image[5] as usize * CHR_BANK_LEN;
@@ -1031,7 +1031,7 @@ impl ColorDreams {
             | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
         if mapper != 11 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
         let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if image[4] < 2 || !image[4].is_multiple_of(2) || image[4] > 32 {
+        if image[4] < 2 || image[4] % 2 != 0 || image[4] > 32 {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         let chr_len = image[5] as usize * CHR_BANK_LEN;
@@ -1418,7 +1418,7 @@ impl Mapper15 {
             | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
         if mapper != 15 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
         let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if image[4] < 2 || !image[4].is_multiple_of(2) || prg_len > 64 * PRG_BANK_LEN {
+        if image[4] < 2 || image[4] % 2 != 0 || prg_len > 64 * PRG_BANK_LEN {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         if image[5] != 0 { return Err(CartridgeError::InvalidChrSize(image[5] as usize * CHR_BANK_LEN)); }
