@@ -296,6 +296,35 @@ mod tests {
     }
 
     #[test]
+    fn oam_dma_copies_all_256_bytes_and_wraps_from_current_oam_address() {
+        let mut bus = CpuBus::new();
+        for offset in 0..=u8::MAX {
+            bus.write(0x0200 | u16::from(offset), offset.wrapping_mul(3));
+        }
+        bus.write(0x2003, 0x80);
+        bus.transfer_oam_dma(0x02);
+
+        for destination in 0..=u8::MAX {
+            bus.write(0x2003, destination);
+            let source_offset = destination.wrapping_sub(0x80);
+            assert_eq!(bus.read(0x2004), source_offset.wrapping_mul(3));
+        }
+    }
+
+    #[test]
+    fn reset_discards_pending_oam_dma_but_keeps_the_cartridge_attached() {
+        let mut bus = CpuBus::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0x4014, 0x03);
+        bus.reset();
+        assert_eq!(bus.take_oam_dma_request(), None);
+        assert!(bus.has_cartridge());
+    }
+
+    #[test]
     fn second_controller_has_an_independent_shift_register() {
         let mut bus = CpuBus::new();
         bus.set_controller_state(0, 0b0000_0001);

@@ -2294,6 +2294,43 @@ mod mmc3_tests {
     }
 
     #[test]
+    fn mapper_4_prg_ram_disable_and_write_protect_are_independent() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+
+        cart.cpu_write(0x6000, 0x31);
+        assert_eq!(cart.cpu_read(0x6000), Some(0x31));
+
+        // Bit 7 disables reads and writes; a disabled read is unmapped.
+        cart.cpu_write(0xA001, 0x00);
+        assert_eq!(cart.cpu_read(0x6000), None);
+        cart.cpu_write(0x6000, 0x42);
+        cart.cpu_write(0xA001, 0x80);
+        assert_eq!(cart.cpu_read(0x6000), Some(0x31));
+
+        // Bit 6 protects writes while leaving reads enabled.
+        cart.cpu_write(0xA001, 0xC0);
+        assert_eq!(cart.cpu_read(0x6000), Some(0x31));
+        cart.cpu_write(0x6000, 0x53);
+        assert_eq!(cart.cpu_read(0x6000), Some(0x31));
+
+        cart.cpu_write(0xA001, 0x80);
+        cart.cpu_write(0x6000, 0x64);
+        assert_eq!(cart.cpu_read(0x6000), Some(0x64));
+    }
+
+    #[test]
+    fn mapper_4_four_screen_mirroring_cannot_be_overridden_by_register_write() {
+        let mut image = mmc3_image(2, 1);
+        image[6] |= 0x08;
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.mirroring(), Mirroring::FourScreen);
+        cart.cpu_write(0xA000, 0);
+        assert_eq!(cart.mirroring(), Mirroring::FourScreen);
+        cart.cpu_write(0xA000, 1);
+        assert_eq!(cart.mirroring(), Mirroring::FourScreen);
+    }
+
+    #[test]
     fn mapper_4_irq_latch_reload_zero_and_acknowledge_behave_independently() {
         let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
 
