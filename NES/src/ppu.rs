@@ -1435,10 +1435,10 @@ mod tests {
     fn vblank_status_read_after_flag_set_clears_vblank_and_nmi_line() {
         let mut ppu = Ppu::new();
         ppu.scanline = 241;
-        ppu.dot = 1;
+        ppu.dot = 0;
         ppu.cpu_write_register(0, 0x80, None);
         ppu.tick(1);
-        assert_ne!(ppu.status & 0x80, 0, "vblank is set at scanline 241 dot 2 in this timing model");
+        assert_ne!(ppu.status & 0x80, 0, "vblank is set at scanline 241 dot 1 in this timing model");
         let _ = ppu.cpu_read_register(2, None);
         assert_eq!(ppu.status & 0x80, 0);
         assert!(!ppu.nmi_line);
