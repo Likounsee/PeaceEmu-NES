@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing nes-module-* tag to build and publish
+        description: Version tag to create or update (for example nes-module-0.1.0)
         required: true
         type: string
 
@@ -23,10 +23,19 @@ jobs:
     name: Build and publish Windows x64 module
     runs-on: windows-latest
     steps:
-      - name: Check out tagged source
+      - name: Check out source commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_tag || github.ref }}
+          ref: ${{ github.sha }}
+
+      - name: Validate release tag
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^nes-module-(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+            throw "Release tag must use nes-module-MAJOR.MINOR.PATCH."
+          }
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
@@ -50,6 +59,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
           name: PeaceEmu NES module ${{ inputs.release_tag || github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: true
