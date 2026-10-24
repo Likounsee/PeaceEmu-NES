@@ -147,11 +147,6 @@ impl Apu {
         }
     }
 
-    /// Returns whether DMC is active and needs per-cycle CPU-bus servicing.
-    pub(crate) fn needs_dmc_bus_service(&self) -> bool {
-        self.dmc_enabled && self.dmc_bytes_remaining > 0 && self.dmc_sample_buffer.is_none()
-    }
-
     /// Returns whether DMC needs per-cycle CPU-bus sample-fetch servicing.
     pub(crate) fn needs_dmc_bus_service(&self) -> bool {
         self.dmc_enabled && self.dmc_bytes_remaining > 0 && self.dmc_sample_buffer.is_none()
