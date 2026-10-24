@@ -1559,6 +1559,42 @@ mod tests {
     }
 
     #[test]
+    fn enabling_nmi_during_vblank_raises_one_edge_immediately() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 241;
+        ppu.dot = 1;
+        ppu.tick(1);
+        assert_ne!(ppu.status & 0x80, 0);
+        assert!(!ppu.take_nmi_request(), "vblank with NMI disabled must not raise an edge");
+
+        ppu.cpu_write_register(0, 0x80, None);
+        assert!(ppu.take_nmi_request(), "enabling NMI while vblank is active creates a rising edge");
+        assert!(!ppu.take_nmi_request(), "the edge is consumed exactly once");
+        ppu.cpu_write_register(0, 0x80, None);
+        assert!(!ppu.take_nmi_request(), "writing the same control value must not retrigger NMI");
+    }
+
+    #[test]
+    fn odd_frame_skips_one_prerender_dot_only_when_rendering_is_enabled() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 261;
+        ppu.dot = 339;
+        ppu.odd_frame = true;
+        ppu.mask = 0x08;
+        ppu.tick(1);
+        assert_eq!(ppu.position(), (0, 0));
+        assert!(!ppu.odd_frame);
+
+        ppu.scanline = 261;
+        ppu.dot = 339;
+        ppu.odd_frame = true;
+        ppu.mask = 0;
+        ppu.tick(1);
+        assert_eq!(ppu.position(), (261, 340));
+        assert!(ppu.odd_frame);
+    }
+
+    #[test]
     fn rendering_disabled_odd_frame_has_no_shortened_prerender_line() {
         let mut ppu = Ppu::new();
         ppu.scanline = 261;

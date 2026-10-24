@@ -655,6 +655,27 @@ mod tests {
     }
 
     #[test]
+    fn oam_dma_stalls_cpu_and_copies_the_requested_page_with_oam_wraparound() {
+        // LDA #$02; STA $4014; NOP. The store requests DMA after a four-cycle instruction.
+        let image = nrom_with_program(&[0xA9, 0x02, 0x8D, 0x14, 0x40, 0xEA]);
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        for offset in 0..=u8::MAX {
+            machine.write_cpu(0x0200 | u16::from(offset), offset.wrapping_mul(3));
+        }
+        machine.write_cpu(0x2003, 0x80);
+        assert_eq!(machine.step().unwrap().opcode, 0xA9);
+        let before = machine.total_cycles();
+        let result = machine.step().unwrap();
+        assert_eq!(result.opcode, 0x8D);
+        assert_eq!(machine.total_cycles() - before, 4 + 514,
+            "the odd-parity store must include a 514-cycle OAM DMA stall");
+        // DMA increments OAMADDR modulo 256, so the starting address is restored.
+        assert_eq!(machine.read_cpu(0x2004), 0, "source byte $0200 reaches OAM address $80");
+        machine.write_cpu(0x2003, 0xFF);
+        assert_eq!(machine.read_cpu(0x2004), 0x7D, "source byte $027F reaches wrapped OAM address $FF");
+    }
+
+    #[test]
     fn dmc_dma_stalls_cpu_and_advances_ppu_time() {
         let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
         let before_cycles = machine.total_cycles();
