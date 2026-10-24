@@ -241,84 +241,12 @@ impl Apu {
             self.quarter_frame_cycles = self.quarter_frame_cycles.saturating_add(1);
             while self.quarter_frame_cycles >= 3_729 {
                 self.quarter_frame_cycles -= 3_729;
-                for channel in 0..2 {
-                    let register = channel * 4;
-                    let control = self.registers[register];
-                    if self.pulse_envelope_start[channel] {
-                        self.pulse_envelope_start[channel] = false;
-                        self.pulse_envelope_decay[channel] = 15;
-                        self.pulse_envelope_divider[channel] = control & 0x0F;
-                    } else if self.pulse_envelope_divider[channel] == 0 {
-                        self.pulse_envelope_divider[channel] = control & 0x0F;
-                        if self.pulse_envelope_decay[channel] > 0 {
-                            self.pulse_envelope_decay[channel] -= 1;
-                        } else if control & 0x20 != 0 {
-                            self.pulse_envelope_decay[channel] = 15;
-                        }
-                    } else {
-                        self.pulse_envelope_divider[channel] -= 1;
-                    }
-                }
-                // Noise has its own envelope generator controlled by $400C.
-                let noise_control = self.registers[0x0C];
-                if self.noise_envelope_start {
-                    self.noise_envelope_start = false;
-                    self.noise_envelope_decay = 15;
-                    self.noise_envelope_divider = noise_control & 0x0F;
-                } else if self.noise_envelope_divider == 0 {
-                    self.noise_envelope_divider = noise_control & 0x0F;
-                    if self.noise_envelope_decay > 0 {
-                        self.noise_envelope_decay -= 1;
-                    } else if noise_control & 0x20 != 0 {
-                        self.noise_envelope_decay = 15;
-                    }
-                } else {
-                    self.noise_envelope_divider -= 1;
-                }
-                let triangle_control = self.registers[0x08];
-                if self.triangle_reload_flag {
-                    self.triangle_linear_counter = triangle_control & 0x7F;
-                } else if self.triangle_linear_counter > 0 {
-                    self.triangle_linear_counter -= 1;
-                }
-                if triangle_control & 0x80 == 0 { self.triangle_reload_flag = false; }
+                self.clock_quarter_units_once();
             }
             self.half_frame_cycles = self.half_frame_cycles.saturating_add(1);
             while self.half_frame_cycles >= HALF_FRAME_PERIOD {
                 self.half_frame_cycles -= HALF_FRAME_PERIOD;
-                for channel in 0..4 {
-                    let halt = match channel {
-                        0 | 1 => self.registers[if channel == 0 { 0 } else { 4 }] & 0x20 != 0,
-                        2 => self.registers[0x08] & 0x80 != 0,
-                        _ => self.registers[0x0C] & 0x20 != 0,
-                    };
-                    if !halt && self.length_counters[channel] > 0 {
-                        self.length_counters[channel] -= 1;
-                    }
-                }
-                // Clock each pulse sweep divider and apply valid period updates.
-                for channel in 0..2 {
-                    let register = channel * 4;
-                    let sweep = self.registers[register + 1];
-                    let period = u16::from(self.registers[register + 2])
-                        | (u16::from(self.registers[register + 3] & 7) << 8);
-                    let shift = sweep & 7;
-                    let change = period >> shift;
-                    let target = if sweep & 0x08 != 0 {
-                        period.wrapping_sub(change).wrapping_sub(u16::from(channel == 0))
-                    } else { period.saturating_add(change) };
-                    if sweep & 0x80 != 0 && shift != 0 && self.pulse_sweep_divider[channel] == 0
-                        && period >= 8 && target <= 0x07FF {
-                        self.registers[register + 2] = target as u8;
-                        self.registers[register + 3] = (self.registers[register + 3] & 0xF8) | ((target >> 8) as u8 & 7);
-                    }
-                    if self.pulse_sweep_divider[channel] == 0 || self.pulse_sweep_reload[channel] {
-                        self.pulse_sweep_divider[channel] = (sweep >> 4) & 7;
-                        self.pulse_sweep_reload[channel] = false;
-                    } else {
-                        self.pulse_sweep_divider[channel] -= 1;
-                    }
-                }
+                self.clock_half_units_once();
             }
 
             // Resample the running hardware mixer against the configured host PCM rate.
