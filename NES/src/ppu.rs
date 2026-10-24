@@ -856,20 +856,20 @@ mod tests {
     }
 
     #[test]
-    fn mapper_a12_tracks_tile_number_bits_not_only_the_pattern_table_select() {
+    fn mapper_a12_uses_the_actual_pattern_table_address {
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
         ppu.mask = 0x08;
         ppu.ctrl = 0;
         ppu.nametables[0] = 0x80;
         ppu.tick(5);
-        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 5)]);
+        assert!(ppu.take_mapper_bus_events().is_empty(), "tile $80 in the lower pattern table is still below A12");
         ppu.dot = 8;
         ppu.ppu_cycle = 8;
         ppu.nametables[1] = 0;
         ppu.v = 1;
         ppu.tick(1);
-        assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 9)]);
+        assert!(ppu.take_mapper_bus_events().is_empty());
     }
 
     #[test]

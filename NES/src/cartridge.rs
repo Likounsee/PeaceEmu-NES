@@ -3041,7 +3041,10 @@ mod mmc3_chr_layout_regression_tests {
         assert!(!cart.irq_pending());
         cart.cpu_write(0xE001, 0);
         cart.observe_ppu_address(0x0000, 28);
-        cart.observe_ppu_address(0x1000, 36);
+        cart.observe_ppu_address(0x1000, 36); // Reloads latch to 1.
+        assert!(!cart.irq_pending());
+        cart.observe_ppu_address(0x0000, 37);
+        cart.observe_ppu_address(0x1000, 45); // Decrements to zero again.
         assert!(cart.irq_pending());
     }
 
