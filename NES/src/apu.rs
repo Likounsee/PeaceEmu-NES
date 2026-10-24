@@ -397,6 +397,28 @@ impl Apu {
                 self.length_counters[channel] -= 1;
             }
         }
+        for channel in 0..2 {
+            let register = channel * 4;
+            let sweep = self.registers[register + 1];
+            let period = u16::from(self.registers[register + 2])
+                | (u16::from(self.registers[register + 3] & 7) << 8);
+            let shift = sweep & 7;
+            let change = period >> shift;
+            let target = if sweep & 0x08 != 0 {
+                period.wrapping_sub(change).wrapping_sub(u16::from(channel == 0))
+            } else { period.saturating_add(change) };
+            if sweep & 0x80 != 0 && shift != 0 && self.pulse_sweep_divider[channel] == 0
+                && period >= 8 && target <= 0x07FF {
+                self.registers[register + 2] = target as u8;
+                self.registers[register + 3] = (self.registers[register + 3] & 0xF8) | ((target >> 8) as u8 & 7);
+            }
+            if self.pulse_sweep_divider[channel] == 0 || self.pulse_sweep_reload[channel] {
+                self.pulse_sweep_divider[channel] = (sweep >> 4) & 7;
+                self.pulse_sweep_reload[channel] = false;
+            } else {
+                self.pulse_sweep_divider[channel] -= 1;
+            }
+        }
     }
 
     /// Reads APU status at $4015, clearing the frame IRQ flag as a side effect.
@@ -534,7 +556,8 @@ mod tests {
         let noise_length = apu.length_counters[3];
 
         apu.write(0x4017, 0x80);
-        apu.tick_cpu_cycles(u32::from(apu.frame_reset_delay));
+        let reset_delay = u32::from(apu.frame_reset_delay);
+        apu.tick_cpu_cycles(reset_delay);
 
         assert_eq!(apu.pulse_envelope_decay[0], 15);
         assert_eq!(apu.noise_envelope_decay, 15);
