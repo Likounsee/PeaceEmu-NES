@@ -315,7 +315,7 @@ mod tests {
     fn reset_discards_pending_oam_dma_but_keeps_the_cartridge_attached() {
         let mut bus = CpuBus::new();
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         bus.insert_cartridge(Cartridge::parse(&image).unwrap());
         bus.write(0x4014, 0x03);
