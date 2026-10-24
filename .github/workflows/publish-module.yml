@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: nes-module-release-\${{ inputs.release_tag || github.ref_name }}
+  group: nes-module-release-${{ inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
       - name: Check out tagged source
         uses: actions/checkout@v4
         with:
-          ref: \${{ inputs.release_tag || github.ref }}
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
@@ -49,8 +49,8 @@ jobs:
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: \${{ inputs.release_tag || github.ref_name }}
-          name: PeaceEmu NES module \${{ inputs.release_tag || github.ref_name }}
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          name: PeaceEmu NES module ${{ inputs.release_tag || github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
