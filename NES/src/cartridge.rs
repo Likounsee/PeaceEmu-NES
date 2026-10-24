@@ -3093,3 +3093,28 @@ mod mmc3_chr_layout_regression_tests {
         assert_eq!(cart.ppu_read(0x0000), Some(0xB2));
     }
 }
+
+
+#[cfg(test)]
+mod mmc1_serial_reset_regression_tests {
+    use super::*;
+
+    #[test]
+    fn serial_reset_discards_partial_write_and_restores_prg_mode_bits() {
+        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 2;
+        image[6] = 0x10; // MMC1.
+        let mut cart = Cartridge::parse(&image).unwrap();
+
+        for bit in [0, 1, 0, 1] {
+            cart.cpu_write(0x8000, bit);
+        }
+        cart.cpu_write(0x8000, 0x80); // Abort the incomplete serial value.
+        for bit in [0, 1, 0, 0, 0] {
+            cart.cpu_write(0x8000, bit);
+        } // Control = $02.
+
+        assert_eq!(cart.mirroring(), Mirroring::Vertical);
+    }
+}

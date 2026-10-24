@@ -1837,3 +1837,28 @@ mod sprite_pattern_address_tests {
         assert_eq!(ppu.take_mapper_bus_events(), vec![(0x0000, 265)]);
     }
 }
+
+
+#[cfg(test)]
+mod sprite_overflow_regression_tests {
+    use super::*;
+
+    #[test]
+    fn ninth_in_range_sprite_sets_overflow_and_prerender_clears_it() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 1;
+        ppu.dot = 255;
+        ppu.mask = 0x18;
+        for sprite in 0..9 {
+            ppu.oam[sprite * 4] = 0; // Y=$00 places each 8x8 sprite on scanline 1.
+        }
+
+        ppu.tick(1);
+        assert_ne!(ppu.status & 0x20, 0, "the ninth in-range sprite must set overflow");
+
+        ppu.scanline = 261;
+        ppu.dot = 0;
+        ppu.tick(1);
+        assert_eq!(ppu.status & 0xE0, 0, "pre-render dot 1 clears vblank, sprite-zero hit and overflow");
+    }
+}

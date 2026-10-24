@@ -1126,3 +1126,21 @@ mod pcm_output_tests {
     }
 
 }
+
+
+#[cfg(test)]
+mod status_irq_regression_tests {
+    use super::*;
+
+    #[test]
+    fn reading_status_acknowledges_frame_irq_without_clearing_dmc_irq() {
+        let mut apu = Apu::new();
+        apu.frame_irq = true;
+        apu.dmc_irq = true;
+
+        assert_eq!(apu.read(0x4015) & 0xC0, 0xC0);
+        assert!(!apu.frame_irq, "$4015 read acknowledges the frame IRQ");
+        assert!(apu.dmc_irq, "$4015 read must not acknowledge the DMC IRQ");
+        assert_eq!(apu.read(0x4015) & 0xC0, 0x80);
+    }
+}

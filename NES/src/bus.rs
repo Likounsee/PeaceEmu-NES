@@ -556,3 +556,27 @@ mod tests {
     }
 
 }
+
+
+#[cfg(test)]
+mod controller_strobe_regression_tests {
+    use super::*;
+
+    #[test]
+    fn high_strobe_reads_live_a_button_state_until_strobe_falls() {
+        let mut bus = CpuBus::new();
+        bus.set_controller_state(0, 0);
+        bus.write(0x4016, 1);
+        assert_eq!(bus.read(0x4016) & 1, 0);
+
+        bus.set_controller_state(0, 1);
+        assert_eq!(bus.read(0x4016) & 1, 1, "high strobe exposes the current A-button level");
+        bus.set_controller_state(0, 0);
+        assert_eq!(bus.read(0x4016) & 1, 0);
+
+        bus.set_controller_state(0, 0b1000_0001);
+        bus.write(0x4016, 0);
+        let bits: Vec<u8> = (0..8).map(|_| bus.read(0x4016) & 1).collect();
+        assert_eq!(bits, [1, 0, 0, 0, 0, 0, 0, 1]);
+    }
+}
