@@ -155,9 +155,11 @@ impl Ppu {
                 self.status |= 0x40;
             }
 
-            // Build the visible output as the emulated beam advances. Rendering a
-            // blank line while both layers are disabled also prevents stale pixels from
-            // a previous frame when a game toggles rendering during gameplay.
+            // Emit the background pixel at the current beam position. Rendering each
+            // pixel once prevents later register/palette writes from rewriting past pixels.
+            if (1..=256).contains(&self.dot) && self.scanline < 240 {
+                self.render_background_pixel((self.dot - 1) as usize, self.scanline as usize, cartridge);
+            }
             if self.dot == 256 && self.scanline < 240 {
                 self.render_scanline(self.scanline as usize, cartridge);
             }
@@ -273,15 +275,21 @@ impl Ppu {
         sprite_pixel != 0
     }
 
-    /// Renders one visible scanline as the PPU reaches dot 256. This lets software
-    /// observe events such as sprite-0 hit before the end-of-frame snapshot is composed.
-    /// Pixel fetch timing is still approximated: the full line is calculated at once.
-    fn render_scanline(&mut self, y: usize, cartridge: Option<&Cartridge>) {
-        if y >= 240 { return; }
+    /// Renders one background pixel when the emulated beam reaches it.
+    ///
+    /// Pixel-at-a-time output prevents writes to palette/mask/CHR-visible state later in
+    /// a scanline from retroactively changing pixels already emitted by the PPU.
+    fn render_background_pixel(&mut self, x: usize, y: usize, cartridge: Option<&Cartridge>) {
+        if x >= 256 || y >= 240 { return; }
+        let index = y * 256 + x;
         let bg_enabled = self.mask & 0x08 != 0;
-        let sprites_enabled = self.mask & 0x10 != 0;
         let show_bg_left = self.mask & 0x02 != 0;
-        let show_sprites_left = self.mask & 0x04 != 0;
+        if !bg_enabled || (x < 8 && !show_bg_left) {
+            self.framebuffer[index] = self.output_color(self.palette[0]);
+            self.background_opaque[index] = false;
+            return;
+        }
+
         let scroll_v = self.line_scroll_v;
         let fine_x = self.line_fine_x as usize;
         let base_nt_x = ((scroll_v >> 10) & 1) as usize;
@@ -290,41 +298,36 @@ impl Ppu {
         let coarse_y = ((scroll_v >> 5) & 0x1F) as usize;
         let fine_y = ((scroll_v >> 12) & 7) as usize;
         let pattern_base = if self.ctrl & 0x10 != 0 { 0x1000u16 } else { 0 };
-        let universal = self.output_color(self.palette[0]);
-        for x in 0..256usize {
-            let index = y * 256 + x;
-            if !bg_enabled || (x < 8 && !show_bg_left) {
-                self.framebuffer[index] = universal;
-                self.background_opaque[index] = false;
-                continue;
-            }
-            let scroll_x = base_coarse_x * 8 + fine_x + x;
-            let tile_x = scroll_x / 8;
-            let nt_x = base_nt_x ^ ((tile_x / 32) & 1);
-            let nametable = 0x2000u16 + ((nt_y * 2 + nt_x) as u16) * 0x400;
-            let coarse_x = tile_x % 32;
-            let tile_addr = nametable + (coarse_y * 32 + coarse_x) as u16;
-            let tile = self.mem_read(tile_addr, cartridge) as u16;
-            let row = fine_y as u16;
-            let col = (scroll_x % 8) as u16;
-            let pattern_addr = pattern_base + tile * 16 + row;
-            let low = self.mem_read(pattern_addr, cartridge);
-            let high = self.mem_read(pattern_addr + 8, cartridge);
-            let pixel = ((low >> (7 - col)) & 1) | (((high >> (7 - col)) & 1) << 1);
-            self.background_opaque[index] = pixel != 0;
-            if pixel == 0 {
-                self.framebuffer[index] = universal;
-            } else {
-                let attr_addr = nametable + 0x3C0 + ((coarse_y / 4) * 8 + coarse_x / 4) as u16;
-                let attr = self.mem_read(attr_addr, cartridge);
-                let shift = (((coarse_y % 4) / 2) * 4 + ((coarse_x % 4) / 2) * 2) as u8;
-                let palette_id = (attr >> shift) & 3;
-                self.framebuffer[index] = self.output_color(self.palette[(palette_id * 4 + pixel) as usize]);
-            }
+        let scroll_x = base_coarse_x * 8 + fine_x + x;
+        let tile_x = scroll_x / 8;
+        let nt_x = base_nt_x ^ ((tile_x / 32) & 1);
+        let nametable = 0x2000u16 + ((nt_y * 2 + nt_x) as u16) * 0x400;
+        let coarse_x = tile_x % 32;
+        let tile_addr = nametable + (coarse_y * 32 + coarse_x) as u16;
+        let tile = self.mem_read(tile_addr, cartridge) as u16;
+        let col = (scroll_x % 8) as u16;
+        let pattern_addr = pattern_base + tile * 16 + fine_y as u16;
+        let low = self.mem_read(pattern_addr, cartridge);
+        let high = self.mem_read(pattern_addr + 8, cartridge);
+        let pixel = ((low >> (7 - col)) & 1) | (((high >> (7 - col)) & 1) << 1);
+        self.background_opaque[index] = pixel != 0;
+        if pixel == 0 {
+            self.framebuffer[index] = self.output_color(self.palette[0]);
+        } else {
+            let attr_addr = nametable + 0x3C0 + ((coarse_y / 4) * 8 + coarse_x / 4) as u16;
+            let attr = self.mem_read(attr_addr, cartridge);
+            let shift = (((coarse_y % 4) / 2) * 4 + ((coarse_x % 4) / 2) * 2) as u8;
+            let palette_id = (attr >> shift) & 3;
+            self.framebuffer[index] = self.output_color(self.palette[(palette_id * 4 + pixel) as usize]);
         }
+    }
 
-        // Evaluate the eight-sprites-per-line limit and composite the line in OAM order.
-        if !sprites_enabled { return; }
+    /// Composites sprites for a completed visible scanline.
+    ///
+    /// Background pixels have already been emitted as the beam advanced to each dot.
+    fn render_scanline(&mut self, y: usize, cartridge: Option<&Cartridge>) {
+        if y >= 240 || self.mask & 0x10 == 0 { return; }
+        let show_sprites_left = self.mask & 0x04 != 0;
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         let mut count = 0usize;
         let mut claimed = [false; 256];
@@ -352,8 +355,7 @@ impl Ppu {
                 if x >= 256 || (x < 8 && !show_sprites_left) { continue; }
                 let bit = if attr & 0x40 != 0 { sx } else { 7 - sx };
                 let pixel = ((low >> bit) & 1) | (((high >> bit) & 1) << 1);
-                if pixel == 0 { continue; }
-                if claimed[x] { continue; }
+                if pixel == 0 || claimed[x] { continue; }
                 claimed[x] = true;
                 if attr & 0x20 == 0 || !self.background_opaque[y * 256 + x] {
                     let palette_index = 0x10 + ((attr as usize & 3) * 4) + pixel as usize;
@@ -959,6 +961,27 @@ mod tests {
         assert_eq!(ppu.framebuffer()[0], 0x21);
         assert!(ppu.background_opaque[0]);
         assert_eq!(ppu.line_scroll_v & 0x7000, 0x1000);
+    }
+
+    #[test]
+    fn background_pixels_keep_the_palette_seen_at_their_beam_dot() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x0A;
+        ppu.mem_write(0x0000, 0xFF, Some(&mut cartridge));
+        ppu.palette[1] = 0x21;
+
+        ppu.tick_with_cartridge(4, Some(&cartridge));
+        ppu.palette[1] = 0x22;
+        ppu.tick_with_cartridge(252, Some(&cartridge));
+
+        assert!(ppu.framebuffer()[0..4].iter().all(|&pixel| pixel == 0x21));
+        assert_eq!(ppu.framebuffer()[4], 0x22);
     }
 
     #[test]
