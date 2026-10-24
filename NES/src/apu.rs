@@ -1144,3 +1144,32 @@ mod status_irq_regression_tests {
         assert_eq!(apu.read(0x4015) & 0xC0, 0x80);
     }
 }
+
+
+#[cfg(test)]
+mod channel_enable_regression_tests {
+    use super::*;
+
+    #[test]
+    fn disabling_a_channel_clears_its_length_counter_and_status_bit() {
+        let mut apu = Apu::new();
+        apu.write(0x4015, 0x01);
+        apu.write(0x4003, 0xF8); // Load pulse 1 length while enabled.
+        assert!(apu.length_counter(0).unwrap() > 0);
+        assert_ne!(apu.read(0x4015) & 1, 0);
+
+        apu.write(0x4015, 0x00);
+        assert_eq!(apu.length_counter(0), Some(0));
+        assert_eq!(apu.read(0x4015) & 1, 0);
+    }
+
+    #[test]
+    fn dmc_restart_uses_register_encoded_address_and_length() {
+        let mut apu = Apu::new();
+        apu.write(0x4012, 0x23);
+        apu.write(0x4013, 0x04);
+        apu.write(0x4015, 0x10);
+        assert_eq!(apu.dmc_current_address, 0xC8C0);
+        assert_eq!(apu.dmc_bytes_remaining, 65);
+    }
+}

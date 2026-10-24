@@ -1862,3 +1862,33 @@ mod sprite_overflow_regression_tests {
         assert_eq!(ppu.status & 0xE0, 0, "pre-render dot 1 clears vblank, sprite-zero hit and overflow");
     }
 }
+
+
+#[cfg(test)]
+mod sprite_pixel_regression_tests {
+    use super::*;
+
+    #[test]
+    fn sprite_zero_hit_is_suppressed_at_x_255() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x1E;
+        ppu.oam[0] = 0;
+        ppu.oam[1] = 0;
+        ppu.oam[2] = 0;
+        ppu.oam[3] = 248;
+        ppu.background_opaque[255] = true;
+        ppu.nametable[0] = 1;
+        ppu.palette[1] = 1;
+        assert!(!ppu.sprite_zero_hit_at(255, 0, None), "the NES never sets sprite-zero hit at x=255");
+    }
+
+    #[test]
+    fn left_edge_mask_hides_background_and_marks_it_transparent_for_sprite_hit() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x08; // Background enabled, leftmost eight pixels disabled.
+        ppu.palette[0] = 0x2A;
+        ppu.render_background_pixel(0, 0, None);
+        assert_eq!(ppu.framebuffer[0], ppu.output_color(0x2A));
+        assert!(!ppu.background_opaque[0]);
+    }
+}

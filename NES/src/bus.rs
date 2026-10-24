@@ -580,3 +580,21 @@ mod controller_strobe_regression_tests {
         assert_eq!(bits, [1, 0, 0, 0, 0, 0, 0, 1]);
     }
 }
+
+
+#[cfg(test)]
+mod open_bus_regression_tests {
+    use super::*;
+
+    #[test]
+    fn controller_reads_preserve_unconnected_bus_bits() {
+        let mut bus = CpuBus::new();
+        bus.write(0x0000, 0xA4);
+        bus.write(0x4016, 1);
+        bus.set_controller_state(0, 1);
+        let value = bus.read(0x4016);
+        assert_eq!(value & 1, 1);
+        assert_eq!(value & 0x40, 0x40, "controller drives D6 high");
+        assert_eq!(value & 0xBE, 0xA4 & 0xBE, "undriven data-bus bits retain open-bus values");
+    }
+}

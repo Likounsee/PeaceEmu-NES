@@ -3118,3 +3118,29 @@ mod mmc1_serial_reset_regression_tests {
         assert_eq!(cart.mirroring(), Mirroring::Vertical);
     }
 }
+
+
+#[cfg(test)]
+mod mapper_bounds_regression_tests {
+    use super::*;
+
+    #[test]
+    fn cnrom_bank_selection_wraps_to_available_chr_rom_banks() {
+        let mut image = vec![0; INES_HEADER_LEN + PRG_BANK_LEN + 2 * CHR_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 1;
+        image[5] = 2;
+        image[6] = 0x30; // Mapper 3 (CNROM).
+        let chr_start = INES_HEADER_LEN + PRG_BANK_LEN;
+        image[chr_start..chr_start + CHR_BANK_LEN].fill(0x11);
+        image[chr_start + CHR_BANK_LEN..].fill(0x22);
+        let mut cart = Cnrom::parse(&image).unwrap();
+
+        assert_eq!(cart.ppu_read(0), Some(0x11));
+        assert!(cart.cpu_write(0x8000, 1));
+        assert_eq!(cart.ppu_read(0), Some(0x22));
+        assert!(cart.cpu_write(0x8000, 2));
+        assert_eq!(cart.ppu_read(0), Some(0x11), "bank values wrap to the installed CHR count");
+        assert!(!cart.ppu_write(0, 0xFF), "CNROM CHR-ROM must remain read-only");
+    }
+}
