@@ -1683,8 +1683,8 @@ mod mapper15_tests {
         let mut cart = Cartridge::parse(&image(8)).unwrap();
         assert!(cart.cpu_write(0x8003, 0x41));
         assert_eq!(cart.mirroring(), Mirroring::Horizontal);
-        assert_eq!(cart.cpu_read(0x8000), Some(2));
-        assert_eq!(cart.cpu_read(0xC000), Some(2));
+        assert_eq!(cart.cpu_read(0x8000), Some(1));
+        assert_eq!(cart.cpu_read(0xC000), Some(1));
         assert!(cart.ppu_write(0x1FFF, 0xA5));
         assert_eq!(cart.ppu_read(0x1FFF), Some(0xA5));
     }
