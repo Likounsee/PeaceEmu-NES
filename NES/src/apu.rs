@@ -38,6 +38,9 @@ pub struct Apu {
     pulse_envelope_start: [bool; 2],
     pulse_envelope_divider: [u8; 2],
     pulse_envelope_decay: [u8; 2],
+    noise_envelope_start: bool,
+    noise_envelope_divider: u8,
+    noise_envelope_decay: u8,
     pulse_sweep_divider: [u8; 2],
     pulse_sweep_reload: [bool; 2],
     triangle_linear_counter: u8,
@@ -137,6 +140,7 @@ impl Apu {
             };
             if address == 0x4001 { self.pulse_sweep_reload[0] = true; }
             if address == 0x4005 { self.pulse_sweep_reload[1] = true; }
+            if address == 0x400F { self.noise_envelope_start = true; }
             if let Some(channel) = channel {
                 if self.enabled_channels & (1 << channel) != 0 {
                     self.length_counters[channel] = LENGTH_TABLE[(value >> 3) as usize];
@@ -235,6 +239,22 @@ impl Apu {
                     } else {
                         self.pulse_envelope_divider[channel] -= 1;
                     }
+                }
+                // Noise has its own envelope generator controlled by $400C.
+                let noise_control = self.registers[0x0C];
+                if self.noise_envelope_start {
+                    self.noise_envelope_start = false;
+                    self.noise_envelope_decay = 15;
+                    self.noise_envelope_divider = noise_control & 0x0F;
+                } else if self.noise_envelope_divider == 0 {
+                    self.noise_envelope_divider = noise_control & 0x0F;
+                    if self.noise_envelope_decay > 0 {
+                        self.noise_envelope_decay -= 1;
+                    } else if noise_control & 0x20 != 0 {
+                        self.noise_envelope_decay = 15;
+                    }
+                } else {
+                    self.noise_envelope_divider -= 1;
                 }
                 let triangle_control = self.registers[0x08];
                 if self.triangle_reload_flag {
@@ -351,8 +371,14 @@ impl Apu {
         let triangle_period = u16::from(self.registers[0x0A]) | (u16::from(self.registers[0x0B] & 7) << 8);
         let triangle_value = if self.triangle_sequence < 16 { 15 - self.triangle_sequence } else { self.triangle_sequence - 16 };
         let triangle = if self.length_counters[2] > 0 && self.triangle_linear_counter > 0 && triangle_period > 1 { f32::from(triangle_value) } else { 0.0 };
+        let noise_control = self.registers[0x0C];
+        let noise_volume = if noise_control & 0x10 != 0 {
+            noise_control & 0x0F
+        } else {
+            self.noise_envelope_decay
+        };
         let noise = if self.length_counters[3] > 0 && self.noise_shift & 1 == 0 {
-            f32::from(self.registers[0x0C] & 0x0F)
+            f32::from(noise_volume)
         } else { 0.0 };
         let dmc = f32::from(self.dmc_output_level);
         let tnd_input = triangle / 8227.0 + noise / 12241.0 + dmc / 22638.0;
@@ -780,6 +806,22 @@ mod tests {
 #[cfg(test)]
 mod pcm_output_tests {
     use super::*;
+
+    #[test]
+    fn noise_channel_uses_its_own_decay_envelope_and_constant_volume_mode() {
+        let mut apu = Apu::new();
+        apu.write(0x4015, 0x08);
+        apu.write(0x400C, 0x00); // Envelope mode, divider period zero.
+        apu.write(0x400E, 0x00);
+        apu.write(0x400F, 0xF8); // Reload length and restart noise envelope.
+        apu.tick_cpu_cycles(3_729);
+        let envelope_level = apu.noise_envelope_decay;
+        assert!(envelope_level < 15, "quarter-frame clocks should decay noise volume");
+
+        apu.write(0x400C, 0x1F); // Constant volume 15.
+        assert_eq!(apu.sample(), apu.sample());
+        assert_eq!(apu.noise_envelope_decay, envelope_level, "constant volume must not overwrite envelope state");
+    }
 
     #[test]
     fn pcm_output_filter_smooths_transitions_and_resets_when_rate_changes() {
