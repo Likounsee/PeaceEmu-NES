@@ -149,7 +149,7 @@ impl Apu {
 
     /// Returns whether DMC needs per-cycle CPU-bus sample-fetch servicing.
     pub(crate) fn needs_dmc_bus_service(&self) -> bool {
-        self.dmc_enabled && self.dmc_bytes_remaining > 0 && self.dmc_sample_buffer.is_none()
+        self.dmc_enabled && self.dmc_bytes_remaining > 0
     }
 
     /// Advances oscillator timers and the approximate frame sequencer.
