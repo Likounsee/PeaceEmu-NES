@@ -83,6 +83,9 @@ pub struct Cpu {
     cycles: u64,
     // CLI and PLP defer maskable IRQ recognition for one instruction on the 2A03.
     irq_poll_delay: bool,
+    // KIL/JAM unofficial opcodes halt the 2A03 until reset.
+    jammed: bool,
+    jam_opcode: u8,
 }
 impl Default for Cpu {
     fn default() -> Self { Self::new() }
@@ -90,7 +93,7 @@ impl Default for Cpu {
 impl Cpu {
     /// Creates CPU state before reset-vector initialization.
     pub fn new() -> Self {
-        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED }, cycles: 0, irq_poll_delay: false }
+        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED }, cycles: 0, irq_poll_delay: false, jammed: false, jam_opcode: 0x02 }
     }
     /// Returns the current registers and flags.
     pub fn state(&self) -> CpuState { self.state }
@@ -108,6 +111,8 @@ impl Cpu {
         self.state.sp = 0xFD;
         self.state.status = flags::INTERRUPT_DISABLE | flags::UNUSED;
         self.irq_poll_delay = false;
+        self.jammed = false;
+        self.jam_opcode = 0x02;
         self.state.pc = self.read_word(bus, 0xFFFC);
         self.cycles = self.cycles.saturating_add(7);
     }
@@ -115,6 +120,11 @@ impl Cpu {
     /// Executes one instruction. Unsupported opcodes return an error.
     pub fn step(&mut self, bus: &mut CpuBus) -> Result<StepResult, CpuError> {
         let pc = self.state.pc;
+        if self.jammed {
+            // A jammed CPU does not fetch, change registers, or respond to IRQ/NMI.
+            self.cycles = self.cycles.saturating_add(1);
+            return Ok(StepResult { pc, opcode: self.jam_opcode, cycles: 1 });
+        }
         if bus.take_nmi_request() {
             self.push(bus, (self.state.pc >> 8) as u8);
             self.push(bus, self.state.pc as u8);
@@ -447,6 +457,13 @@ impl Cpu {
             }
             // Stable composite unofficial RMW instructions adapted to local CPU helpers.
             _ if Self::is_unofficial_rmw(opcode) => self.unofficial_rmw(bus, opcode),
+            // NMOS 6502 KIL/JAM encodings halt the processor indefinitely until reset.
+            0x02 | 0x12 | 0x22 | 0x32 | 0x42 | 0x52 | 0x62 | 0x72 |
+            0x92 | 0xB2 | 0xD2 | 0xF2 => {
+                self.jammed = true;
+                self.jam_opcode = opcode;
+                2
+            }
             _ => return Err(CpuError::UnsupportedOpcode { opcode, pc }),
         };
         self.state.status |= flags::UNUSED;
@@ -1527,4 +1544,26 @@ mod tests {
         assert_eq!(cpu.state().sp, 0x1F);
         assert_eq!(bus.read(0x0201), 0x03);
     }
+    #[test]
+    fn kil_opcodes_jam_cpu_until_reset() {
+        for opcode in [0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xB2, 0xD2, 0xF2] {
+            let (mut cpu, mut bus) = setup(&[opcode, 0xA9, 0x55]);
+            let before_pc = cpu.state().pc;
+            let first = cpu.step(&mut bus).unwrap();
+            assert_eq!(first.opcode, opcode);
+            assert_eq!(first.cycles, 2);
+            assert_eq!(cpu.state().pc, before_pc + 1);
+
+            let jammed = cpu.step(&mut bus).unwrap();
+            assert_eq!(jammed.opcode, opcode);
+            assert_eq!(jammed.cycles, 1);
+            assert_eq!(cpu.state().pc, before_pc + 1, "KIL must stop instruction fetch");
+            assert_eq!(cpu.state().a, 0, "the following LDA must not execute");
+
+            cpu.reset(&mut bus);
+            assert_eq!(cpu.state().pc, 0x0600);
+            assert_eq!(cpu.step(&mut bus).unwrap().opcode, opcode);
+        }
+    }
+
 }
