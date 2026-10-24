@@ -1018,7 +1018,7 @@ mod tests {
     #[test]
     fn sprite_pixels_keep_the_palette_seen_at_each_beam_dot() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap();
         cartridge.ppu_write(16, 0xFF); // Sprite tile 1: opaque first row.
@@ -1040,23 +1040,24 @@ mod tests {
     #[test]
     fn first_opaque_sprite_keeps_priority_even_when_behind_background() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap();
+        cartridge.ppu_write(0, 0xFF); // Opaque background tile 0.
         cartridge.ppu_write(16, 0xFF); // Sprite tile 1.
         cartridge.ppu_write(32, 0xFF); // Sprite tile 2.
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
         ppu.dot = 0;
         ppu.mask = 0x1E; // Background/sprites and both left-edge enables.
-        ppu.background_opaque[0] = true;
         ppu.oam[0..8].copy_from_slice(&[255, 1, 0x20, 0, 255, 2, 0, 0]);
+        ppu.palette[1] = 0x09; // Visible background color.
         ppu.palette[0x11] = 0x21;
         ppu.palette[0x12] = 0x22;
 
         ppu.tick_with_cartridge(1, Some(&cartridge));
 
-        assert_eq!(ppu.framebuffer()[0], 0, "the first sprite is hidden by the opaque background");
+        assert_eq!(ppu.framebuffer()[0], 0x09, "sprite 1 must not show through the higher-priority sprite 0");
     }
 
     #[test]
