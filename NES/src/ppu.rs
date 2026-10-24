@@ -1028,6 +1028,27 @@ mod tests {
     }
 
     #[test]
+    fn sprite_zero_hit_is_raised_at_the_overlapping_beam_pixel() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+
+        ppu.mask = 0x1E; // Background/sprites and both left-edge pixels enabled.
+        ppu.mem_write(0x0000, 0x80, Some(&mut cartridge)); // BG tile 0, pixel x=0.
+        ppu.mem_write(0x0010, 0x80, Some(&mut cartridge)); // Sprite tile 1, pixel x=0.
+        ppu.oam[0..4].copy_from_slice(&[255, 1, 0, 0]); // Sprite 0 begins at screen (0, 0).
+
+        // Leave the pre-render line. The hit must not be delayed until dot 256.
+        ppu.tick_with_cartridge(341, Some(&cartridge));
+        assert_eq!(ppu.position(), (0, 0));
+        assert_eq!(ppu.status & 0x40, 0);
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+        assert_ne!(ppu.status & 0x40, 0, "sprite-zero hit should occur at dot 1 for x=0");
+    }
+
+    #[test]
     fn sprite_zero_hit_requires_visible_background_and_never_occurs_at_x_255() {
         // Sprite 0 hit is a background/sprite opaque-pixel overlap, not merely
         // a sprite pixel being drawn. Keep the test fixture local to our PPU.
