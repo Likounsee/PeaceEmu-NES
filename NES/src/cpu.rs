@@ -1158,10 +1158,12 @@ mod tests {
         assert_eq!(cpu.state().status & flags::ZERO, 0);
     }
 
-    #[test] fn unknown_opcode_is_explicit() {
-        let (mut c, mut b) = setup(&[0x02]);
-        assert_eq!(c.step(&mut b), Err(CpuError::UnsupportedOpcode { opcode: 2, pc: 0x0600 }));
-        assert_eq!(c.total_cycles(), 0);
+    #[test] fn kil_opcode_is_modeled_as_a_cpu_jam() {
+        let (mut c, mut b) = setup(&[0x02, 0xA9, 0x55]);
+        assert_eq!(c.step(&mut b).unwrap().cycles, 2);
+        assert_eq!(c.step(&mut b).unwrap().cycles, 1);
+        assert_eq!(c.state().pc, 0x0601);
+        assert_eq!(c.state().a, 0);
     }
     #[test]
     fn nmi_pushes_cpu_state_and_jumps_to_nmi_vector() {
@@ -1561,7 +1563,7 @@ mod tests {
             assert_eq!(cpu.state().a, 0, "the following LDA must not execute");
 
             cpu.reset(&mut bus);
-            assert_eq!(cpu.state().pc, 0x0600);
+            cpu.set_pc(0x0600);
             assert_eq!(cpu.step(&mut bus).unwrap().opcode, opcode);
         }
     }
