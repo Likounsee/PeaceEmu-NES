@@ -963,6 +963,30 @@ mod tests {
     }
 
     #[test]
+    fn sprite_zero_hit_tracks_the_emitted_background_pixel_dot_by_dot() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        // Background tile 0 and sprite tile 1 are opaque on their first row.
+        cartridge.ppu_write(0, 0xFF);
+        cartridge.ppu_write(8, 0x00);
+        cartridge.ppu_write(16, 0xFF);
+        cartridge.ppu_write(24, 0x00);
+
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x1E; // Background, sprites, and both left-edge enables.
+        ppu.oam[0..4].copy_from_slice(&[0, 1, 0, 8]); // Sprite zero begins at (8, 1).
+
+        ppu.tick_with_cartridge(8, Some(&cartridge));
+        assert_eq!(ppu.status & 0x40, 0, "hit must not be raised before sprite/background overlap");
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+        assert_ne!(ppu.status & 0x40, 0, "hit must be visible on the overlap dot");
+    }
+
+    #[test]
     fn fine_x_scroll_write_affects_only_pixels_not_yet_emitted() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
