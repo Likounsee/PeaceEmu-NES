@@ -489,7 +489,7 @@ mod tests {
     #[test]
     fn reset_preserves_cartridge_ram_controller_levels_and_audio_rate_but_clears_pending_io() {
         let mut image = vec![0; 16 + 16 * 1024];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut bus = CpuBus::new();
         bus.insert_cartridge(Cartridge::parse(&image).unwrap());
