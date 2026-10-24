@@ -590,7 +590,7 @@ mod open_bus_regression_tests {
     fn controller_reads_preserve_unconnected_bus_bits() {
         let mut bus = CpuBus::new();
         bus.write(0x0000, 0xA4);
-        bus.write(0x4016, 1);
+        bus.write(0x4016, 0xA5); // High strobe with a known open-bus pattern.
         bus.set_controller_state(0, 1);
         let value = bus.read(0x4016);
         assert_eq!(value & 1, 1);
