@@ -259,7 +259,7 @@ mod tests {
         bus.write(0x4000, 0x20);
         bus.write(0x4015, 0x00);
         bus.write(0x4017, 0x00);
-        bus.tick_apu(14_915);
+        bus.tick_apu(14_919); // Include the delayed $4017 sequencer reset.
         assert!(bus.irq_pending());
         bus.write(0x4000, 0x20); // Put bit 5 high on the CPU data bus before reading status.
         let status = bus.read(0x4015);
