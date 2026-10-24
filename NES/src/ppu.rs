@@ -1001,10 +1001,10 @@ mod tests {
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
         ppu.oam[0..4].copy_from_slice(&[255, 1, 0, 0]);
         assert_eq!(ppu.status & 0x40, 0);
-        ppu.tick_with_cartridge(255, Some(&cartridge));
-        assert_eq!(ppu.status & 0x40, 0, "hit must not be visible before the scanline evaluation point");
         ppu.tick_with_cartridge(1, Some(&cartridge));
-        assert_ne!(ppu.status & 0x40, 0, "CPU-visible sprite-0 hit must be raised during the frame");
+        assert_ne!(ppu.status & 0x40, 0, "hit must become visible at the overlapping pixel");
+        ppu.tick_with_cartridge(255, Some(&cartridge));
+        assert_ne!(ppu.status & 0x40, 0, "hit remains latched until software clears it");
     }
 
     #[test]
