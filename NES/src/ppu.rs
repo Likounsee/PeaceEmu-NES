@@ -259,6 +259,35 @@ impl Ppu {
         core::mem::take(&mut self.mapper_bus_events)
     }
 
+    /// Resolves a sprite row to its low-plane CHR address.
+    ///
+    /// In 8x16 mode tile bit 0 selects the pattern table and the even tile
+    /// starts the pair; vertical flipping reverses the whole 16-pixel sprite.
+    /// Keeping this calculation shared prevents sprite-zero detection and
+    /// sprite composition from disagreeing about CHR addresses.
+    fn sprite_pattern_address(&self, tile_index: usize, attributes: u8, row_in_sprite: usize) -> u16 {
+        let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
+        let source_y = if attributes & 0x80 != 0 {
+            height - 1 - row_in_sprite
+        } else {
+            row_in_sprite
+        };
+        let (pattern_base, tile, row) = if height == 16 {
+            (
+                if tile_index & 1 != 0 { 0x1000u16 } else { 0 },
+                (tile_index & 0xFE) + source_y / 8,
+                source_y % 8,
+            )
+        } else {
+            (
+                if self.ctrl & 0x08 != 0 { 0x1000u16 } else { 0 },
+                tile_index,
+                source_y,
+            )
+        };
+        pattern_base + (tile * 16 + row) as u16
+    }
+
     /// Checks sprite-zero/background opacity for one beam pixel.
     ///
     /// This is deliberately separate from scanline composition: games such as SMB poll
@@ -289,15 +318,7 @@ impl Ppu {
 
         let attributes = self.oam[2];
         let row_in_sprite = y - sprite_top;
-        let source_y = if attributes & 0x80 != 0 { height - 1 - row_in_sprite } else { row_in_sprite };
-        let tile_index = self.oam[1] as usize;
-        let (sprite_table, sprite_tile, sprite_row) = if height == 16 {
-            (if tile_index & 1 != 0 { 0x1000u16 } else { 0 },
-             (tile_index & 0xFE) + source_y / 8, source_y % 8)
-        } else {
-            (if self.ctrl & 0x08 != 0 { 0x1000u16 } else { 0 }, tile_index, source_y)
-        };
-        let sprite_addr = sprite_table + (sprite_tile * 16 + sprite_row) as u16;
+        let sprite_addr = self.sprite_pattern_address(self.oam[1] as usize, attributes, row_in_sprite);
         let sprite_x = x - sprite_left;
         let sprite_bit = if attributes & 0x40 != 0 { sprite_x } else { 7 - sprite_x };
         let sprite_pixel = ((self.mem_read(sprite_addr, cartridge) >> sprite_bit) & 1)
@@ -379,14 +400,7 @@ impl Ppu {
             let tile = self.oam[base + 1] as usize;
             let attributes = self.oam[base + 2];
             let row_in_sprite = y - top;
-            let source_y = if attributes & 0x80 != 0 { height - 1 - row_in_sprite } else { row_in_sprite };
-            let (pattern_base, tile_index, row) = if height == 16 {
-                (if tile & 1 != 0 { 0x1000u16 } else { 0 },
-                 (tile & 0xFE) + source_y / 8, source_y % 8)
-            } else {
-                (if self.ctrl & 0x08 != 0 { 0x1000u16 } else { 0 }, tile, source_y)
-            };
-            let address = pattern_base + (tile_index * 16 + row) as u16;
+            let address = self.sprite_pattern_address(tile, attributes, row_in_sprite);
             let low = self.mem_read(address, cartridge);
             let high = self.mem_read(address + 8, cartridge);
             let offset_x = x - left;
@@ -1690,4 +1704,55 @@ mod tests {
         assert_eq!(Ppu::scroll_coarse_y(28, 1, 2), (0, 0));
     }
 
+}
+
+
+#[cfg(test)]
+mod sprite_pattern_address_tests {
+    use super::*;
+
+    #[test]
+    fn eight_by_sixteen_sprite_tile_bit_selects_pattern_table_and_pair() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x20; // 8x16 sprites; sprite tile bit 0 selects table.
+        assert_eq!(ppu.sprite_pattern_address(0x02, 0, 0), 0x0020);
+        assert_eq!(ppu.sprite_pattern_address(0x03, 0, 0), 0x1020);
+        assert_eq!(ppu.sprite_pattern_address(0x03, 0, 8), 0x1030);
+        assert_eq!(ppu.sprite_pattern_address(0x02, 0, 8), 0x0030);
+    }
+
+    #[test]
+    fn vertical_flip_reverses_the_entire_sixteen_pixel_sprite() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x20;
+        assert_eq!(ppu.sprite_pattern_address(0x03, 0x80, 0), 0x1037);
+        assert_eq!(ppu.sprite_pattern_address(0x03, 0x80, 7), 0x1030);
+        assert_eq!(ppu.sprite_pattern_address(0x03, 0x80, 8), 0x1027);
+        assert_eq!(ppu.sprite_pattern_address(0x03, 0x80, 15), 0x1020);
+    }
+
+    #[test]
+    fn eight_by_eight_sprite_table_still_comes_from_control_register() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x08;
+        assert_eq!(ppu.sprite_pattern_address(5, 0, 3), 0x1053);
+        ppu.ctrl = 0;
+        assert_eq!(ppu.sprite_pattern_address(5, 0, 3), 0x0053);
+    }
+
+    #[test]
+    fn sprite_fetch_a12_uses_tile_table_bit_in_eight_by_sixteen_mode() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.ctrl = 0x20;
+        ppu.mask = 0x10;
+        ppu.oam[1] = 1; // Odd tile selects $1000 in 8x16 mode.
+        ppu.tick(261);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 261)]);
+
+        ppu.oam[1] = 0;
+        ppu.dot = 264; // Next sprite's fetch window starts with A12 low.
+        ppu.tick(1);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x0000, 265)]);
+    }
 }

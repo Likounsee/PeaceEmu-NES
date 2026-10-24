@@ -2987,3 +2987,61 @@ mod nes2_nrom_tests {
         assert_eq!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported));
     }
 }
+
+
+#[cfg(test)]
+mod mmc3_chr_layout_regression_tests {
+    use super::*;
+
+    fn image() -> Vec<u8> {
+        let mut data = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN + 2 * CHR_BANK_LEN];
+        data[0..4].copy_from_slice(b"NES\\x1A");
+        data[4] = 2;
+        data[5] = 2;
+        data[6] = 0x40;
+        let chr = INES_HEADER_LEN + 2 * PRG_BANK_LEN;
+        for bank in 0..16usize {
+            data[chr + bank * 0x400..chr + (bank + 1) * 0x400].fill(bank as u8);
+        }
+        data
+    }
+
+    #[test]
+    fn mmc3_chr_mode_bit_reorders_all_eight_one_kib_windows() {
+        let mut cart = Cartridge::parse(&image()).unwrap();
+        for (register, bank) in [(0, 2), (1, 4), (2, 6), (3, 7), (4, 1), (5, 3), (6, 5), (7, 7)] {
+            cart.cpu_write(0x8000, register);
+            cart.cpu_write(0x8001, bank);
+        }
+        let mode_zero = [2, 3, 4, 5, 6, 7, 1, 7];
+        for (slot, expected) in mode_zero.into_iter().enumerate() {
+            assert_eq!(cart.ppu_read((slot * 0x400) as u16), Some(expected));
+        }
+
+        cart.cpu_write(0x8000, 0x80);
+        let mode_one = [6, 7, 1, 7, 2, 3, 4, 5];
+        for (slot, expected) in mode_one.into_iter().enumerate() {
+            assert_eq!(cart.ppu_read((slot * 0x400) as u16), Some(expected));
+        }
+    }
+
+    #[test]
+    fn mmc3_chr_ram_writes_follow_the_current_bank_mapping() {
+        let mut data = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        data[0..4].copy_from_slice(b"NES\\x1A");
+        data[4] = 2;
+        data[6] = 0x40;
+        let mut cart = Cartridge::parse(&data).unwrap();
+        cart.cpu_write(0x8000, 2);
+        cart.cpu_write(0x8001, 3);
+        assert!(cart.ppu_write(0x0000, 0xA1));
+        assert_eq!(cart.ppu_read(0x0000), Some(0xA1));
+        cart.cpu_write(0x8001, 5);
+        assert_eq!(cart.ppu_read(0x0000), Some(0));
+        assert!(cart.ppu_write(0x0000, 0xB2));
+        cart.cpu_write(0x8001, 3);
+        assert_eq!(cart.ppu_read(0x0000), Some(0xA1));
+        cart.cpu_write(0x8001, 5);
+        assert_eq!(cart.ppu_read(0x0000), Some(0xB2));
+    }
+}
