@@ -2342,7 +2342,32 @@ mod mmc3_tests {
         assert!(cart.irq_pending(), "zero latch can assert again after re-enable and a new clock");
     }
 
+    
     #[test]
+    fn mapper_4_irq_counter_reloads_nonzero_latch_then_counts_down() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        cart.cpu_write(0xC000, 2);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+
+        cart.clock_irq_counter();
+        assert!(!cart.irq_pending(), "reload to two must not assert IRQ");
+        cart.clock_irq_counter();
+        assert!(!cart.irq_pending(), "counter decrements from two to one");
+        cart.clock_irq_counter();
+        assert!(cart.irq_pending(), "counter reaching zero asserts IRQ when enabled");
+    }
+
+    #[test]
+    fn mapper_4_chr_pair_register_ignores_low_bit_and_keeps_pair_contiguous() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 4)).unwrap();
+        cart.cpu_write(0x8000, 0);
+        cart.cpu_write(0x8001, 5);
+        assert_eq!(cart.ppu_read(0x0000), Some(0x44), "R0 bit zero is ignored");
+        assert_eq!(cart.ppu_read(0x0400), Some(0x45), "R0 maps an aligned 2 KiB pair");
+    }
+
+#[test]
     fn mapper_4_four_screen_mirroring_cannot_be_overridden_by_register_write() {
         let mut image = mmc3_image(2, 1);
         image[6] |= 0x08;

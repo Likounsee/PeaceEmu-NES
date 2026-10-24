@@ -486,7 +486,32 @@ mod tests {
         assert_eq!(bus.read(0x4016) & 0x20, 0, "bit 5 should retain the low open-bus value");
         assert_ne!(bus.read(0x4016) & 0x40, 0, "controller bit 6 is driven high");
     }
+    
     #[test]
+    fn cpu_ram_mirrors_every_2_kib_and_open_bus_is_retained_on_unmapped_reads() {
+        let mut bus = CpuBus::new();
+        bus.write(0x0002, 0x5A);
+        assert_eq!(bus.read(0x0802), 0x5A);
+        assert_eq!(bus.read(0x1002), 0x5A);
+        assert_eq!(bus.read(0x1802), 0x5A);
+
+        bus.write(0x4000, 0xC3);
+        assert_eq!(bus.read(0x5000), 0xC3, "unmapped reads preserve the CPU data bus latch");
+    }
+
+    #[test]
+    fn controller_strobe_high_tracks_live_button_state_without_shifting() {
+        let mut bus = CpuBus::new();
+        bus.set_controller_state(0, 0);
+        bus.write(0x4016, 1);
+        assert_eq!(bus.read(0x4016) & 1, 0);
+        bus.set_controller_state(0, 1);
+        assert_eq!(bus.read(0x4016) & 1, 1, "while strobe is high, reads expose the current A button");
+        bus.set_controller_state(0, 0);
+        assert_eq!(bus.read(0x4016) & 1, 0);
+    }
+
+#[test]
     fn reset_preserves_cartridge_ram_controller_levels_and_audio_rate_but_clears_pending_io() {
         let mut image = vec![0; 16 + 16 * 1024];
         image[0..4].copy_from_slice(b"NES\x1A");

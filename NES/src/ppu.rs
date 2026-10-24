@@ -1418,7 +1418,54 @@ mod tests {
     }
 
 
+    
     #[test]
+    fn vblank_status_read_on_pre_vblank_dot_suppresses_flag_and_nmi() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 241;
+        ppu.dot = 0;
+        ppu.cpu_write_register(0, 0x80, None);
+        let _ = ppu.cpu_read_register(2, None);
+        ppu.tick(1);
+        assert_eq!(ppu.status & 0x80, 0, "reading status at scanline 241 dot 0 suppresses vblank");
+        assert!(!ppu.take_nmi_request(), "suppressed vblank must not raise NMI");
+    }
+
+    #[test]
+    fn vblank_status_read_after_flag_set_clears_vblank_and_nmi_line() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 241;
+        ppu.dot = 1;
+        ppu.cpu_write_register(0, 0x80, None);
+        ppu.tick(1);
+        assert_ne!(ppu.status & 0x80, 0, "vblank is set at scanline 241 dot 2 in this timing model");
+        let _ = ppu.cpu_read_register(2, None);
+        assert_eq!(ppu.status & 0x80, 0);
+        assert!(!ppu.nmi_line);
+    }
+
+    #[test]
+    fn rendering_disabled_odd_frame_has_no_shortened_prerender_line() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 261;
+        ppu.dot = 339;
+        ppu.odd_frame = true;
+        ppu.mask = 0;
+        ppu.tick(1);
+        assert_eq!(ppu.position(), (261, 340));
+        assert!(ppu.odd_frame, "frame parity changes only when the pre-render line wraps");
+    }
+
+    #[test]
+    fn ppudata_increment_wraps_only_the_fifteen_bit_internal_address() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x04;
+        ppu.v = 0x7FF0;
+        ppu.increment_vram_address();
+        assert_eq!(ppu.v, 0x0010, "increment-by-32 wraps the internal 15-bit VRAM address");
+    }
+
+#[test]
     fn nametable_indices_follow_horizontal_vertical_and_four_screen_mirroring() {
         assert_eq!(Ppu::nametable_index(0x2000, Mirroring::Vertical), 0x000);
         assert_eq!(Ppu::nametable_index(0x2400, Mirroring::Vertical), 0x400);
