@@ -1656,7 +1656,7 @@ mod mapper15_tests {
 
     fn image(prg_banks: u8) -> Vec<u8> {
         let mut image = vec![0; INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\x1A");
+        image[0..4].copy_from_slice(&[0x4E, 0x45, 0x53, 0x1A]);
         image[4] = prg_banks;
         image[6] = 0xF0;
         for bank in 0..prg_banks as usize {
