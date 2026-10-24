@@ -856,7 +856,7 @@ mod tests {
     }
 
     #[test]
-    fn mapper_a12_uses_the_actual_pattern_table_address {
+    fn mapper_a12_uses_the_actual_pattern_table_address() {
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
         ppu.mask = 0x08;
