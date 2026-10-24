@@ -197,7 +197,7 @@ pub struct Mmc1 {
 }
 
 impl Mmc1 {
-    /// Parses a legacy iNES MMC1 image with 2, 4, 8 or 16 16-KiB PRG banks.
+    /// Parses a legacy iNES MMC1 image with 2, 4, 8, 16 or 32 16-KiB PRG banks.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
         if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
@@ -207,7 +207,7 @@ impl Mmc1 {
         if mapper != 1 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
 
         let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if !matches!(image[4], 2 | 4 | 8 | 16) {
+        if !matches!(image[4], 2 | 4 | 8 | 16 | 32) {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         let chr_len = image[5] as usize * CHR_BANK_LEN;
@@ -255,11 +255,22 @@ impl Mmc1 {
     fn prg_index(&self, address: u16) -> usize {
         let count = self.prg_rom.len() / PRG_BANK_LEN;
         let mode = (self.control >> 2) & 3;
-        let selected = (self.prg_bank & 0x0F) as usize % count;
+        // SUROM boards use CHR bank 0's high bit as the outer 256-KiB PRG
+        // selector when the cartridge supplies CHR-RAM. The low four PRG
+        // register bits select a bank within that half.
+        let outer = if self.chr_is_ram && count > 16 {
+            (self.chr_bank_0 & 0x10) as usize
+        } else {
+            0
+        };
+        let selected = (outer | (self.prg_bank & 0x0F) as usize) % count;
         let bank = match mode {
-            0 | 1 => ((selected & !1) + usize::from(address >= 0xC000)) % count,
-            2 => if address < 0xC000 { 0 } else { selected },
-            _ => if address < 0xC000 { selected } else { count - 1 },
+            0 | 1 => {
+                let paired = (selected & !1) + usize::from(address >= 0xC000);
+                paired.min(outer + 15).min(count - 1)
+            }
+            2 => if address < 0xC000 { outer } else { selected },
+            _ => if address < 0xC000 { selected } else { (outer + 15).min(count - 1) },
         };
         bank * PRG_BANK_LEN + (address as usize & 0x3FFF)
     }
@@ -1649,6 +1660,35 @@ impl Cartridge {
     }
 }
 
+
+    #[test]
+    fn mmc1_surom_chr_ram_high_bit_selects_outer_prg_half() {
+        let mut image = vec![0; INES_HEADER_LEN + 32 * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 32;
+        image[6] = 0x10; // MMC1 with CHR-RAM.
+        for bank in 0..32usize {
+            image[INES_HEADER_LEN + bank * PRG_BANK_LEN..INES_HEADER_LEN + (bank + 1) * PRG_BANK_LEN]
+                .fill(bank as u8);
+        }
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.cpu_read(0x8000), Some(0));
+        assert_eq!(cart.cpu_read(0xC000), Some(15));
+
+        // Set CHR0 bit 4 using five serial writes; SUROM routes it to PRG A18.
+        for bit in [0, 0, 0, 0, 1] {
+            cart.cpu_write(0xA000, bit);
+        }
+        assert_eq!(cart.cpu_read(0x8000), Some(16));
+        assert_eq!(cart.cpu_read(0xC000), Some(31));
+
+        // In 32-KiB mode, the selected pair remains inside the upper half.
+        for bit in [0, 0, 0, 0, 0] {
+            cart.cpu_write(0x8000, bit);
+        }
+        assert_eq!(cart.cpu_read(0x8000), Some(16));
+        assert_eq!(cart.cpu_read(0xC000), Some(17));
+    }
 
 #[cfg(test)]
 mod mapper15_tests {
