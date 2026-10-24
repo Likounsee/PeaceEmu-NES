@@ -687,7 +687,7 @@ mod tests {
         apu.write(0x4015, 0x0C);
         apu.write(0x400A, 0x40);
         apu.write(0x400B, 0xF8);
-        apu.write(0x400C, 0x0F);
+        apu.write(0x400C, 0x1F); // Constant volume keeps the noise audible without waiting for envelope clocks.
         apu.write(0x400E, 0x00);
         apu.write(0x400F, 0xF8);
         apu.tick_cpu_cycles(200);
@@ -814,7 +814,7 @@ mod pcm_output_tests {
         apu.write(0x400C, 0x00); // Envelope mode, divider period zero.
         apu.write(0x400E, 0x00);
         apu.write(0x400F, 0xF8); // Reload length and restart noise envelope.
-        apu.tick_cpu_cycles(3_729);
+        apu.tick_cpu_cycles(7_458); // First quarter-frame starts the envelope; the next clocks its decay.
         let envelope_level = apu.noise_envelope_decay;
         assert!(envelope_level < 15, "quarter-frame clocks should decay noise volume");
         apu.noise_shift = 0; // Force an audible LFSR output for deterministic mixer assertions.
