@@ -1672,9 +1672,11 @@ mod mapper15_tests {
         assert_eq!(cart.cpu_read(0x8000), Some(0));
         assert_eq!(cart.cpu_read(0xC000), Some(1));
         assert!(cart.cpu_write(0x8000, 2));
-        assert_eq!(cart.cpu_read(0x8000), Some(4));
-        assert_eq!(cart.cpu_read(0xA000), Some(4));
-        assert_eq!(cart.cpu_read(0xC000), Some(5));
+        // The fixture fills each 16 KiB PRG bank with its bank index,
+        // while the mapper exposes 8 KiB windows.
+        assert_eq!(cart.cpu_read(0x8000), Some(2));
+        assert_eq!(cart.cpu_read(0xA000), Some(2));
+        assert_eq!(cart.cpu_read(0xC000), Some(3));
         assert_eq!(cart.mirroring(), Mirroring::Vertical);
     }
 
