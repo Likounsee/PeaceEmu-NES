@@ -1,4 +1,4 @@
-//! Legacy iNES parsing and mapper implementations for NROM, UxROM, CNROM and AxROM.
+//! iNES parsing and mapper implementations for NROM, MMC1, UxROM, CNROM, MMC3, AxROM, GxROM, Color Dreams, Camerica, BNROM, CPROM, MMC2, UNROM 512, and Mapper 15.
 
 use core::cell::Cell;
 use core::fmt;
