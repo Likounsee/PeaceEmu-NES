@@ -867,6 +867,28 @@ mod tests {
     }
 
     #[test]
+    fn plp_defers_irq_polling_for_one_instruction_when_it_clears_interrupt_disable() {
+        let (mut cpu, mut bus) = setup(&[0x28, 0xEA]); // PLP; NOP
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFE] = 0x00;
+        image[16 + 0x3FFF] = 0x07;
+        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
+        bus.write(0x01FE, flags::UNUSED); // PLP restores I=0 from the stack.
+        bus.write(0x4017, 0x00);
+        bus.tick_apu(14_915);
+        assert!(bus.irq_pending());
+
+        assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0x28);
+        assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0xEA);
+        let irq = cpu.step(&mut bus).unwrap();
+        assert_eq!(irq.opcode, 0xFE);
+        assert_eq!(irq.cycles, 7);
+        assert_eq!(cpu.state().pc, 0x0700);
+    }
+
+    #[test]
     fn irq_is_not_taken_when_interrupt_disable_flag_is_set() {
         let (mut cpu, mut bus) = setup(&[0xEA]);
         let mut image = vec![0; 16 + 16_384];
