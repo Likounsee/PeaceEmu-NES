@@ -549,6 +549,8 @@ mod tests {
         let mut apu = Apu::new();
         apu.write(0x4015, 0x09); // Enable pulse 1 and noise.
         apu.write(0x4000, 0x00); // Pulse envelope, period zero.
+        apu.write(0x4001, 0x81); // Enable pulse sweep with shift one.
+        apu.write(0x4002, 0x20); // Timer period 32.
         apu.write(0x4003, 0xF8); // Reload pulse length.
         apu.write(0x400C, 0x00); // Noise envelope, period zero.
         apu.write(0x400F, 0xF8); // Reload noise length and restart envelope.
@@ -563,6 +565,7 @@ mod tests {
         assert_eq!(apu.noise_envelope_decay, 15);
         assert_eq!(apu.length_counters[0], pulse_length - 1);
         assert_eq!(apu.length_counters[3], noise_length - 1);
+        assert_eq!(apu.read(0x4002), 0x30, "five-step reset also clocks pulse sweep");
     }
 
     #[test]
