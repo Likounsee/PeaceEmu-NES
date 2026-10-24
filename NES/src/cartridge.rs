@@ -734,6 +734,7 @@ pub struct Mmc3 {
     banks: [u8; 8], bank_select: u8, mirroring: Mirroring,
     ram_enabled: bool, ram_write_protected: bool,
     irq_latch: u8, irq_counter: u8, irq_reload: bool, irq_enabled: bool, irq_pending: bool,
+    a12_high: bool, a12_low_since: Option<u64>,
 }
 impl Mmc3 {
     /// Parses a legacy iNES mapper-4 image (MMC3/TxROM).
@@ -761,7 +762,7 @@ impl Mmc3 {
         let mirroring = if image[6] & 0x08 != 0 { Mirroring::FourScreen } else if image[6] & 1 != 0 { Mirroring::Vertical } else { Mirroring::Horizontal };
         Ok(Self { prg_rom: image[prg_start..chr_start].to_vec(), prg_ram, chr, chr_is_ram,
             banks: [0, 2, 4, 5, 6, 7, 0, 1], bank_select: 0, mirroring, ram_enabled: true,
-            ram_write_protected: false, irq_latch: 0, irq_counter: 0, irq_reload: false, irq_enabled: false, irq_pending: false })
+            ram_write_protected: false, irq_latch: 0, irq_counter: 0, irq_reload: false, irq_enabled: false, irq_pending: false, a12_high: false, a12_low_since: Some(0) })
     }
     fn prg_index(&self, address: u16) -> usize {
         let count = self.prg_rom.len() / 0x2000;
@@ -820,6 +821,33 @@ impl Mmc3 {
         if address >= 0x2000 || !self.chr_is_ram { return false; }
         let index = self.chr_index(address); self.chr[index] = value; true
     }
+    /// Observes the PPU address bus for MMC3's filtered A12 rising-edge IRQ clock.
+    ///
+    /// `ppu_cycle` is a monotonically increasing PPU-dot counter. A rising A12 edge
+    /// clocks the IRQ counter only after A12 has remained low for at least eight dots.
+    /// Call this once for each actual PPU bus address, not once per CPU instruction.
+    pub fn observe_ppu_address(&mut self, address: u16, ppu_cycle: u64) {
+        let a12 = address & 0x1000 != 0;
+        if !a12 {
+            if self.a12_high || self.a12_low_since.is_none() {
+                self.a12_low_since = Some(ppu_cycle);
+            }
+            self.a12_high = false;
+            return;
+        }
+
+        if !self.a12_high {
+            let low_duration = self.a12_low_since
+                .map(|start| ppu_cycle.saturating_sub(start))
+                .unwrap_or(0);
+            if low_duration >= 8 {
+                self.clock_irq_counter();
+            }
+        }
+        self.a12_high = true;
+        self.a12_low_since = None;
+    }
+
     /// Clocks the scanline IRQ counter; precise PPU A12 filtering is not yet modelled.
     pub fn clock_irq_counter(&mut self) {
         if self.irq_counter == 0 || self.irq_reload { self.irq_counter = self.irq_latch; }
@@ -2343,6 +2371,57 @@ mod mmc3_tests {
     }
 
     
+
+    #[test]
+    fn mapper_4_a12_irq_requires_eight_low_dots_and_only_clocks_on_rising_edges() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        cart.cpu_write(0xC000, 0);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+
+        cart.observe_ppu_address(0x0000, 0);
+        cart.observe_ppu_address(0x1000, 7);
+        assert!(!cart.irq_pending(), "seven low dots must be filtered");
+
+        cart.observe_ppu_address(0x0000, 8);
+        cart.observe_ppu_address(0x1000, 16);
+        assert!(cart.irq_pending(), "eight low dots qualify an A12 rising edge");
+
+        cart.cpu_write(0xE000, 0);
+        cart.cpu_write(0xC000, 1);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+        cart.observe_ppu_address(0x1000, 17);
+        assert!(!cart.irq_pending(), "a continuously high A12 line has no second rising edge");
+        cart.observe_ppu_address(0x0000, 18);
+        cart.observe_ppu_address(0x1000, 25);
+        assert!(!cart.irq_pending(), "a fresh seven-dot low interval remains filtered");
+        cart.observe_ppu_address(0x0000, 26);
+        cart.observe_ppu_address(0x1000, 34);
+        assert!(!cart.irq_pending(), "first qualified edge reloads the nonzero latch");
+        cart.observe_ppu_address(0x0000, 35);
+        cart.observe_ppu_address(0x1000, 43);
+        assert!(cart.irq_pending(), "second qualified edge clocks the counter to zero");
+    }
+
+    #[test]
+    fn mapper_4_prg_ram_enable_and_write_protect_bits_are_independent() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        cart.cpu_write(0x6000, 0x31);
+        assert_eq!(cart.cpu_read(0x6000), Some(0x31));
+
+        cart.cpu_write(0xA001, 0x80); // Enabled, writable.
+        cart.cpu_write(0x6000, 0x52);
+        assert_eq!(cart.cpu_read(0x6000), Some(0x52));
+
+        cart.cpu_write(0xA001, 0xC0); // Enabled, write protected.
+        cart.cpu_write(0x6000, 0x99);
+        assert_eq!(cart.cpu_read(0x6000), Some(0x52), "write protection must not disable reads");
+
+        cart.cpu_write(0xA001, 0x00); // Disabled.
+        assert_eq!(cart.cpu_read(0x6000), None, "disabled PRG-RAM must not drive the bus");
+    }
+
     #[test]
     fn mapper_4_irq_counter_reloads_nonzero_latch_then_counts_down() {
         let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
