@@ -817,9 +817,12 @@ mod pcm_output_tests {
         apu.tick_cpu_cycles(3_729);
         let envelope_level = apu.noise_envelope_decay;
         assert!(envelope_level < 15, "quarter-frame clocks should decay noise volume");
+        apu.noise_shift = 0; // Force an audible LFSR output for deterministic mixer assertions.
+        let envelope_output = apu.sample();
 
         apu.write(0x400C, 0x1F); // Constant volume 15.
-        assert_eq!(apu.sample(), apu.sample());
+        let constant_output = apu.sample();
+        assert!(constant_output > envelope_output, "constant volume should bypass the quieter decay level");
         assert_eq!(apu.noise_envelope_decay, envelope_level, "constant volume must not overwrite envelope state");
     }
 
