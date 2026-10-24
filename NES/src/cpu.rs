@@ -81,6 +81,8 @@ pub struct StepResult {
 pub struct Cpu {
     state: CpuState,
     cycles: u64,
+    // CLI and PLP defer maskable IRQ recognition for one instruction on the 2A03.
+    irq_poll_delay: bool,
 }
 impl Default for Cpu {
     fn default() -> Self { Self::new() }
@@ -88,7 +90,7 @@ impl Default for Cpu {
 impl Cpu {
     /// Creates CPU state before reset-vector initialization.
     pub fn new() -> Self {
-        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED }, cycles: 0 }
+        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED }, cycles: 0, irq_poll_delay: false }
     }
     /// Returns the current registers and flags.
     pub fn state(&self) -> CpuState { self.state }
@@ -105,6 +107,7 @@ impl Cpu {
         self.state.y = 0;
         self.state.sp = 0xFD;
         self.state.status = flags::INTERRUPT_DISABLE | flags::UNUSED;
+        self.irq_poll_delay = false;
         self.state.pc = self.read_word(bus, 0xFFFC);
         self.cycles = self.cycles.saturating_add(7);
     }
@@ -122,7 +125,9 @@ impl Cpu {
             self.state.status |= flags::UNUSED;
             return Ok(StepResult { pc, opcode: 0xFF, cycles: 7 });
         }
-        if bus.irq_pending() && !self.flag(flags::INTERRUPT_DISABLE) {
+        let defer_irq_poll = self.irq_poll_delay;
+        self.irq_poll_delay = false;
+        if bus.irq_pending() && !self.flag(flags::INTERRUPT_DISABLE) && !defer_irq_poll {
             self.push(bus, (self.state.pc >> 8) as u8);
             self.push(bus, self.state.pc as u8);
             self.push(bus, (self.state.status | flags::UNUSED) & !flags::BREAK);
@@ -413,10 +418,10 @@ impl Cpu {
             0x48 => { self.push(bus, self.state.a); 3 }
             0x68 => { self.state.a = self.pop(bus); self.set_nz(self.state.a); 4 }
             0x08 => { self.push(bus, self.state.status | flags::BREAK | flags::UNUSED); 3 }
-            0x28 => { self.state.status = (self.pop(bus) | flags::UNUSED) & !flags::BREAK; 4 }
+            0x28 => { self.state.status = (self.pop(bus) | flags::UNUSED) & !flags::BREAK; self.irq_poll_delay = true; 4 }
             0x18 => { self.set_flag(flags::CARRY, false); 2 }
             0x38 => { self.set_flag(flags::CARRY, true); 2 }
-            0x58 => { self.set_flag(flags::INTERRUPT_DISABLE, false); 2 }
+            0x58 => { self.set_flag(flags::INTERRUPT_DISABLE, false); self.irq_poll_delay = true; 2 }
             0x78 => { self.set_flag(flags::INTERRUPT_DISABLE, true); 2 }
             0xD8 => { self.set_flag(flags::DECIMAL, false); 2 }
             0xF8 => { self.set_flag(flags::DECIMAL, true); 2 }
@@ -850,12 +855,14 @@ mod tests {
         assert!(bus.irq_pending());
         // IRQ is masked before CLI, so CLI executes first.
         assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0x58);
+        let following = cpu.step(&mut bus).unwrap();
+        assert_eq!(following.opcode, 0xEA, "CLI must allow one following instruction before IRQ entry");
         let irq = cpu.step(&mut bus).unwrap();
         assert_eq!(irq.cycles, 7);
         assert_eq!(cpu.state().pc, 0x0700);
         assert_ne!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
         assert_eq!(bus.read(0x01FD), 0x06); // return PC high byte
-        assert_eq!(bus.read(0x01FC), 0x01); // return PC low byte
+        assert_eq!(bus.read(0x01FC), 0x02); // return PC low byte after the deferred instruction
         assert_eq!(bus.read(0x01FB) & flags::BREAK, 0);
     }
 
