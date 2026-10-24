@@ -242,6 +242,30 @@ mod tests {
     }
 
     #[test]
+    fn controller_strobe_high_tracks_live_a_button_state() {
+        let mut bus = CpuBus::new();
+        bus.set_controller_state(0, 0);
+        bus.write(0x4016, 1);
+        assert_eq!(bus.read(0x4016) & 1, 0);
+
+        // While strobe is high, reads expose the live A button rather than
+        // consuming a latched serial bit.
+        bus.set_controller_state(0, 1);
+        assert_eq!(bus.read(0x4016) & 1, 1);
+        bus.set_controller_state(0, 0);
+        assert_eq!(bus.read(0x4016) & 1, 0);
+    }
+
+    #[test]
+    fn latest_oam_dma_write_replaces_the_pending_page() {
+        let mut bus = CpuBus::new();
+        bus.write(0x4014, 0x02);
+        bus.write(0x4014, 0x07);
+        assert_eq!(bus.take_oam_dma_request(), Some(0x07));
+        assert_eq!(bus.take_oam_dma_request(), None);
+    }
+
+    #[test]
     fn second_controller_has_an_independent_shift_register() {
         let mut bus = CpuBus::new();
         bus.set_controller_state(0, 0b0000_0001);
