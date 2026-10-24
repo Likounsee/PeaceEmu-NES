@@ -101,6 +101,13 @@ impl CpuBus {
     /// Returns the CPU stall cycles caused by DMC DMA. Each sample-buffer refill
     /// occupies four CPU cycles; alignment-specific details remain approximate.
     pub fn tick_apu(&mut self, cycles: u32) -> u32 {
+        // Most games do not use DMC. Advance their APU cycles in a single batch
+        // instead of checking the CPU bus for DMA on every cycle.
+        if !self.apu.needs_dmc_bus_service() {
+            self.apu.tick_cpu_cycles(cycles);
+            return 0;
+        }
+
         let mut stall_cycles = 0u32;
         for _ in 0..cycles {
             self.apu.tick_cpu_cycles(1);
