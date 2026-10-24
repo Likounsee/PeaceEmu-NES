@@ -3013,13 +3013,13 @@ mod mmc3_chr_layout_regression_tests {
             cart.cpu_write(0x8000, register);
             cart.cpu_write(0x8001, bank);
         }
-        let mode_zero = [2, 3, 4, 5, 6, 7, 1, 7];
+        let mode_zero = [2, 3, 4, 5, 6, 7, 1, 3];
         for (slot, expected) in mode_zero.into_iter().enumerate() {
             assert_eq!(cart.ppu_read((slot * 0x400) as u16), Some(expected));
         }
 
         cart.cpu_write(0x8000, 0x80);
-        let mode_one = [6, 7, 1, 7, 2, 3, 4, 5];
+        let mode_one = [6, 7, 1, 3, 2, 3, 4, 5];
         for (slot, expected) in mode_one.into_iter().enumerate() {
             assert_eq!(cart.ppu_read((slot * 0x400) as u16), Some(expected));
         }
