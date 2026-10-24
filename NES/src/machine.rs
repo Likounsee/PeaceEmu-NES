@@ -258,6 +258,28 @@ mod tests {
     }
 
     #[test]
+    fn device_clock_advances_ppu_three_dots_per_cpu_cycle() {
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
+        assert_eq!(machine.bus.ppu_position(), (261, 0));
+
+        machine.clock_devices_for_cpu_cycles(1);
+        assert_eq!(machine.bus.ppu_position(), (261, 3));
+
+        machine.clock_devices_for_cpu_cycles(2);
+        assert_eq!(machine.bus.ppu_position(), (261, 9));
+    }
+
+    #[test]
+    fn device_clock_crosses_scanline_boundaries_without_losing_dots() {
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
+        machine.bus.tick_ppu(338);
+        assert_eq!(machine.bus.ppu_position(), (261, 338));
+
+        machine.clock_devices_for_cpu_cycles(1);
+        assert_eq!(machine.bus.ppu_position(), (0, 0));
+    }
+
+    #[test]
     fn machine_loads_uxrom_and_switches_prg_bank_through_cpu_bus() {
         const BANK_LEN: usize = 16 * 1024;
         let mut image = vec![0; 16 + 3 * BANK_LEN];
