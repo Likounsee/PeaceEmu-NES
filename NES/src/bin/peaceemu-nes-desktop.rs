@@ -17,6 +17,7 @@ mod win {
     use std::fs;
     use std::mem::{size_of, zeroed};
     use std::ptr::{null, null_mut};
+    use std::collections::VecDeque;
     use std::time::{Duration, Instant};
 
     type Handle = *mut c_void;
@@ -224,10 +225,16 @@ mod win {
         }
     }
 
+    struct AudioBuffer {
+        pcm: Vec<i16>,
+        header: WaveHdr,
+    }
+
     struct AudioOutput {
         handle: HWaveOut,
         previous_input: f32,
         previous_output: f32,
+        queued: VecDeque<Box<AudioBuffer>>,
     }
 
     impl AudioOutput {
@@ -246,12 +253,28 @@ mod win {
             if result != 0 || handle.is_null() {
                 return Err(format!("Windows audio device could not be opened (waveOut error {result})"));
             }
-            Ok(Self { handle, previous_input: 0.0, previous_output: 0.0 })
+            Ok(Self { handle, previous_input: 0.0, previous_output: 0.0, queued: VecDeque::with_capacity(8) })
+        }
+
+        fn reap_completed(&mut self) -> Result<(), String> {
+            let header_size = size_of::<WaveHdr>() as u32;
+            while self.queued.front().is_some_and(|buffer| {
+                unsafe { std::ptr::read_volatile(&buffer.header.flags) } & WHDR_DONE != 0
+            }) {
+                let mut buffer = self.queued.pop_front().expect("front was checked");
+                let result = unsafe { waveOutUnprepareHeader(self.handle, &mut buffer.header, header_size) };
+                if result != 0 { return Err(format!("waveOutUnprepareHeader failed ({result})")); }
+            }
+            Ok(())
         }
 
         fn play(&mut self, samples: &[f32]) -> Result<(), String> {
+            self.reap_completed()?;
             if samples.is_empty() { return Ok(()); }
-            // Remove the mixer's DC component before converting normalized output to signed PCM.
+            // Never wait for a whole audio frame on the emulation thread.
+            // Bound queued latency to roughly eight frames (about 133 ms).
+            if self.queued.len() >= 8 { return Ok(()); }
+
             let mut pcm = Vec::with_capacity(samples.len());
             for &sample in samples {
                 let input = sample.clamp(0.0, 1.0);
@@ -260,40 +283,38 @@ mod win {
                 self.previous_output = filtered;
                 pcm.push((filtered.clamp(-1.0, 1.0) * 28_000.0) as i16);
             }
-            let mut header = WaveHdr {
-                data: pcm.as_mut_ptr().cast(),
-                buffer_length: (pcm.len() * size_of::<i16>()) as u32,
-                bytes_recorded: 0,
-                user: 0,
-                flags: 0,
-                loops: 0,
-                next: null_mut(),
-                reserved: 0,
-            };
+            let mut buffer = Box::new(AudioBuffer {
+                pcm,
+                header: WaveHdr {
+                    data: null_mut(), buffer_length: 0, bytes_recorded: 0, user: 0,
+                    flags: 0, loops: 0, next: null_mut(), reserved: 0,
+                },
+            });
+            buffer.header.data = buffer.pcm.as_mut_ptr().cast();
+            buffer.header.buffer_length = (buffer.pcm.len() * size_of::<i16>()) as u32;
+
+            // Box keeps the WAVEHDR address stable until Windows finishes playback.
             let header_size = size_of::<WaveHdr>() as u32;
-            let prepared = unsafe { waveOutPrepareHeader(self.handle, &mut header, header_size) };
+            let prepared = unsafe { waveOutPrepareHeader(self.handle, &mut buffer.header, header_size) };
             if prepared != 0 { return Err(format!("waveOutPrepareHeader failed ({prepared})")); }
-            let written = unsafe { waveOutWrite(self.handle, &mut header, header_size) };
+            let written = unsafe { waveOutWrite(self.handle, &mut buffer.header, header_size) };
             if written != 0 {
-                unsafe { waveOutUnprepareHeader(self.handle, &mut header, header_size); }
+                unsafe { waveOutUnprepareHeader(self.handle, &mut buffer.header, header_size); }
                 return Err(format!("waveOutWrite failed ({written})"));
             }
-            // Keep the PCM allocation alive until Windows has consumed the whole buffer.
-            while unsafe { std::ptr::read_volatile(&header.flags) } & WHDR_DONE == 0 {
-                unsafe { Sleep(1); }
-            }
-            let unprepared = unsafe { waveOutUnprepareHeader(self.handle, &mut header, header_size) };
-            if unprepared != 0 { return Err(format!("waveOutUnprepareHeader failed ({unprepared})")); }
+            self.queued.push_back(buffer);
             Ok(())
         }
     }
 
     impl Drop for AudioOutput {
         fn drop(&mut self) {
-            unsafe {
-                waveOutReset(self.handle);
-                waveOutClose(self.handle);
+            unsafe { waveOutReset(self.handle); }
+            let header_size = size_of::<WaveHdr>() as u32;
+            while let Some(mut buffer) = self.queued.pop_front() {
+                unsafe { waveOutUnprepareHeader(self.handle, &mut buffer.header, header_size); }
             }
+            unsafe { waveOutClose(self.handle); }
         }
     }
 
