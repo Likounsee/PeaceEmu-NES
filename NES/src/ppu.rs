@@ -227,7 +227,7 @@ impl Ppu {
             return false;
         }
 
-        let sprite_top = self.oam[0] as usize + 1;
+        let sprite_top = (self.oam[0] as usize + 1) & 0xFF;
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         if y < sprite_top || y >= sprite_top + height {
             return false;
@@ -319,7 +319,7 @@ impl Ppu {
         let mut claimed = [false; 256];
         for sprite in 0..64usize {
             let base = sprite * 4;
-            let top = self.oam[base] as usize + 1;
+            let top = (self.oam[base] as usize + 1) & 0xFF;
             if y < top || y >= top + height { continue; }
             count += 1;
             if count > 8 { self.status |= 0x20; continue; }
