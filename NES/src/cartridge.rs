@@ -1304,8 +1304,10 @@ impl Mmc2 {
         };
         let value = self.chr_rom[index];
         match address {
-            0x0FD8 => self.latch0_fe.set(false),
-            0x0FE8 => self.latch0_fe.set(true),
+            // MMC2 latches respond to the whole eight-byte trigger ranges, not
+            // just the first address. PPU fetches may hit any byte in each range.
+            0x0FD8..=0x0FDF => self.latch0_fe.set(false),
+            0x0FE8..=0x0FEF => self.latch0_fe.set(true),
             0x1FD8..=0x1FDF => self.latch1_fe.set(false),
             0x1FE8..=0x1FEF => self.latch1_fe.set(true),
             _ => {}
@@ -2643,6 +2645,27 @@ mod mmc2_tests {
         assert_eq!(c.ppu_read(0x1000), Some(0x22));
         assert_eq!(c.ppu_read(0x1FE8), Some(0x22));
         assert_eq!(c.ppu_read(0x1000), Some(0x23));
+    }
+
+    #[test]
+    fn mmc2_latches_trigger_on_every_address_in_the_eight_byte_ranges() {
+        let mut c = Mmc2::parse(&mmc2_image(8, 2)).unwrap();
+        c.cpu_write(0xB000, 2);
+        c.cpu_write(0xC000, 3);
+        c.cpu_write(0xD000, 4);
+        c.cpu_write(0xE000, 5);
+
+        // Reading the final byte in FE0's trigger range selects its FE bank.
+        let _ = c.ppu_read(0x0FEF);
+        assert_eq!(c.ppu_read(0x0000), Some(0x23));
+        // The upper window's FD trigger range also includes its last byte.
+        let _ = c.ppu_read(0x1FDF);
+        assert_eq!(c.ppu_read(0x1000), Some(0x24));
+        // And the lower FD trigger range includes non-leading addresses too.
+        let _ = c.ppu_read(0x0FD9);
+        assert_eq!(c.ppu_read(0x0000), Some(0x22));
+        let _ = c.ppu_read(0x1FE9);
+        assert_eq!(c.ppu_read(0x1000), Some(0x25));
     }
 
     #[test]

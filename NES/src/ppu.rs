@@ -165,7 +165,8 @@ impl Ppu {
                 // can then affect only pixels the PPU has not emitted yet.
                 self.render_sprite_pixel(x, y, cartridge);
             }
-            if self.dot == 256 && self.scanline < 240 {
+            if self.dot == 256 && self.scanline < 240 && self.mask & 0x18 != 0 {
+                // Sprite evaluation is disabled when both rendering layers are off.
                 self.update_sprite_overflow(self.scanline as usize);
             }
 
@@ -1328,6 +1329,19 @@ mod tests {
         ppu.render_frame(Some(&cartridge));
 
         assert_eq!(ppu.framebuffer()[16], 0x30);
+    }
+
+    #[test]
+    fn sprite_overflow_is_not_evaluated_when_rendering_is_disabled() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0;
+        for sprite in 0..9usize {
+            ppu.oam[sprite * 4] = 255; // All nine sprites cover scanline zero.
+        }
+        ppu.tick(256);
+        assert_eq!(ppu.status & 0x20, 0);
     }
 
     #[test]
