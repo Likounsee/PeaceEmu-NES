@@ -74,8 +74,16 @@ impl Ppu {
             7 => {
                 let address = self.v & 0x3FFF;
                 let fetched = self.mem_read(address, cartridge);
-                let value = if address < 0x3F00 { let old = self.read_buffer; self.read_buffer = fetched; old }
-                    else { self.read_buffer = self.mem_read(address.wrapping_sub(0x1000), cartridge); fetched };
+                let value = if address < 0x3F00 {
+                    let old = self.read_buffer;
+                    self.read_buffer = fetched;
+                    old
+                } else {
+                    self.read_buffer = self.mem_read(address.wrapping_sub(0x1000), cartridge);
+                    // Palette RAM drives only PPU data bits 0-5; bits 6-7 retain
+                    // the PPU I/O latch just like other partially-driven reads.
+                    (fetched & 0x3F) | (self.open_bus & 0xC0)
+                };
                 self.increment_vram_address();
                 value
             }
@@ -634,6 +642,19 @@ mod tests {
         ppu.dot = 0;
         ppu.tick(1);
         assert_eq!(ppu.status & 0xE0, 0);
+    }
+
+    #[test]
+    fn palette_ppudata_reads_preserve_open_bus_high_bits() {
+        let mut ppu = Ppu::new();
+        ppu.open_bus = 0xC0;
+        ppu.v = 0x3F00;
+        ppu.palette[0] = 0x2A;
+
+        assert_eq!(ppu.cpu_read_register(7, None), 0xEA);
+        assert_eq!(ppu.open_bus, 0xEA);
+        assert_eq!(ppu.v, 0x3F01, "PPUDATA increments after a palette read");
+        assert_eq!(ppu.read_buffer, 0, "palette reads refill the buffer from the nametable mirror");
     }
 
     #[test]
