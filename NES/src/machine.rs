@@ -71,6 +71,15 @@ impl NesMachine {
         Ok(Self { cpu, bus, battery_backed })
     }
 
+
+    /// Resets CPU and volatile devices while keeping the loaded cartridge and host audio rate.
+    ///
+    /// CPU RAM and cartridge RAM are preserved, matching a console reset rather than a power cycle.
+    pub fn reset(&mut self) {
+        self.bus.reset();
+        self.cpu.reset(&mut self.bus);
+    }
+
     /// Updates controller 1 or 2 button state.
     ///
     /// Button bits, from least to most significant: A, B, Select, Start, Up, Down, Left,
@@ -687,4 +696,26 @@ mod pcm_frontend_tests {
         assert!(samples.iter().all(|sample| sample.is_finite() && (0.0..=1.0).contains(sample)));
         assert!(machine.drain_audio_samples().is_empty());
     }
+    #[test]
+    fn machine_reset_recovers_jammed_cpu_and_preserves_ram_cartridge_and_audio_rate() {
+        let image = nrom_with_program(&[0x02, 0xEA]); // KIL followed by NOP.
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        assert!(machine.set_audio_sample_rate(48_000));
+        machine.write_cpu(0x0005, 0xA5);
+        assert_eq!(machine.step().unwrap().opcode, 0x02);
+        assert_eq!(machine.step().unwrap().opcode, 0x02, "KIL keeps the CPU jammed");
+
+        let before_reset_cycles = machine.total_cycles();
+        machine.reset();
+        assert_eq!(machine.cpu_state().pc, 0x8000, "reset vector is reloaded");
+        assert_eq!(machine.total_cycles(), before_reset_cycles + 7);
+        assert_eq!(machine.read_cpu(0x0005), 0xA5, "CPU RAM survives a reset");
+        assert_eq!(machine.read_cpu(0x8000), 0x02, "the cartridge remains attached");
+        assert!(machine.set_audio_sample_rate(48_000), "host audio rate remains usable after reset");
+        assert_eq!(machine.bus.apu.sample_rate(), 48_000);
+        assert_eq!(machine.bus.ppu_position(), (261, 0), "PPU timing returns to pre-render");
+        assert_eq!(machine.step().unwrap().opcode, 0x02);
+    }
+
+
 }
