@@ -116,6 +116,17 @@ impl NesMachine {
     /// Returns the accumulated nominal CPU cycle count, including reset.
     pub fn total_cycles(&self) -> u64 { self.cpu.total_cycles() }
 
+    /// Returns the configured host PCM output rate in samples per second.
+    ///
+    /// This is the accepted rate used by the APU after construction or reset.
+    pub fn audio_sample_rate(&self) -> u32 { self.bus.audio_sample_rate() }
+
+    /// Returns the current PPU scanline and dot for frontend diagnostics.
+    ///
+    /// The PPU uses NTSC-style 262-scanline timing; rendering and CPU bus accesses
+    /// are not yet fully cycle-exact.
+    pub fn ppu_position(&self) -> (u16, u16) { self.bus.ppu_position() }
+
     /// Returns one approximate normalized mono audio sample (0.0..1.0).
     pub fn audio_sample(&self) -> f32 { self.bus.apu_sample() }
 
@@ -264,6 +275,18 @@ mod tests {
         image[16 + 0x3FFC] = 0x00;
         image[16 + 0x3FFD] = 0x80;
         image
+    }
+
+    #[test]
+    fn public_device_diagnostics_report_audio_rate_and_ppu_position() {
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
+        assert_eq!(machine.audio_sample_rate(), 44_100);
+        assert_eq!(machine.ppu_position(), (261, 0));
+
+        assert!(machine.set_audio_sample_rate(48_000));
+        machine.clock_devices_for_cpu_cycles(1);
+        assert_eq!(machine.audio_sample_rate(), 48_000);
+        assert_eq!(machine.ppu_position(), (261, 3));
     }
 
     #[test]
@@ -681,8 +704,8 @@ mod tests {
         assert_eq!(machine.read_cpu(0x0005), 0xA5, "CPU RAM survives a reset");
         assert_eq!(machine.read_cpu(0x8000), 0x02, "the cartridge remains attached");
         assert!(machine.set_audio_sample_rate(48_000), "host audio rate remains usable after reset");
-        assert_eq!(machine.bus.apu.sample_rate(), 48_000);
-        assert_eq!(machine.bus.ppu_position(), (261, 0), "PPU timing returns to pre-render");
+        assert_eq!(machine.audio_sample_rate(), 48_000);
+        assert_eq!(machine.ppu_position(), (261, 0), "PPU timing returns to pre-render");
         assert_eq!(machine.step().unwrap().opcode, 0x02);
     }
 

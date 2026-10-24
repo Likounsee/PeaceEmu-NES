@@ -138,6 +138,8 @@ impl CpuBus {
     }
     /// Returns one approximate normalized mono sample from the APU mixer.
     pub fn apu_sample(&self) -> f32 { self.apu.sample() }
+    /// Returns the configured host PCM output rate in samples per second.
+    pub fn audio_sample_rate(&self) -> u32 { self.apu.sample_rate() }
     /// Configures the APU's PCM output rate in samples per second.
     pub fn set_audio_sample_rate(&mut self, sample_rate: u32) -> bool {
         self.apu.set_sample_rate(sample_rate)
