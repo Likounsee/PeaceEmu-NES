@@ -389,6 +389,30 @@ impl Apu {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reading_status_clears_frame_irq_without_disabling_the_sequencer() {
+        let mut apu = Apu::new();
+        apu.write(0x4017, 0x00); // Four-step mode, frame IRQ enabled.
+        apu.tick_cpu_cycles(14_915);
+
+        assert_ne!(apu.read(0x4015) & 0x40, 0, "frame IRQ should be observable in $4015");
+        assert_eq!(apu.read(0x4015) & 0x40, 0, "reading $4015 acknowledges frame IRQ");
+        assert!(!apu.irq_pending(), "the acknowledged frame IRQ should release the IRQ line");
+    }
+
+    #[test]
+    fn setting_frame_irq_inhibit_clears_a_pending_frame_irq() {
+        let mut apu = Apu::new();
+        apu.write(0x4017, 0x00);
+        apu.tick_cpu_cycles(14_915);
+        assert!(apu.irq_pending());
+
+        apu.write(0x4017, 0x40); // Inhibit and acknowledge frame IRQ.
+        assert_eq!(apu.read(0x4015) & 0x40, 0);
+        assert!(!apu.irq_pending());
+    }
+
+
     use super::*;
 
     #[test]
