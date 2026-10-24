@@ -493,7 +493,7 @@ mod tests {
 
         apu.tick_cpu_cycles(delay - 1);
         assert!(apu.frame_reset_pending);
-        assert_eq!(apu.frame_cycles, 321, "phase must not reset early");
+        assert_eq!(apu.frame_cycles, 321 + delay - 1, "phase must not reset early");
 
         apu.tick_cpu_cycles(1);
         assert!(!apu.frame_reset_pending);
