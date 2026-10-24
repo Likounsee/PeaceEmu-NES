@@ -54,6 +54,8 @@ pub struct Apu {
     dmc_output_level: u8,
     sample_rate: u32,
     sample_phase: u64,
+    // One-pole reconstruction filter applied at the host PCM rate to soften aliasing.
+    pcm_low_pass: f32,
     audio_samples: VecDeque<f32>,
 }
 
@@ -79,6 +81,7 @@ impl Apu {
         }
         self.sample_rate = sample_rate;
         self.sample_phase = 0;
+        self.pcm_low_pass = 0.0;
         self.audio_samples.clear();
         true
     }
@@ -288,7 +291,13 @@ impl Apu {
                 if self.audio_samples.len() == AUDIO_QUEUE_LIMIT {
                     self.audio_samples.pop_front();
                 }
-                self.audio_samples.push_back(self.sample());
+                // A simple output-stage low-pass filter attenuates harsh Nyquist
+                // images from the discrete channel sequencers. Keep the public PCM
+                // contract unipolar (0..1) while smoothing at the configured host rate.
+                let cutoff_hz = 14_000.0_f32.min(self.sample_rate as f32 * 0.45);
+                let alpha = 1.0 - (-core::f32::consts::TAU * cutoff_hz / self.sample_rate as f32).exp();
+                self.pcm_low_pass += alpha * (self.sample() - self.pcm_low_pass);
+                self.audio_samples.push_back(self.pcm_low_pass.clamp(0.0, 1.0));
             }
         }
     }
@@ -771,6 +780,22 @@ mod tests {
 #[cfg(test)]
 mod pcm_output_tests {
     use super::*;
+
+    #[test]
+    fn pcm_output_filter_smooths_transitions_and_resets_when_rate_changes() {
+        let mut apu = Apu::new();
+        apu.write(0x4015, 0x01);
+        apu.write(0x4000, 0xDF);
+        apu.write(0x4002, 0x08);
+        apu.write(0x4003, 0xF8);
+        apu.tick_cpu_cycles(2_000);
+        assert!(apu.pcm_low_pass.is_finite());
+        assert!((0.0..=1.0).contains(&apu.pcm_low_pass));
+
+        assert!(apu.set_sample_rate(48_000));
+        assert_eq!(apu.pcm_low_pass, 0.0, "changing PCM rate resets filter history");
+        assert!(apu.drain_audio_samples().is_empty());
+    }
 
     #[test]
     fn pcm_resampling_produces_expected_frame_sized_batches() {
