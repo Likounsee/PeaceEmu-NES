@@ -1676,6 +1676,10 @@ impl Cartridge {
     pub fn chr_is_ram(&self) -> bool {
         match self { Self::Nrom(c) => c.chr_is_ram(), Self::Mmc1(c) => c.chr_is_ram(), Self::Uxrom(c) => c.chr_is_ram(), Self::Cnrom(c) => c.chr_is_ram(), Self::Mmc3(c) => c.chr_is_ram(), Self::Axrom(c) => c.chr_is_ram(), Self::Gxrom(c) => c.chr_is_ram(), Self::Camerica(c) => c.chr_is_ram(), Self::ColorDreams(c) => c.chr_is_ram(), Self::Bnrom(c) => c.chr_is_ram(), Self::Cprom(c) => c.chr_is_ram(), Self::Mmc2(c) => c.chr_is_ram(), Self::Unrom512(c) => c.chr_is_ram(), Self::Mapper15(c) => c.chr_is_ram() }
     }
+    /// Reports a PPU address-bus observation to mappers with edge-clocked IRQs.
+    pub fn observe_ppu_address(&mut self, address: u16, ppu_cycle: u64) {
+        if let Self::Mmc3(c) = self { c.observe_ppu_address(address, ppu_cycle); }
+    }
     /// Clocks a mapper IRQ counter once per approximated scanline boundary.
     pub fn clock_irq_counter(&mut self) { if let Self::Mmc3(c) = self { c.clock_irq_counter(); } }
     /// Returns whether the cartridge mapper asserts an IRQ line.
