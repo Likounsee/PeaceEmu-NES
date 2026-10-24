@@ -109,8 +109,15 @@ impl CpuBus {
     /// Returns the most recently rendered background as 256x240 NES palette indices.
     pub fn framebuffer(&self) -> &[u8] { self.ppu.framebuffer() }
     /// Advances the PPU by the specified number of dots.
-    pub fn tick_ppu(&mut self, dots: u32) -> u32 { self.ppu.tick_with_cartridge(dots, self.cartridge.as_ref()) }
-    /// Advances the mapper's approximate scanline IRQ counter.
+    pub fn tick_ppu(&mut self, dots: u32) -> u32 {
+        let crossed = self.ppu.tick_with_cartridge(dots, self.cartridge.as_ref());
+        let events = self.ppu.take_mapper_bus_events();
+        if let Some(cartridge) = self.cartridge.as_mut() {
+            for (address, cycle) in events { cartridge.observe_ppu_address(address, cycle); }
+        }
+        crossed
+    }
+    /// Legacy scanline IRQ clock retained for diagnostics.
     pub fn clock_mapper_irq(&mut self) { if let Some(cartridge) = self.cartridge.as_mut() { cartridge.clock_irq_counter(); } }
     /// Returns whether background or sprite rendering is enabled in PPUMASK.
     pub fn ppu_rendering_enabled(&self) -> bool { self.ppu.rendering_enabled() }

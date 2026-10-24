@@ -35,6 +35,9 @@ pub struct Ppu {
     /// Completed 256x240 background image, stored as 6-bit NES palette indices.
     framebuffer: Vec<u8>,
     background_opaque: Vec<bool>,
+    ppu_cycle: u64,
+    mapper_a12_high: bool,
+    mapper_bus_events: Vec<(u16, u64)>,
 }
 
 impl Default for Ppu {
@@ -47,6 +50,7 @@ impl Default for Ppu {
             frame_scroll_valid: false, line_scroll_v: 0,
             nmi_pending: false, nmi_line: false, suppress_vblank: false,
             framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
+            ppu_cycle: 0, mapper_a12_high: false, mapper_bus_events: Vec::new(),
         }
     }
 }
@@ -133,6 +137,7 @@ impl Ppu {
     pub(crate) fn tick_with_cartridge(&mut self, dots: u32, cartridge: Option<&Cartridge>) -> u32 {
         let mut crossed_scanlines = 0;
         for _ in 0..dots {
+            self.ppu_cycle = self.ppu_cycle.wrapping_add(1);
             // NTSC skips pre-render dot 340 on odd frames while rendering is active.
             if self.scanline == 261 && self.dot == 339 && self.odd_frame && self.mask & 0x18 != 0 {
                 self.dot = 0;
@@ -142,6 +147,7 @@ impl Ppu {
                 continue;
             }
             self.dot += 1;
+            self.update_mapper_a12_bus();
 
             // Latch the scroll address at the start of each visible scanline. The
             // live v register is changed by coarse-X fetches and the dot-256 Y increment,
@@ -218,6 +224,39 @@ impl Ppu {
             }
         }
         crossed_scanlines
+    }
+
+    /// Tracks mapper-visible A12 transitions at scheduled pattern-fetch slots.
+    fn update_mapper_a12_bus(&mut self) {
+        if self.mask & 0x18 == 0 || !(self.scanline < 240 || self.scanline == 261) {
+            if self.mapper_a12_high {
+                self.mapper_a12_high = false;
+                self.mapper_bus_events.push((0, self.ppu_cycle));
+            }
+            return;
+        }
+        let dot = self.dot;
+        let mut high = false;
+        if (1..=256).contains(&dot) || (321..=336).contains(&dot) {
+            let phase = (dot - 1) & 7;
+            if phase == 4 || phase == 6 { high = self.ctrl & 0x10 != 0; }
+        } else if (257..=320).contains(&dot) {
+            let phase = (dot - 257) & 7;
+            if phase == 4 || phase == 6 {
+                if self.ctrl & 0x20 != 0 {
+                    let sprite = ((dot - 257) / 8) as usize;
+                    high = self.oam[sprite * 4 + 1] & 1 != 0;
+                } else { high = self.ctrl & 0x08 != 0; }
+            }
+        }
+        if high != self.mapper_a12_high {
+            self.mapper_a12_high = high;
+            self.mapper_bus_events.push((if high { 0x1000 } else { 0 }, self.ppu_cycle));
+        }
+    }
+
+    pub(crate) fn take_mapper_bus_events(&mut self) -> Vec<(u16, u64)> {
+        core::mem::take(&mut self.mapper_bus_events)
     }
 
     /// Checks sprite-zero/background opacity for one beam pixel.

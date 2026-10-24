@@ -239,15 +239,8 @@ impl NesMachine {
     /// scanline boundaries in one large PPU/APU batch.
     fn clock_devices_for_cpu_cycles(&mut self, mut cycles: u32) {
         while cycles != 0 {
-            let rendering_enabled = self.bus.ppu_rendering_enabled();
-            let crossed_scanlines = self.bus.tick_ppu(3);
-            if rendering_enabled {
-                for _ in 0..crossed_scanlines {
-                    // Approximation: MMC3 is clocked per rendered scanline until the PPU
-                    // exposes real pattern-fetch A12 edges. Idle scanlines must not clock it.
-                    self.bus.clock_mapper_irq();
-                }
-            }
+            let _crossed_scanlines = self.bus.tick_ppu(3);
+            // MMC3 IRQs now follow filtered PPU A12 transitions instead of scanline clocks.
             let dmc_stalls = self.bus.tick_apu(1);
             cycles -= 1;
 
