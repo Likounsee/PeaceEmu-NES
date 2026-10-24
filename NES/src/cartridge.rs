@@ -89,7 +89,7 @@ impl Nrom {
     /// Parses an iNES or NES 2.0 mapper-0 image with one or two PRG banks.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if image[0..4] != [0x4E, 0x45, 0x53, 0x1A] { return Err(CartridgeError::InvalidMagic); }
+        if image[0] != b'N' || image[1] != b'E' || image[2] != b'S' || image[3] != 0x1A { return Err(CartridgeError::InvalidMagic); }
         let nes2 = image[7] & 0x0C == 0x08;
         let mapper = if nes2 {
             ((image[6] >> 4) as u16)
