@@ -1,0 +1,58 @@
+name: Publish NES desktop module
+
+on:
+  push:
+    tags:
+      - "nes-module-*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing nes-module-* tag to build and publish
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nes-module-release-\${{ inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish-windows-x64:
+    name: Build and publish Windows x64 module
+    runs-on: windows-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+        with:
+          ref: \${{ inputs.release_tag || github.ref }}
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build the standalone desktop module
+        run: cargo build --manifest-path NES/Cargo.toml --bin peaceemu-nes-desktop --release --locked
+
+      - name: Prepare release assets and SHA-256
+        shell: pwsh
+        run: |
+          $exe = "NES/target/release/peaceemu-nes-desktop.exe"
+          if (-not (Test-Path $exe -PathType Leaf)) {
+            throw "Expected module executable was not produced: $exe"
+          }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  peaceemu-nes-desktop.exe" | Set-Content -Path "NES/target/release/peaceemu-nes-desktop.exe.sha256" -Encoding ascii
+          Get-Item $exe | Select-Object Name, Length
+          Get-Content "NES/target/release/peaceemu-nes-desktop.exe.sha256"
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: \${{ inputs.release_tag || github.ref_name }}
+          name: PeaceEmu NES module \${{ inputs.release_tag || github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            NES/target/release/peaceemu-nes-desktop.exe
+            NES/target/release/peaceemu-nes-desktop.exe.sha256
