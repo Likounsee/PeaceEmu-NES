@@ -37,7 +37,7 @@ impl CpuBus {
             0x2000..=0x3FFF => self.ppu.cpu_read_register(address & 7, self.cartridge.as_ref()),
             // Bit 5 of $4015 is open bus on the 2A03; preserve the previous bus value.
             0x4015 => self.apu.read(address) | (self.open_bus & 0x20),
-            0x4016..=0x4017 => self.read_controller((address - 0x4016) as usize),
+            0x4016..=0x4017 => self.read_controller((address - 0x4016) as usize, self.open_bus & 0x20),
             0x8000..=0xFFFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
             _ => self.open_bus,
         };
@@ -75,13 +75,15 @@ impl CpuBus {
         }
     }
 
-    fn read_controller(&mut self, port: usize) -> u8 {
+    fn read_controller(&mut self, port: usize, open_bus_bit_5: u8) -> u8 {
+        // The controller drives bits 0 and 6; bit 5 remains the CPU bus's open-bus value.
+        // Preserve it both while strobe is high and during serial reads.
         if self.controller_strobe {
-            return 0x40 | (self.controller_state[port] & 1);
+            return 0x40 | open_bus_bit_5 | (self.controller_state[port] & 1);
         }
         let value = self.controller_shift[port] & 1;
         self.controller_shift[port] = (self.controller_shift[port] >> 1) | 0x80;
-        0x40 | value
+        0x40 | open_bus_bit_5 | value
     }
 
     /// Rebuilds the background framebuffer from the attached cartridge and current VRAM scroll.
@@ -366,4 +368,18 @@ mod tests {
         assert_eq!(bus.read(0x8000), 0);
     }
 
+
+    #[test]
+    fn controller_reads_preserve_cpu_open_bus_bit_five() {
+        let mut bus = CpuBus::new();
+        bus.set_controller_state(0, 0);
+        bus.write(0x4016, 1);
+
+        bus.write(0x4000, 0x20);
+        assert_ne!(bus.read(0x4016) & 0x20, 0, "bit 5 should retain the high open-bus value");
+
+        bus.write(0x4000, 0x00);
+        assert_eq!(bus.read(0x4016) & 0x20, 0, "bit 5 should retain the low open-bus value");
+        assert_ne!(bus.read(0x4016) & 0x40, 0, "controller bit 6 is driven high");
+    }
 }
