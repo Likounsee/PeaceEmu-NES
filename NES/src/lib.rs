@@ -1,4 +1,7 @@
 #![forbid(unsafe_code)]
+// Keep modulo checks compatible with the NES module's declared Rust 1.78 MSRV,
+// even when Clippy runs through the root package with a newer MSRV.
+#![allow(clippy::manual_is_multiple_of)]
 #![deny(missing_docs)]
 
 //! Hardware-focused NES emulation components, without a GUI dependency.
