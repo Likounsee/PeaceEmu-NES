@@ -239,10 +239,10 @@ impl Ppu {
         let mut high = false;
         if (1..=256).contains(&dot) || (321..=336).contains(&dot) {
             let phase = (dot - 1) & 7;
-            if phase == 4 || phase == 6 { high = self.ctrl & 0x10 != 0; }
+            if (4..=7).contains(&phase) { high = self.ctrl & 0x10 != 0; }
         } else if (257..=320).contains(&dot) {
             let phase = (dot - 257) & 7;
-            if phase == 4 || phase == 6 {
+            if (4..=7).contains(&phase) {
                 if self.ctrl & 0x20 != 0 {
                     let sprite = ((dot - 257) / 8) as usize;
                     high = self.oam[sprite * 4 + 1] & 1 != 0;

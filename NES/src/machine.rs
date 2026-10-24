@@ -690,9 +690,10 @@ mod tests {
         machine.clock_devices_for_cpu_cycles(114); // Cross one scanline.
         assert!(!machine.bus.irq_pending(), "idle PPU scanlines must not clock the MMC3 IRQ counter");
 
+        machine.write_cpu(0x2000, 0x10); // Background pattern table at $1000.
         machine.write_cpu(0x2001, 0x08); // Enable background rendering.
-        machine.clock_devices_for_cpu_cycles(114); // Cross another scanline.
-        assert!(machine.bus.irq_pending(), "rendered scanlines should clock the approximate MMC3 IRQ counter");
+        machine.clock_devices_for_cpu_cycles(228); // Allow the filtered A12 edge on the following scanline.
+        assert!(machine.bus.irq_pending(), "a qualified PPU A12 rising edge should clock the MMC3 IRQ counter");
     }
 
     #[test]
