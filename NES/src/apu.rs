@@ -1,10 +1,9 @@
 //! Initial APU register, length-counter, and frame-sequencer model for the NES 2A03.
 //!
-//! Approximate CPU-cycle APU model with pulse, triangle and noise sample generation.
+//! CPU-cycle APU model with pulse, triangle, noise, DMC, frame IRQ and queued PCM output.
 //!
-//! Envelope/sweep units, triangle linear-counter behavior and DMC playback are approximate;
-//! DMC fetches are supplied by the bus without cycle-accurate DMA stalls. Exact regional
-//! timing and host-rate resampling remain incomplete.
+//! Frame-counter writes include the delayed 3/4-cycle reset window. Envelope and sweep
+//! dividers, DMC DMA stalls, regional timing, and nonlinear mixing remain approximate.
 
 use std::collections::VecDeque;
 
@@ -163,8 +162,8 @@ impl Apu {
         self.dmc_enabled && self.dmc_bytes_remaining > 0
     }
 
-    /// Advances oscillator timers and the approximate frame sequencer.
-    /// Exact regional timing and delayed $4017 reset are not modelled.
+    /// Advances oscillator timers and the frame sequencer in CPU-cycle-sized steps.
+    /// The $4017 reset delay is modelled; individual oscillator and regional timings remain approximate.
     pub fn tick_cpu_cycles(&mut self, cycles: u32) {
         const FOUR_STEP_PERIOD: u32 = 14_915;
         const FIVE_STEP_PERIOD: u32 = 18_641;
@@ -226,6 +225,12 @@ impl Apu {
                     self.frame_cycles = 0;
                     self.half_frame_cycles = 0;
                     self.quarter_frame_cycles = 0;
+                    // The five-step sequence clocks both unit groups immediately
+                    // when its delayed reset takes effect.
+                    if self.five_step_mode {
+                        self.clock_quarter_units_once();
+                        self.clock_half_units_once();
+                    }
                 }
             }
             self.frame_cycles = self.frame_cycles.saturating_add(1);
@@ -332,6 +337,64 @@ impl Apu {
                 let alpha = 1.0 - (-core::f32::consts::TAU * cutoff_hz / self.sample_rate as f32).exp();
                 self.pcm_low_pass += alpha * (self.sample() - self.pcm_low_pass);
                 self.audio_samples.push_back(self.pcm_low_pass.clamp(0.0, 1.0));
+            }
+        }
+    }
+
+    /// Applies one quarter-frame clock to envelope and triangle linear-counter units.
+    /// Used by the immediate clock accompanying a five-step frame-counter reset.
+    fn clock_quarter_units_once(&mut self) {
+        for channel in 0..2 {
+            let control = self.registers[channel * 4];
+            if self.pulse_envelope_start[channel] {
+                self.pulse_envelope_start[channel] = false;
+                self.pulse_envelope_decay[channel] = 15;
+                self.pulse_envelope_divider[channel] = control & 0x0F;
+            } else if self.pulse_envelope_divider[channel] == 0 {
+                self.pulse_envelope_divider[channel] = control & 0x0F;
+                if self.pulse_envelope_decay[channel] > 0 {
+                    self.pulse_envelope_decay[channel] -= 1;
+                } else if control & 0x20 != 0 {
+                    self.pulse_envelope_decay[channel] = 15;
+                }
+            } else {
+                self.pulse_envelope_divider[channel] -= 1;
+            }
+        }
+        let control = self.registers[0x0C];
+        if self.noise_envelope_start {
+            self.noise_envelope_start = false;
+            self.noise_envelope_decay = 15;
+            self.noise_envelope_divider = control & 0x0F;
+        } else if self.noise_envelope_divider == 0 {
+            self.noise_envelope_divider = control & 0x0F;
+            if self.noise_envelope_decay > 0 {
+                self.noise_envelope_decay -= 1;
+            } else if control & 0x20 != 0 {
+                self.noise_envelope_decay = 15;
+            }
+        } else {
+            self.noise_envelope_divider -= 1;
+        }
+        let triangle_control = self.registers[0x08];
+        if self.triangle_reload_flag {
+            self.triangle_linear_counter = triangle_control & 0x7F;
+        } else if self.triangle_linear_counter > 0 {
+            self.triangle_linear_counter -= 1;
+        }
+        if triangle_control & 0x80 == 0 { self.triangle_reload_flag = false; }
+    }
+
+    /// Applies one half-frame length-counter clock on a five-step reset.
+    fn clock_half_units_once(&mut self) {
+        for channel in 0..4 {
+            let halt = match channel {
+                0 | 1 => self.registers[if channel == 0 { 0 } else { 4 }] & 0x20 != 0,
+                2 => self.registers[0x08] & 0x80 != 0,
+                _ => self.registers[0x0C] & 0x20 != 0,
+            };
+            if !halt && self.length_counters[channel] > 0 {
+                self.length_counters[channel] -= 1;
             }
         }
     }
@@ -457,6 +520,26 @@ mod tests {
         assert_eq!(apu.frame_cycles, 1, "the sequencer resumes on the cycle after reset");
         assert_eq!(apu.half_frame_cycles, 1);
         assert_eq!(apu.quarter_frame_cycles, 1);
+    }
+
+    #[test]
+    fn five_step_reset_clocks_envelopes_and_length_units_immediately() {
+        let mut apu = Apu::new();
+        apu.write(0x4015, 0x09); // Enable pulse 1 and noise.
+        apu.write(0x4000, 0x00); // Pulse envelope, period zero.
+        apu.write(0x4003, 0xF8); // Reload pulse length.
+        apu.write(0x400C, 0x00); // Noise envelope, period zero.
+        apu.write(0x400F, 0xF8); // Reload noise length and restart envelope.
+        let pulse_length = apu.length_counters[0];
+        let noise_length = apu.length_counters[3];
+
+        apu.write(0x4017, 0x80);
+        apu.tick_cpu_cycles(u32::from(apu.frame_reset_delay));
+
+        assert_eq!(apu.pulse_envelope_decay[0], 15);
+        assert_eq!(apu.noise_envelope_decay, 15);
+        assert_eq!(apu.length_counters[0], pulse_length - 1);
+        assert_eq!(apu.length_counters[3], noise_length - 1);
     }
 
     #[test]
