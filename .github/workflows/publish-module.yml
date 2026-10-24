@@ -55,21 +55,6 @@ jobs:
           Get-Item $exe | Select-Object Name, Length
           Get-Content "NES/target/release/peaceemu-nes-desktop.exe.sha256"
 
-      - name: Remove previous development release and tag
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CURRENT_TAG: ${{ inputs.release_tag || github.ref_name }}
-        run: |
-          $tags = gh release list --limit 100 --json tagName | ConvertFrom-Json
-          foreach ($release in $tags) {
-            $oldTag = $release.tagName
-            if ($oldTag -like "nes-module-*" -and $oldTag -ne $env:CURRENT_TAG) {
-              Write-Host "Removing previous development release and tag: $oldTag"
-              gh release delete $oldTag --yes --cleanup-tag
-              if ($LASTEXITCODE -ne 0) { throw "Could not delete previous release/tag $oldTag" }
-            }
-          }
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
