@@ -1,8 +1,8 @@
 name: NES module releases
 
 on:
-  push:
-    branches: [NES]
+  # Development commits must never publish or replace downloadable releases.
+  # Use the dedicated tag-based publish workflow when a version is ready.
   workflow_dispatch:
 
 permissions:
