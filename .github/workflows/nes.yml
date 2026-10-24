@@ -12,6 +12,8 @@ on:
     branches: [main, NES]
     paths:
       - "NES/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - ".github/workflows/nes.yml"
   workflow_dispatch:
 
