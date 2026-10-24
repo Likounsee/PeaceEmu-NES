@@ -16,7 +16,7 @@ const LENGTH_TABLE: [u8; 32] = [
 ];
 
 /// CPU-visible register state for the NES audio processing unit.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Apu {
     registers: [u8; 0x18],
     enabled_channels: u8,
@@ -65,17 +65,59 @@ pub struct Apu {
     audio_samples: VecDeque<f32>,
 }
 
-impl Apu {
-    /// Creates an APU register model with all channels disabled.
-    pub fn new() -> Self {
+impl Default for Apu {
+    fn default() -> Self {
         Self {
+            registers: [0; 0x18],
+            enabled_channels: 0,
+            length_counters: [0; 4],
+            frame_cycles: 0,
+            half_frame_cycles: 0,
+            frame_irq: false,
+            frame_irq_inhibit: false,
+            five_step_mode: false,
+            pending_five_step_mode: false,
+            frame_reset_delay: 0,
+            frame_reset_pending: false,
+            pulse_timer_counter: [0; 2],
+            pulse_sequence: [0; 2],
+            triangle_timer_counter: 0,
+            triangle_sequence: 0,
+            noise_timer_counter: 0,
+            noise_shift: 0,
+            cpu_cycle_odd: false,
+            quarter_frame_cycles: 0,
+            pulse_envelope_start: [false; 2],
+            pulse_envelope_divider: [0; 2],
+            pulse_envelope_decay: [0; 2],
+            noise_envelope_start: false,
+            noise_envelope_divider: 0,
+            noise_envelope_decay: 0,
+            pulse_sweep_divider: [0; 2],
+            pulse_sweep_reload: [false; 2],
+            triangle_linear_counter: 0,
+            triangle_reload_flag: false,
+            dmc_irq: false,
+            dmc_enabled: false,
+            dmc_bytes_remaining: 0,
+            dmc_current_address: 0,
+            dmc_sample_buffer: None,
+            dmc_shift_register: 0,
             dmc_bits_remaining: 8,
             dmc_silence: true,
+            dmc_timer_counter: 0,
+            dmc_output_level: 0,
             sample_rate: 44_100,
+            sample_phase: 0,
+            pcm_low_pass: 0.0,
             audio_samples: VecDeque::with_capacity(AUDIO_QUEUE_LIMIT),
-            ..Self::default()
         }
     }
+}
+
+impl Apu {
+    /// Creates an APU register model with all channels disabled.
+    pub fn new() -> Self { Self::default() }
 
     /// Configures the PCM output rate; accepted rates are 8 kHz through 192 kHz.
     ///
@@ -451,6 +493,15 @@ impl Apu {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn default_and_new_apu_start_with_a_valid_pcm_configuration() {
+        for mut apu in [Apu::default(), Apu::new()] {
+            assert_eq!(apu.sample_rate(), 44_100);
+            apu.tick_cpu_cycles(2_000);
+            assert!(!apu.drain_audio_samples().is_empty(), "default construction must produce PCM");
+        }
+    }
+
     #[test]
     fn frame_counter_write_resets_sequencer_after_hardware_delay() {
         let mut apu = Apu::new();

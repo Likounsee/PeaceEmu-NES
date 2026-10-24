@@ -2110,6 +2110,36 @@ mod mmc1_tests {
     }
 
     #[test]
+    fn surom_outer_bank_select_works_in_all_mmc1_prg_modes() {
+        let mut cart = Cartridge::parse(&mmc1_image(32, 0)).unwrap();
+
+        // CHR0 bit 4 selects the upper 256 KiB SUROM half; the PRG register
+        // still selects the bank within that half.
+        serial_write(&mut cart, 0xA000, 0x10);
+        serial_write(&mut cart, 0xE000, 3);
+        serial_write(&mut cart, 0x8000, 0x00); // 32 KiB mode: banks 18/19.
+        assert_eq!(cart.cpu_read(0x8000), Some(18));
+        assert_eq!(cart.cpu_read(0xC000), Some(19));
+
+        serial_write(&mut cart, 0x8000, 0x04); // Mode 1 is also paired 32 KiB.
+        assert_eq!(cart.cpu_read(0x8000), Some(18));
+        assert_eq!(cart.cpu_read(0xC000), Some(19));
+
+        serial_write(&mut cart, 0x8000, 0x08); // Mode 2: outer-half first bank is fixed.
+        assert_eq!(cart.cpu_read(0x8000), Some(16));
+        assert_eq!(cart.cpu_read(0xC000), Some(19));
+
+        serial_write(&mut cart, 0x8000, 0x0C); // Mode 3: outer-half last bank is fixed.
+        assert_eq!(cart.cpu_read(0x8000), Some(19));
+        assert_eq!(cart.cpu_read(0xC000), Some(31));
+
+        // Selecting the lower half must restore the original 16 KiB bank range.
+        serial_write(&mut cart, 0xA000, 0x00);
+        assert_eq!(cart.cpu_read(0x8000), Some(3));
+        assert_eq!(cart.cpu_read(0xC000), Some(15));
+    }
+
+    #[test]
     fn mapper_one_rejects_unsupported_prg_sizes_and_truncated_images() {
         assert!(matches!(Cartridge::parse(&mmc1_image(3, 0)), Err(CartridgeError::InvalidPrgSize(_))));
         let mut image = mmc1_image(2, 1);
