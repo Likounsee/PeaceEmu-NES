@@ -988,6 +988,30 @@ mod pcm_output_tests {
     use super::*;
 
     #[test]
+    fn noise_lfsr_uses_the_selected_feedback_tap_and_never_stays_zero() {
+        let mut apu = Apu::new();
+        apu.noise_shift = 0x0002;
+        apu.noise_timer_counter = 0;
+        apu.cpu_cycle_odd = false;
+        apu.write(0x400E, 0x00); // Long mode: tap bit 1.
+        apu.tick_cpu_cycles(1);
+        assert_eq!(apu.noise_shift, 0x4001, "bit 0 XOR bit 1 is fed into bit 14");
+
+        apu.noise_shift = 0x0002;
+        apu.noise_timer_counter = 0;
+        apu.cpu_cycle_odd = false;
+        apu.write(0x400E, 0x80); // Short mode: tap bit 6.
+        apu.tick_cpu_cycles(1);
+        assert_eq!(apu.noise_shift, 0x0001, "bit 0 XOR bit 6 is zero for this seed");
+
+        apu.noise_shift = 0;
+        apu.noise_timer_counter = 0;
+        apu.cpu_cycle_odd = false;
+        apu.tick_cpu_cycles(1);
+        assert_eq!(apu.noise_shift, 0x4000, "the LFSR must recover from an invalid all-zero state");
+    }
+
+    #[test]
     fn noise_channel_uses_its_own_decay_envelope_and_constant_volume_mode() {
         let mut apu = Apu::new();
         apu.write(0x4015, 0x08);

@@ -1728,6 +1728,18 @@ mod tests {
     }
 
     #[test]
+    fn palette_ram_writes_apply_six_bit_mask_and_universal_color_aliases() {
+        let mut ppu = Ppu::new();
+        ppu.mem_write(0x3F10, 0xFF, None);
+        assert_eq!(ppu.mem_read(0x3F00, None), 0x3F);
+        assert_eq!(ppu.mem_read(0x3F10, None), 0x3F);
+
+        ppu.mem_write(0x3F24, 0x2A, None);
+        assert_eq!(ppu.mem_read(0x3F04, None), 0x2A);
+        assert_eq!(ppu.mem_read(0x3F24, None), 0x2A);
+    }
+
+    #[test]
     fn palette_addresses_mirror_universal_background_entries() {
         for (address, expected) in [
             (0x3F00, 0x00),

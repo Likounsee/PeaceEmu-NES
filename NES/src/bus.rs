@@ -519,6 +519,20 @@ mod tests {
     }
 
 #[test]
+    #[test]
+    fn invalid_controller_port_updates_are_ignored_without_affecting_valid_ports() {
+        let mut bus = CpuBus::new();
+        bus.set_controller_state(0, 0b0000_0001);
+        bus.set_controller_state(1, 0b0000_0010);
+        bus.set_controller_state(2, 0xFF);
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+        assert_eq!(bus.read(0x4016) & 1, 1);
+        assert_eq!(bus.read(0x4017) & 1, 0);
+        assert_eq!(bus.read(0x4016) & 1, 0);
+        assert_eq!(bus.read(0x4017) & 1, 1);
+    }
+
     fn reset_preserves_cartridge_ram_controller_levels_and_audio_rate_but_clears_pending_io() {
         let mut image = vec![0; 16 + 16 * 1024];
         image[0..4].copy_from_slice(b"NES\x1A");
