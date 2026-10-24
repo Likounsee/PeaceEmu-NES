@@ -986,14 +986,13 @@ mod tests {
     fn fine_x_scroll_write_affects_only_pixels_not_yet_emitted() {
         let mut ppu = Ppu::new();
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap();
         ppu.scanline = 0;
         ppu.dot = 0;
         ppu.mask = 0x0A;
-        ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
-        ppu.mem_write(0x0001, 0x40, Some(&mut cartridge));
+        ppu.mem_write(0x0000, 0xC0, Some(&mut cartridge));
         ppu.palette[1] = 0x21;
 
         ppu.tick_with_cartridge(1, Some(&cartridge));
@@ -1001,7 +1000,7 @@ mod tests {
         ppu.tick_with_cartridge(255, Some(&cartridge));
 
         assert_eq!(ppu.framebuffer()[0], 0x21, "the first pixel keeps the old fine-X alignment");
-        assert_eq!(ppu.framebuffer()[1], 0x21, "later pixels use the updated fine-X alignment");
+        assert!(!ppu.background_opaque[1], "later pixels use the updated fine-X alignment");
     }
 
     #[test]
