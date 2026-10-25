@@ -20,9 +20,12 @@ pub struct CpuBus {
     controller_state: [u8; 2],
     controller_shift: [u8; 2],
     controller_strobe: bool,
+    /// Instruction execution enables one PPU cycle per CPU bus access.
+    instruction_timing: bool,
+    instruction_bus_cycles: u16,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0 } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -44,8 +47,30 @@ impl CpuBus {
     }
     /// Attaches a parsed cartridge.
     pub fn insert_cartridge(&mut self, cartridge: Cartridge) { self.cartridge = Some(cartridge); }
+
+    /// Starts tracking CPU bus cycles during one instruction.
+    pub(crate) fn begin_cpu_instruction(&mut self) {
+        self.instruction_timing = true;
+        self.instruction_bus_cycles = 0;
+    }
+
+    /// Stops bus-cycle tracking and returns cycles already advanced through PPU dots.
+    pub(crate) fn end_cpu_instruction(&mut self) -> u16 {
+        self.instruction_timing = false;
+        core::mem::take(&mut self.instruction_bus_cycles)
+    }
+
+    /// Advances the PPU to the sampling point of the current CPU bus access.
+    fn clock_instruction_bus_access(&mut self) {
+        if self.instruction_timing {
+            self.instruction_bus_cycles = self.instruction_bus_cycles.saturating_add(1);
+            self.tick_ppu(3);
+        }
+    }
+
     /// Reads a byte from the CPU address space.
     pub fn read(&mut self, address: u16) -> u8 {
+        self.clock_instruction_bus_access();
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x6000..=0x7FFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
@@ -61,6 +86,7 @@ impl CpuBus {
     }
     /// Writes a byte to the CPU address space. Cartridge ROM is not writable.
     pub fn write(&mut self, address: u16, value: u8) {
+        self.clock_instruction_bus_access();
         self.open_bus = value;
         match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF] = value,
