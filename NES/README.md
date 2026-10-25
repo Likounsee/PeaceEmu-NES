@@ -4,7 +4,7 @@ Cœur matériel Nintendo Entertainment System en Rust. Le but est de fournir à 
 
 ## État en un coup d'œil
 
-**Avancement estimé : 63 %.** Cette estimation porte sur le travail d'ingénierie du cœur ; elle ne mesure ni la couverture des lignes, ni le taux de jeux compatibles.
+**Avancement estimé : 64 %.** Cette estimation porte sur le travail d'ingénierie du cœur ; elle ne mesure ni la couverture des lignes, ni le taux de jeux compatibles.
 
 | Domaine | Estimation | Résumé |
 |---|---:|---|
@@ -12,9 +12,9 @@ Cœur matériel Nintendo Entertainment System en Rust. Le but est de fournir à 
 | PPU | 58 % | Registres, mémoire vidéo, VBlank/NMI, rendu 256×240 ; pipeline par dot incomplète |
 | APU | 60 % | Pulse/triangle/bruit, séquenceur et DMC initial ; mixage et DMA approximatifs |
 | Bus et manettes | 72 % | RAM miroir, registres, ports série, DMA OAM, premiers accès DMC |
-| Cartouches/mappers | 78 % | Nombreuses cartes iNES legacy ; variantes et NES 2.0 non générales |
+| Cartouches/mappers | 79 % | Nombreuses cartes iNES legacy ; variantes et NES 2.0 non générales |
 | Machine/session | 72 % | Chargement, reset, frames, PCM, entrées et RAM batterie |
-| Tests et robustesse | 65 % | Régressions unitaires et d'intégration ; validation ROM réelle à élargir |
+| Tests et robustesse | 66 % | Régressions unitaires et d'intégration ; validation ROM réelle à élargir |
 | Intégration hôte | 45 % | L'adaptateur et le parcours complet doivent être validés avec le dépôt principal |
 
 Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas être moyennées comme une métrique de compatibilité.
