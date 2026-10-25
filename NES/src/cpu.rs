@@ -1697,6 +1697,8 @@ mod brk_stack_regression_tests {
 
 
 #[cfg(test)]
+
+#[cfg(test)]
 mod indirect_jump_and_branch_regressions {
     use super::*;
 
@@ -1709,7 +1711,7 @@ mod indirect_jump_and_branch_regressions {
             bus.write(0x0602, 0x02);
             bus.write(0x02FF, 0x34);
             bus.write(0x0200, 0x12);
-            bus.write(0x0300, 0x99); // Must not be used by the NMOS 6502 page-wrap bug.
+            bus.write(0x0300, 0x99); // The NMOS 6502 does not read this address.
             let mut cpu = Cpu::new();
             cpu.set_pc(0x0600);
             (cpu, bus)
@@ -1721,21 +1723,18 @@ mod indirect_jump_and_branch_regressions {
     }
 
     #[test]
-    fn taken_branch_crossing_page_has_four_cycles_and_correct_target() {
-        let (mut cpu, mut bus) = setup(&[0xD0, 0xFE]); // BNE -2 at $0600.
-        cpu.set_pc(0x06FE);
-        bus.write(0x06FE, 0xD0);
-        bus.write(0x06FF, 0xFE);
+    fn taken_branch_reports_three_cycles_without_crossing_and_four_with_crossing() {
+        let (mut cpu, mut bus) = setup(&[0xD0, 0xFE]);
         cpu.state.status &= !flags::ZERO;
-        let result = cpu.step(&mut bus).unwrap();
-        assert_eq!(result.cycles, 3);
-        assert_eq!(cpu.state().pc, 0x06FE);
+        let same_page = cpu.step(&mut bus).unwrap();
+        assert_eq!(same_page.cycles, 3);
+        assert_eq!(cpu.state().pc, 0x0600);
 
-        cpu.set_pc(0x06FD);
-        bus.write(0x06FD, 0xD0);
-        bus.write(0x06FE, 0x02); // Sequential PC $06FF -> target $0701 crosses a page? No.
-        let result = cpu.step(&mut bus).unwrap();
-        assert_eq!(result.cycles, 3);
-        assert_eq!(cpu.state().pc, 0x0701);
+        cpu.set_pc(0x06FC);
+        bus.write(0x06FC, 0xD0);
+        bus.write(0x06FD, 0x02); // $06FE + 2 -> $0700.
+        let cross_page = cpu.step(&mut bus).unwrap();
+        assert_eq!(cross_page.cycles, 4);
+        assert_eq!(cpu.state().pc, 0x0700);
     }
 }
