@@ -3062,3 +3062,50 @@ mod nmi_enable_and_coarse_y_regressions {
         assert_eq!(ppu.v & 0x001F, 5, "coarse X is preserved");
     }
 }
+
+
+#[cfg(test)]
+mod sprite_zero_boundary_regressions {
+    use super::*;
+
+    fn opaque_sprite_cartridge() -> Cartridge {
+        let mut rom = vec![0; 16 + 16_384 + 8_192];
+        rom[0..4].copy_from_slice(b"NES\\x1A");
+        rom[4] = 1;
+        rom[5] = 1;
+        let chr = 16 + 16_384;
+        rom[chr..chr + 16].fill(0xFF);
+        Cartridge::parse(&rom).unwrap()
+    }
+
+    #[test]
+    fn sprite_zero_hit_can_occur_at_x254_but_never_at_x255() {
+        let cart = opaque_sprite_cartridge();
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x1E;
+        ppu.oam[0] = 0;
+        ppu.oam[1] = 0;
+        ppu.oam[3] = 248;
+        ppu.background_opaque[254] = true;
+        ppu.background_opaque[255] = true;
+
+        assert!(ppu.sprite_zero_hit_at(254, 0, Some(&cart)));
+        assert!(!ppu.sprite_zero_hit_at(255, 0, Some(&cart)),
+            "the hardware suppresses sprite-zero hit on the final visible pixel");
+    }
+
+    #[test]
+    fn sprite_zero_hit_is_independent_of_sprite_behind_background_priority() {
+        let cart = opaque_sprite_cartridge();
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x1E;
+        ppu.oam[0] = 0;
+        ppu.oam[1] = 0;
+        ppu.oam[2] = 0x20; // Sprite priority: behind the background.
+        ppu.oam[3] = 16;
+        ppu.background_opaque[16] = true;
+
+        assert!(ppu.sprite_zero_hit_at(16, 0, Some(&cart)),
+            "sprite-zero hit depends on opaque overlap, not visual priority");
+    }
+}
