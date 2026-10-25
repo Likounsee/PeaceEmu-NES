@@ -1170,7 +1170,9 @@ mod tests {
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap();
         cartridge.ppu_write(0, 0xFF); // Opaque background tile 0.
+        cartridge.ppu_write(1, 0xFF); // Row used at visible scanline one.
         cartridge.ppu_write(16, 0xFF); // Sprite tile 1.
+        cartridge.ppu_write(17, 0xFF);
         cartridge.ppu_write(32, 0xFF); // Sprite tile 2.
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
