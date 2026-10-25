@@ -778,8 +778,8 @@ mod instruction_bus_timing_regressions {
     #[test]
     fn status_read_observes_vblank_reached_during_operand_fetches() {
         let mut bus = CpuBus::new();
-        bus.ppu.scanline = 241;
-        bus.ppu.dot = 0;
+        bus.tick_ppu(242 * 341);
+        assert_eq!(bus.ppu_position(), (241, 0));
         bus.begin_cpu_instruction();
 
         // BIT $2002 fetches opcode and its two address bytes before reading status.
@@ -791,8 +791,8 @@ mod instruction_bus_timing_regressions {
 
         assert_eq!(cycles, 4);
         assert_ne!(status & 0x80, 0, "vblank begins before the fourth-cycle status sample");
-        assert_eq!(bus.ppu.status & 0x80, 0, "$2002 read clears the vblank flag");
-        assert_eq!(bus.ppu.position(), (241, 12));
+        assert_eq!(bus.read(0x2002) & 0x80, 0, "a second $2002 read sees the cleared vblank flag");
+        assert_eq!(bus.ppu_position(), (241, 15));
     }
 
     #[test]
