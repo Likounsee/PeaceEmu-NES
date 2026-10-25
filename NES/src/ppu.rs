@@ -310,6 +310,26 @@ impl Ppu {
         pattern_base + (tile * 16 + row) as u16
     }
 
+    /// Samples one sprite pixel using the same flip/address rules for composition and hit tests.
+    ///
+    /// `screen_x` is the pixel offset from the sprite's left edge (0..8); horizontal
+    /// and vertical flips are applied here so sprite-zero detection cannot drift from
+    /// the sprite image rendered at the same beam coordinate.
+    fn sprite_pixel(
+        &self,
+        tile_index: usize,
+        attributes: u8,
+        row_in_sprite: usize,
+        screen_x: usize,
+        cartridge: Option<&Cartridge>,
+    ) -> u8 {
+        if screen_x >= 8 { return 0; }
+        let address = self.sprite_pattern_address(tile_index, attributes, row_in_sprite);
+        let bit = if attributes & 0x40 != 0 { screen_x } else { 7 - screen_x };
+        ((self.mem_read(address, cartridge) >> bit) & 1)
+            | (((self.mem_read(address + 8, cartridge) >> bit) & 1) << 1)
+    }
+
     /// Checks sprite-zero/background opacity for one beam pixel.
     ///
     /// This is deliberately separate from scanline composition: games such as SMB poll
@@ -340,12 +360,13 @@ impl Ppu {
 
         let attributes = self.oam[2];
         let row_in_sprite = y - sprite_top;
-        let sprite_addr = self.sprite_pattern_address(self.oam[1] as usize, attributes, row_in_sprite);
-        let sprite_x = x - sprite_left;
-        let sprite_bit = if attributes & 0x40 != 0 { sprite_x } else { 7 - sprite_x };
-        let sprite_pixel = ((self.mem_read(sprite_addr, cartridge) >> sprite_bit) & 1)
-            | (((self.mem_read(sprite_addr + 8, cartridge) >> sprite_bit) & 1) << 1);
-        sprite_pixel != 0
+        self.sprite_pixel(
+            self.oam[1] as usize,
+            attributes,
+            row_in_sprite,
+            x - sprite_left,
+            cartridge,
+        ) != 0
     }
 
     /// Renders one background pixel when the emulated beam reaches it.
@@ -422,12 +443,7 @@ impl Ppu {
             let tile = self.oam[base + 1] as usize;
             let attributes = self.oam[base + 2];
             let row_in_sprite = y - top;
-            let address = self.sprite_pattern_address(tile, attributes, row_in_sprite);
-            let low = self.mem_read(address, cartridge);
-            let high = self.mem_read(address + 8, cartridge);
-            let offset_x = x - left;
-            let bit = if attributes & 0x40 != 0 { offset_x } else { 7 - offset_x };
-            let pixel = ((low >> bit) & 1) | (((high >> bit) & 1) << 1);
+            let pixel = self.sprite_pixel(tile, attributes, row_in_sprite, x - left, cartridge);
             if pixel == 0 { continue; }
 
             // Even a sprite hidden behind opaque background claims this pixel, so
@@ -576,21 +592,10 @@ impl Ppu {
                 if y >= 240 { continue; }
                 rows_per_scanline[y] = rows_per_scanline[y].saturating_add(1);
                 if rows_per_scanline[y] > 8 { self.status |= 0x20; continue; }
-                let source_y = if flip_v { sprite_height - 1 - sy } else { sy };
-                let (pattern_base, tile_index, row) = if sprite_height == 16 {
-                    let base_addr = if tile & 1 != 0 { 0x1000u16 } else { 0 };
-                    (base_addr, (tile & 0xFE) + source_y / 8, source_y % 8)
-                } else {
-                    (if self.ctrl & 0x08 != 0 { 0x1000u16 } else { 0 }, tile, source_y)
-                };
-                let address = pattern_base + (tile_index * 16 + row) as u16;
-                let low = self.mem_read(address, cartridge);
-                let high = self.mem_read(address + 8, cartridge);
                 for sx in 0..8usize {
                     let x = left + sx;
                     if x >= 256 || (x < 8 && self.mask & 0x04 == 0) { continue; }
-                    let source_x = if flip_h { sx } else { 7 - sx };
-                    let pixel = ((low >> source_x) & 1) | (((high >> source_x) & 1) << 1);
+                    let pixel = self.sprite_pixel(tile, attributes, sy, sx, cartridge);
                     if pixel == 0 { continue; }
                     let index = y * 256 + x;
                     // Background and sprite left-edge clipping are independent PPUMASK bits.
@@ -1968,6 +1973,43 @@ mod sprite_overflow_regression_tests {
 
 #[cfg(test)]
 mod sprite_pixel_regression_tests {
+    use super::*;
+
+    #[test]
+    fn sprite_pixel_sampler_applies_horizontal_flip_consistently() {
+        let mut image = vec![0; 16 + 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        let chr = 16 + 16_384;
+        image[chr] = 0b1000_0000;
+        let cart = Cartridge::parse(&image).unwrap();
+        let ppu = Ppu::new();
+
+        assert_eq!(ppu.sprite_pixel(0, 0, 0, 0, Some(&cart)), 1);
+        assert_eq!(ppu.sprite_pixel(0, 0, 0, 7, Some(&cart)), 0);
+        assert_eq!(ppu.sprite_pixel(0, 0x40, 0, 0, Some(&cart)), 0);
+        assert_eq!(ppu.sprite_pixel(0, 0x40, 0, 7, Some(&cart)), 1);
+    }
+
+    #[test]
+    fn sprite_pixel_sampler_flips_entire_8x16_sprite_before_selecting_tile() {
+        let mut image = vec![0; 16 + 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        let chr = 16 + 16_384;
+        image[chr + 16] = 0b1000_0000; // Tile 1, first row.
+        image[chr + 15 * 16] = 0b0000_0001; // Tile 0, final row.
+        let cart = Cartridge::parse(&image).unwrap();
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x20; // 8x16 sprites.
+        assert_eq!(ppu.sprite_pixel(0, 0, 0, 0, Some(&cart)), 0);
+        assert_eq!(ppu.sprite_pixel(0, 0x80, 0, 7, Some(&cart)), 1);
+        assert_eq!(ppu.sprite_pixel(1, 0, 0, 0, Some(&cart)), 1);
+    }
+
+
     use super::*;
 
     #[test]
