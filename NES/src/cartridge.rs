@@ -4875,3 +4875,46 @@ mod mmc3_irq_disable_edge_regressions {
         assert!(cart.irq_pending(), "enabling IRQ must expose the next real counter-zero event");
     }
 }
+
+
+#[cfg(test)]
+mod mmc3_chr_inversion_regressions {
+    use super::*;
+
+    fn image_with_distinct_chr_banks() -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN + CHR_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 2;
+        image[5] = 1;
+        image[6] = 0x40; // Mapper 4.
+        let chr_start = INES_HEADER_LEN + 2 * PRG_BANK_LEN;
+        for bank in 0..8 {
+            let start = chr_start + bank * 0x400;
+            image[start..start + 0x400].fill(0x40 + bank as u8);
+        }
+        image
+    }
+
+    #[test]
+    fn chr_inversion_swaps_two_kib_banks_and_four_one_kib_banks() {
+        let mut cart = Cartridge::parse(&image_with_distinct_chr_banks()).unwrap();
+
+        assert_eq!(cart.ppu_read(0x0000), Some(0x40));
+        assert_eq!(cart.ppu_read(0x0400), Some(0x41));
+        assert_eq!(cart.ppu_read(0x0800), Some(0x42));
+        assert_eq!(cart.ppu_read(0x0C00), Some(0x43));
+        assert_eq!(cart.ppu_read(0x1000), Some(0x44));
+        assert_eq!(cart.ppu_read(0x1C00), Some(0x47));
+
+        cart.cpu_write(0x8000, 0x80); // Invert the MMC3 CHR bank layout.
+
+        assert_eq!(cart.ppu_read(0x0000), Some(0x44));
+        assert_eq!(cart.ppu_read(0x0400), Some(0x45));
+        assert_eq!(cart.ppu_read(0x0800), Some(0x46));
+        assert_eq!(cart.ppu_read(0x0C00), Some(0x47));
+        assert_eq!(cart.ppu_read(0x1000), Some(0x40));
+        assert_eq!(cart.ppu_read(0x1400), Some(0x41));
+        assert_eq!(cart.ppu_read(0x1800), Some(0x42));
+        assert_eq!(cart.ppu_read(0x1C00), Some(0x43));
+    }
+}
