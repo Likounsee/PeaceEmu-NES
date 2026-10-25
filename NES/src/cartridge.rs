@@ -3197,3 +3197,33 @@ mod mmc1_prg_ram_and_mode_regression_tests {
         assert_eq!(cart.cpu_read(0x6000), Some(0xA7), "re-enabling RAM must preserve its contents");
     }
 }
+
+
+#[cfg(test)]
+mod mmc1_prg_ram_protection_regression_tests {
+    use super::*;
+
+    #[test]
+    fn prg_bank_bit_four_disables_prg_ram_without_destroying_contents() {
+        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 2;
+        image[6] = 0x10; // Mapper 1.
+        let mut cartridge = Mmc1::parse(&image).unwrap();
+        assert!(cartridge.cpu_write(0x6000, 0xA5));
+        assert_eq!(cartridge.cpu_read(0x6000), Some(0xA5));
+
+        // MMC1 PRG register bit 4 disables PRG-RAM.
+        for bit in [1, 0, 0, 0, 1] {
+            assert!(cartridge.cpu_write(0xE000, bit));
+        }
+        assert_eq!(cartridge.cpu_read(0x6000), None);
+        assert!(!cartridge.cpu_write(0x6000, 0x11));
+
+        // Write a zero PRG-bank value to re-enable RAM; the previous byte survives.
+        for bit in [0, 0, 0, 0, 0] {
+            assert!(cartridge.cpu_write(0xE000, bit));
+        }
+        assert_eq!(cartridge.cpu_read(0x6000), Some(0xA5));
+    }
+}

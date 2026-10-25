@@ -1636,3 +1636,25 @@ mod interrupt_bus_cycle_regression_tests {
         assert_eq!(bus.read(0x4016) & 1, 0, "two discarded reads must consume the first two controller bits");
     }
 }
+
+
+#[cfg(test)]
+mod brk_stack_regression_tests {
+    use super::*;
+
+    #[test]
+    fn brk_pushes_pc_after_padding_and_break_marked_status() {
+        let (mut cpu, mut bus) = setup(&[0x00, 0xEA]);
+        bus.write(0xFFFE, 0x34);
+        bus.write(0xFFFF, 0x12);
+
+        let result = cpu.step(&mut bus).unwrap();
+
+        assert_eq!(result.cycles, 7);
+        assert_eq!(cpu.state().pc, 0x1234);
+        assert_eq!(bus.read(0x01FD), 0x06, "BRK pushes the high byte of PC after its padding byte");
+        assert_eq!(bus.read(0x01FC), 0x02, "BRK return address points after the padding byte");
+        assert_eq!(bus.read(0x01FB) & (flags::BREAK | flags::UNUSED), flags::BREAK | flags::UNUSED);
+        assert_ne!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
+    }
+}

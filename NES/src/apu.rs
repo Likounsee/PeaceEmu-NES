@@ -1212,3 +1212,41 @@ mod dmc_address_regression_tests {
         assert!(!apu.dmc_irq);
     }
 }
+
+
+#[cfg(test)]
+mod pulse_output_regression_tests {
+    use super::*;
+
+    #[test]
+    fn pulse_output_requires_enabled_nonzero_length_and_valid_period() {
+        let mut apu = Apu::new();
+        apu.write(0x4000, 0x5F); // Duty 1, constant volume 15.
+        apu.write(0x4002, 8);
+        apu.write(0x4003, 0xF8); // Length table entry 31.
+        assert_eq!(apu.sample(), 0.0, "a pulse with a zero length counter is silent");
+
+        apu.write(0x4015, 0x01);
+        apu.write(0x4003, 0xF8);
+        assert!(apu.sample() > 0.0, "an enabled pulse with a valid timer and active duty bit is audible");
+
+        apu.write(0x4015, 0x00);
+        assert_eq!(apu.length_counter(0), Some(0));
+        assert_eq!(apu.sample(), 0.0, "disabling the pulse channel silences its output");
+    }
+
+    #[test]
+    fn changing_sample_rate_discards_old_batch_and_resets_filter_phase() {
+        let mut apu = Apu::new();
+        apu.tick_cpu_cycles(2_000);
+        assert!(!apu.drain_audio_samples().is_empty());
+        apu.tick_cpu_cycles(200);
+        assert!(!apu.audio_samples.is_empty());
+
+        assert!(apu.set_sample_rate(48_000));
+        assert_eq!(apu.sample_rate(), 48_000);
+        assert!(apu.audio_samples.is_empty());
+        assert_eq!(apu.sample_phase, 0);
+        assert_eq!(apu.pcm_low_pass, 0.0);
+    }
+}

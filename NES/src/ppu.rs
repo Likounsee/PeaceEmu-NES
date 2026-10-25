@@ -1941,3 +1941,39 @@ mod ppu_nametable_bus_regression_tests {
         assert_eq!(ppu.mem_read(0x3F00, None), 0);
     }
 }
+
+
+#[cfg(test)]
+mod sprite_priority_regression_tests {
+    use super::*;
+
+    #[test]
+    fn first_opaque_sprite_claims_pixel_even_when_hidden_behind_background() {
+        let mut image = vec![0; INES_HEADER_LEN + PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        // Sprite tile 0, row 0 has its leftmost pixel set.
+        assert!(cartridge.ppu_write(0, 0x80));
+        // Sprite tile 1 also has a visible leftmost pixel; it must not show through
+        // the higher-priority sprite 0 when sprite 0 is behind opaque background.
+        assert!(cartridge.ppu_write(16, 0x80));
+
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x14; // Sprites enabled; show sprites in the leftmost eight pixels.
+        ppu.palette[0] = 0x01;
+        ppu.palette[0x11] = 0x16;
+        ppu.palette[0x12] = 0x27;
+        ppu.oam[0..8].copy_from_slice(&[
+            0, 0, 0x20, 0, // Sprite 0: behind opaque background.
+            0, 1, 0x00, 0, // Sprite 1: foreground, lower priority.
+        ]);
+        ppu.background_opaque[0] = true;
+        ppu.framebuffer[0] = ppu.output_color(0x01);
+
+        ppu.render_sprite_pixel(0, 0, Some(&cartridge));
+
+        assert_eq!(ppu.framebuffer[0], ppu.output_color(0x01),
+            "the lower-priority foreground sprite must not leak through sprite 0");
+    }
+}
