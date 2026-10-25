@@ -1839,3 +1839,46 @@ mod frame_irq_dmc_irq_independence_regressions {
         assert!(apu.irq_pending());
     }
 }
+
+
+#[cfg(test)]
+mod dmc_address_and_loop_regressions {
+    use super::*;
+
+    #[test]
+    fn dmc_address_wraps_from_ffff_to_8000_after_each_consumed_byte() {
+        let mut apu = Apu::new();
+        apu.write(0x4012, 0xFF); // Sample starts at $FFC0.
+        apu.write(0x4013, 0xFF);
+        apu.write(0x4015, 0x10);
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xFFC0));
+
+        for _ in 0..64 {
+            apu.supply_dmc_byte(0x55);
+            // Model the output unit consuming the byte so the next DMA is eligible.
+            apu.dmc_sample_buffer = None;
+        }
+
+        assert_eq!(apu.dmc_current_address, 0x8000);
+        assert_eq!(apu.dmc_bytes_remaining, 4081 - 64);
+        assert_eq!(apu.take_dmc_dma_request(), Some(0x8000));
+    }
+
+    #[test]
+    fn final_dmc_byte_restarts_looping_sample_without_losing_the_buffered_byte() {
+        let mut apu = Apu::new();
+        apu.write(0x4012, 0x12);
+        apu.write(0x4013, 0);
+        apu.write(0x4010, 0x40); // Loop enabled; IRQ disabled.
+        apu.write(0x4015, 0x10);
+
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xC480));
+        apu.supply_dmc_byte(0xA7);
+
+        assert_eq!(apu.dmc_sample_buffer, Some(0xA7));
+        assert_eq!(apu.dmc_current_address, 0xC480);
+        assert_eq!(apu.dmc_bytes_remaining, 1);
+        assert!(!apu.dmc_irq);
+        assert_eq!(apu.take_dmc_dma_request(), None);
+    }
+}
