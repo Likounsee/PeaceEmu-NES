@@ -1588,6 +1588,7 @@ mod added_apu_regression_tests {
         apu.write(0x4013, 0x01);
         apu.write(0x4015, 0x10);
         assert!(apu.needs_dmc_bus_service());
+        apu.dmc_irq = true;
         apu.write(0x4015, 0x00);
         assert!(!apu.needs_dmc_bus_service());
         assert!(!apu.irq_pending());
