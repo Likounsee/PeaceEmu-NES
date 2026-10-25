@@ -28,6 +28,10 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 - PPU/NMI : tests de suppression du VBlank par lecture de `$2002` au début du VBlank et d'activation du NMI pendant un VBlank déjà actif.
 - MMC3 : seuil du filtre A12 à sept/huit dots, rebasage après reset PPU et acquittement/réactivation IRQ. La précision des IRQ reste dépendante des adresses PPU réellement observées.
 - Les nouvelles régressions sont poussées sur la branche `NES` ; attendre les workflows complets avant de les considérer validées.
+- APU/IRQ : test de l'acquittement indépendant des IRQ frame et DMC lors de la lecture de `$4015`.
+- PPU/NMI : test de récupération après suppression d'un VBlank ; la suppression ne doit pas se propager au VBlank suivant.
+- MMC3 : test du compteur IRQ avec latch non nul, vérifiant le rechargement au premier front A12 qualifié puis le passage à zéro et l'assertion IRQ au front suivant.
+- Les workflows de ces nouveaux tests sont en cours sur la branche `NES` ; leur validation complète reste conditionnée aux résultats finaux de CI.
 
 ## Ce qui est implémenté
 
