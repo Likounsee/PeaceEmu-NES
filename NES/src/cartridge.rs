@@ -1236,6 +1236,7 @@ pub struct Mmc2 {
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
     chr_rom: Vec<u8>,
+    mmc4: bool,
     prg_bank: usize,
     chr_fd0: usize,
     chr_fe0: usize,
@@ -1254,9 +1255,12 @@ impl Mmc2 {
         if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
         let mapper = ((image[6] >> 4) as u16)
             | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
-        if mapper != 9 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
+        if mapper != 9 && mapper != 10 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
+        let mmc4 = mapper == 10;
         let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if image[4] < 8 { return Err(CartridgeError::InvalidPrgSize(prg_len)); }
+        if (mmc4 && image[4] < 2) || (!mmc4 && image[4] < 8) {
+            return Err(CartridgeError::InvalidPrgSize(prg_len));
+        }
         let chr_len = image[5] as usize * CHR_BANK_LEN;
         if chr_len == 0 { return Err(CartridgeError::InvalidChrSize(chr_len)); }
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
@@ -1276,6 +1280,7 @@ impl Mmc2 {
             prg_rom: image[prg_start..prg_start + prg_len].to_vec(),
             prg_ram,
             chr_rom: image[chr_start..chr_start + chr_len].to_vec(),
+            mmc4,
             prg_bank: 0,
             chr_fd0: 0, chr_fe0: 0, chr_fd1: 0, chr_fe1: 0,
             latch0_fe: Cell::new(false), latch1_fe: Cell::new(false),
@@ -1283,8 +1288,24 @@ impl Mmc2 {
         })
     }
 
-    /// Reads PRG-RAM or the MMC2's four 8 KiB CPU windows.
+    /// Reads PRG-RAM and the mapper's banked/fixed PRG-ROM windows.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
+        if self.mmc4 {
+            let bank_len = 0x4000;
+            let bank_count = self.prg_rom.len() / bank_len;
+            return match address {
+                0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+                0x8000..=0xBFFF => {
+                    let bank = self.prg_bank % bank_count;
+                    Some(self.prg_rom[bank * bank_len + address as usize - 0x8000])
+                }
+                0xC000..=0xFFFF => {
+                    let bank = bank_count - 1;
+                    Some(self.prg_rom[bank * bank_len + address as usize - 0xC000])
+                }
+                _ => None,
+            };
+        }
         match address {
             0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
             0x8000..=0x9FFF => Some(self.prg_rom[(self.prg_bank % self.prg_rom.len().div_ceil(0x2000)) * 0x2000 + address as usize - 0x8000]),
@@ -1570,7 +1591,7 @@ pub enum Cartridge {
     Bnrom(Bnrom),
     /// Mapper 13 CPROM with a fixed lower CHR-RAM region and banked upper region.
     Cprom(Cprom),
-    /// Mapper 9 MMC2 latch-controlled CHR and switchable PRG.
+    /// Mapper 9 MMC2 / mapper 10 MMC4 latch-controlled CHR and switchable PRG.
     Mmc2(Mmc2),
     /// Mapper 30 UNROM-512 with banked CHR-RAM.
     Unrom512(Unrom512),
@@ -1611,7 +1632,7 @@ impl Cartridge {
             34 => Bnrom::parse(image).map(Self::Bnrom),
             13 => Cprom::parse(image).map(Self::Cprom),
             15 => Mapper15::parse(image).map(Self::Mapper15),
-            9 => Mmc2::parse(image).map(Self::Mmc2),
+            9 | 10 => Mmc2::parse(image).map(Self::Mmc2),
             30 => Unrom512::parse(image).map(Self::Unrom512),
             other => Err(CartridgeError::UnsupportedMapper(other)),
         }
@@ -3253,5 +3274,76 @@ mod image_boundary_regressions {
         let mut image = vec![0; INES_HEADER_LEN];
         image[0..4].copy_from_slice(b"NOPE");
         assert_eq!(Cartridge::parse(&image), Err(CartridgeError::InvalidMagic));
+    }
+}
+
+
+#[cfg(test)]
+mod mmc4_tests {
+    use super::*;
+
+    fn mmc4_image(prg_banks: u8, chr_banks: u8) -> Vec<u8> {
+        let mut image = vec![
+            0;
+            INES_HEADER_LEN
+                + prg_banks as usize * PRG_BANK_LEN
+                + chr_banks as usize * CHR_BANK_LEN
+        ];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = prg_banks;
+        image[5] = chr_banks;
+        image[6] = 0xA0; // Mapper 10.
+        for bank in 0..prg_banks as usize {
+            let start = INES_HEADER_LEN + bank * PRG_BANK_LEN;
+            image[start..start + PRG_BANK_LEN].fill(bank as u8);
+        }
+        let chr_start = INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN;
+        for bank in 0..chr_banks as usize * 2 {
+            image[chr_start + bank * 0x1000..chr_start + (bank + 1) * 0x1000]
+                .fill((0x20 + bank) as u8);
+        }
+        image
+    }
+
+    #[test]
+    fn mapper10_switches_16k_prg_and_keeps_last_bank_fixed() {
+        let mut cart = Cartridge::parse(&mmc4_image(8, 2)).unwrap();
+        assert!(matches!(cart, Cartridge::Mmc2(_)));
+        assert_eq!(cart.cpu_read(0x8000), Some(0));
+        assert_eq!(cart.cpu_read(0xBFFF), Some(0));
+        assert_eq!(cart.cpu_read(0xC000), Some(7));
+        assert_eq!(cart.cpu_read(0xFFFF), Some(7));
+        cart.cpu_write(0xA000, 3);
+        assert_eq!(cart.cpu_read(0x8000), Some(3));
+        assert_eq!(cart.cpu_read(0xBFFF), Some(3));
+        assert_eq!(cart.cpu_read(0xC000), Some(7));
+    }
+
+    #[test]
+    fn mapper10_uses_chr_latches_and_mirroring_register() {
+        let mut cart = Cartridge::parse(&mmc4_image(2, 4)).unwrap();
+        cart.cpu_write(0xB000, 2);
+        cart.cpu_write(0xC000, 3);
+        cart.cpu_write(0xD000, 4);
+        cart.cpu_write(0xE000, 5);
+        assert_eq!(cart.ppu_read(0x0000), Some(0x22));
+        let _ = cart.ppu_read(0x0FE8);
+        assert_eq!(cart.ppu_read(0x0000), Some(0x23));
+        cart.cpu_write(0xF000, 0);
+        assert_eq!(cart.mirroring(), Mirroring::Vertical);
+        cart.cpu_write(0xF000, 1);
+        assert_eq!(cart.mirroring(), Mirroring::Horizontal);
+    }
+
+    #[test]
+    fn mapper10_rejects_invalid_prg_and_missing_chr_rom() {
+        assert!(matches!(
+            Cartridge::parse(&mmc4_image(1, 1)),
+            Err(CartridgeError::InvalidPrgSize(_))
+        ));
+        assert!(matches!(
+            Cartridge::parse(&mmc4_image(2, 0)),
+            Err(CartridgeError::InvalidChrSize(_))
+        ));
     }
 }
