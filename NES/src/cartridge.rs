@@ -3028,6 +3028,44 @@ mod mmc3_tests {
     }
 
     #[test]
+    fn mapper_4_irq_a12_filter_requires_eight_low_dots() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        cart.cpu_write(0xC000, 1);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+
+        cart.observe_ppu_address(0x0000, 0);
+        cart.observe_ppu_address(0x1000, 7);
+        assert!(!cart.irq_pending(), "short A12-low pulse must be filtered");
+
+        cart.observe_ppu_address(0x0000, 8);
+        cart.observe_ppu_address(0x1000, 16);
+        assert!(!cart.irq_pending(), "first qualified edge reloads latch value 1");
+        cart.observe_ppu_address(0x0000, 17);
+        cart.observe_ppu_address(0x1000, 25);
+        assert!(cart.irq_pending(), "second qualified edge decrements counter to zero");
+    }
+
+    #[test]
+    fn mapper_4_irq_a12_filter_rebases_after_ppu_cycle_counter_reset() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        cart.cpu_write(0xC000, 0);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+        cart.observe_ppu_address(0x0000, 100);
+        cart.observe_ppu_address(0x1000, 109);
+        assert!(cart.irq_pending());
+
+        cart.cpu_write(0xE000, 0);
+        cart.observe_ppu_address(0x0000, 0);
+        cart.observe_ppu_address(0x1000, 1);
+        assert!(!cart.irq_pending(), "backwards timestamp must not fabricate an A12 edge");
+        cart.observe_ppu_address(0x0000, 2);
+        cart.observe_ppu_address(0x1000, 10);
+        assert!(!cart.irq_pending(), "IRQ remains disabled after reset");
+    }
+
+    #[test]
     fn mapper_4_preserves_hardwired_four_screen_mirroring() {
         let mut image = mmc3_image(2, 1);
         image[6] |= 0x08;
