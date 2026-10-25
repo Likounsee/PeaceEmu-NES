@@ -685,10 +685,11 @@ impl Mapper8 {
             nes2_ram_size(image[11] & 0x0F).saturating_add(nes2_ram_size(image[11] >> 4))
         } else { CHR_BANK_LEN };
         let chr_ram_len = declared_chr_ram_len.min(4 * CHR_BANK_LEN);
-        let chr_is_ram = chr_len == 0 && chr_ram_len > 0;
+        let chr_is_ram = chr_len == 0;
+        // The mapper's CHR register selects whole 8 KiB banks. Pad smaller
+        // NES 2.0 RAM declarations to one bank to avoid zero-bank indexing.
         let chr = if chr_len != 0 { image[chr_start..chr_start + chr_len].to_vec() }
-            else if chr_ram_len > 0 { vec![0; chr_ram_len] }
-            else { vec![0; CHR_BANK_LEN] };
+            else { vec![0; chr_ram_len.max(CHR_BANK_LEN)] };
         let mirroring = if image[6] & 0x08 != 0 { Mirroring::FourScreen }
             else if image[6] & 0x01 != 0 { Mirroring::Vertical }
             else { Mirroring::Horizontal };
@@ -4445,6 +4446,57 @@ mod mapper8_nes2_tests {
     #[test]
     fn mapper8_nes2_rejects_unknown_submappers() {
         let mut image = nes2_mapper8();
+        image[8] = 0x10;
+        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
+    }
+}
+
+
+#[cfg(test)]
+mod gxrom_nes2_tests {
+    use super::*;
+
+    fn nes2_gxrom() -> Vec<u8> {
+        let prg_len = 4 * PRG_BANK_LEN;
+        let chr_len = 2 * CHR_BANK_LEN;
+        let mut image = vec![0; INES_HEADER_LEN + prg_len + chr_len];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 4;
+        image[5] = 2;
+        image[6] = 0x60;
+        image[7] = 0x08;
+        image[8] = 0;
+        image[9] = 0;
+        image[10] = 7;
+        let prg_start = INES_HEADER_LEN;
+        for bank in 0..2 {
+            image[prg_start + bank * 2 * PRG_BANK_LEN..prg_start + (bank + 1) * 2 * PRG_BANK_LEN]
+                .fill(0x40 + bank as u8);
+        }
+        let chr_start = prg_start + prg_len;
+        for bank in 0..2 {
+            image[chr_start + bank * CHR_BANK_LEN..chr_start + (bank + 1) * CHR_BANK_LEN]
+                .fill(0x60 + bank as u8);
+        }
+        image
+    }
+
+    #[test]
+    fn gxrom_nes2_decodes_prg_chr_banks_and_prg_ram() {
+        let mut cart = Cartridge::parse(&nes2_gxrom()).unwrap();
+        assert!(matches!(cart, Cartridge::Gxrom(_)));
+        assert_eq!(cart.cpu_read(0x8000), Some(0x40));
+        assert_eq!(cart.ppu_read(0), Some(0x60));
+        cart.cpu_write(0x8000, 0x11);
+        assert_eq!(cart.cpu_read(0x8000), Some(0x41));
+        assert_eq!(cart.ppu_read(0), Some(0x61));
+        cart.cpu_write(0x6000, 0xA7);
+        assert_eq!(cart.cpu_read(0x6000), Some(0xA7));
+    }
+
+    #[test]
+    fn gxrom_nes2_rejects_unknown_submappers() {
+        let mut image = nes2_gxrom();
         image[8] = 0x10;
         assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
     }
