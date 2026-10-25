@@ -21,11 +21,12 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 
 ## Dernière itération
 
-- APU/DMC : tests de propriété du sample buffer, de l'acquittement des IRQ DMC et de la distinction entre lecture de `$4015` (efface l'IRQ frame, mais pas l'IRQ DMC) et écriture de `$4010` sans autorisation d'IRQ.
-- PPU/NMI : tests de suppression du VBlank par lecture de `$2002` au début de VBlank et de l'activation de NMI pendant un VBlank déjà actif, sans fronts dupliqués tant que la ligne reste haute.
-- MMC3 : tests du seuil exact du filtre A12 (sept dots bas rejetés, huit dots acceptés), du rebasage après reset PPU et de l'acquittement/réactivation de l'IRQ.
-- Les changements de code sont poussés sur la branche `NES`. Les workflows des trois nouveaux lots de tests sont en cours ; leur résultat complet doit être vérifié avant de les considérer validés.
-- Le timing MMC3 dépend encore de la granularité des adresses PPU réellement observées ; ces tests valident le filtre isolément, pas toute la compatibilité des jeux.
+- APU/DMC : tests de propriété du sample buffer et de livraison des octets sans double consommation ; les fetchs DMA sont aussi vérifiés au niveau du bus.
+- Bus CPU : ajout d'une régression sur le bit 5 ouvert de `$4015`, avec vérification séparée des IRQ frame et DMC.
+- Machine : test d'intégration du DMC vérifiant que le fetch vient bien de la ROM via le bus CPU et que les quatre cycles de blocage avancent aussi l'horloge PPU partagée.
+- PPU/NMI : tests de suppression du VBlank par lecture de `$2002` au début du VBlank et d'activation du NMI pendant un VBlank déjà actif.
+- MMC3 : seuil du filtre A12 à sept/huit dots, rebasage après reset PPU et acquittement/réactivation IRQ. La précision des IRQ reste dépendante des adresses PPU réellement observées.
+- Les nouvelles régressions sont poussées sur la branche `NES` ; attendre les workflows complets avant de les considérer validées.
 
 ## Ce qui est implémenté
 
