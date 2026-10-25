@@ -2152,7 +2152,7 @@ mod sprite_pattern_address_regressions {
 
         ppu.cpu_write_register(0, 0x80, None);
         assert!(ppu.nmi_pending, "raising PPUCTRL bit 7 during vblank must create an NMI edge");
-        assert!(ppu.take_nmi());
+        assert!(ppu.take_nmi_request());
         assert!(!ppu.nmi_pending);
 
         // Rewriting the same enabled value must not retrigger while the line stays high.
@@ -2167,7 +2167,7 @@ mod sprite_pattern_address_regressions {
         ppu.dot = 2;
         ppu.status |= 0x80;
         ppu.cpu_write_register(0, 0x80, None);
-        assert!(ppu.take_nmi());
+        assert!(ppu.take_nmi_request());
 
         ppu.cpu_write_register(0, 0x00, None);
         assert!(!ppu.nmi_line);
