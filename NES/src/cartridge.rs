@@ -4736,3 +4736,41 @@ mod mmc3_irq_counter_sequence_regressions {
         assert!(cart.irq_pending(), "the IRQ asserts when the counter decrements to zero");
     }
 }
+
+
+#[cfg(test)]
+mod mmc3_irq_reload_command_regressions {
+    use super::*;
+
+    fn image() -> Vec<u8> {
+        let mut data = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        data[0..4].copy_from_slice(b"NES\\x1A");
+        data[4] = 2;
+        data[6] = 0x40;
+        data
+    }
+
+    #[test]
+    fn c001_reloads_the_counter_without_asserting_irq_until_a_later_zero() {
+        let mut cart = Cartridge::parse(&image()).unwrap();
+        cart.cpu_write(0xC000, 2);
+        cart.cpu_write(0xE001, 0);
+
+        cart.observe_ppu_address(0x0000, 0);
+        cart.observe_ppu_address(0x1000, 8);
+        assert!(!cart.irq_pending(), "initial qualified edge loads latch 2");
+
+        cart.cpu_write(0xC001, 0); // Request counter reload on the next qualified edge.
+        cart.observe_ppu_address(0x0000, 9);
+        cart.observe_ppu_address(0x1000, 17);
+        assert!(!cart.irq_pending(), "reload command must not assert IRQ prematurely");
+
+        cart.observe_ppu_address(0x0000, 18);
+        cart.observe_ppu_address(0x1000, 26);
+        assert!(!cart.irq_pending(), "counter decrements from 2 to 1");
+
+        cart.observe_ppu_address(0x0000, 27);
+        cart.observe_ppu_address(0x1000, 35);
+        assert!(cart.irq_pending(), "IRQ asserts only when the counter reaches zero");
+    }
+}
