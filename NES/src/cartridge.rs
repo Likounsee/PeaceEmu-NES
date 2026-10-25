@@ -1680,7 +1680,7 @@ impl Cartridge {
             let mapper = ((image[6] >> 4) as u16)
                 | (image[7] & 0xF0) as u16
                 | (((image[8] & 0x0F) as u16) << 8);
-            if mapper != 0 { return Err(CartridgeError::Nes2NotSupported); }
+            if !matches!(mapper, 0 | 2) { return Err(CartridgeError::Nes2NotSupported); }
         }
         let mapper = if nes2 {
             ((image[6] >> 4) as u16)
