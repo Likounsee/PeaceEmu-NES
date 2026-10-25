@@ -63,4 +63,4 @@ cargo build --manifest-path NES/Cargo.toml --bin peaceemu-nes-desktop --release 
 Si l'une des commandes échoue, corriger la cause et conserver le test de régression approprié. Ne pas supprimer ou affaiblir un test uniquement pour faire passer la CI.
 
 
-Régressions PPU ajoutées : buffering des lectures `$2007`, incrément d’adresse VRAM, lecture palette immédiate et conservation des bits hauts de l’open bus.
+Régressions récentes : buffering et incrément de `$2007`, lecture palette immédiate, conservation des bits hauts de l’open bus, incrément VRAM de 32 et reset du latch par `$2002`. Les tests de session vérifient les limites de fréquence PCM, deux frames successives et les dimensions de sortie. L’APU vérifie aussi que changer de fréquence vide la file PCM précédente et qu’une fréquence invalide ne modifie rien.
