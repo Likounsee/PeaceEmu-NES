@@ -1594,3 +1594,22 @@ mod added_apu_regression_tests {
         assert!(!apu.irq_pending());
     }
 }
+
+
+#[cfg(test)]
+mod pcm_queue_bound_regressions {
+    use super::*;
+
+    #[test]
+    fn pcm_queue_stays_bounded_when_frontend_stops_consuming_audio() {
+        let mut apu = Apu::new();
+        let cycles = ((CPU_CLOCK_HZ * (AUDIO_QUEUE_LIMIT as u64 + 128))
+            .div_ceil(u64::from(apu.sample_rate()))) as u32;
+
+        apu.tick_cpu_cycles(cycles);
+
+        assert_eq!(apu.audio_samples.len(), AUDIO_QUEUE_LIMIT,
+            "the oldest samples should be dropped rather than growing memory without bound");
+        assert!(apu.audio_samples.iter().all(|sample| sample.is_finite()));
+    }
+}
