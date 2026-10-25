@@ -1281,4 +1281,25 @@ mod pcm_queue_regressions {
         assert_eq!(split.sample_phase, phase_after_batch);
         assert_eq!(split.drain_audio_samples(), batch_samples);
     }
+    #[test]
+    fn changing_sample_rate_clears_stale_pcm_and_invalid_rate_is_atomic() {
+        let mut apu = Apu::new();
+        apu.write(0x4015, 0x01);
+        apu.write(0x4000, 0x9F);
+        apu.write(0x4002, 0x20);
+        apu.write(0x4003, 0xF8);
+        apu.tick_cpu_cycles(2_000);
+        assert!(!apu.audio_samples.is_empty(), "fixture should produce queued PCM");
+
+        let old_rate = apu.sample_rate();
+        let old_len = apu.audio_samples.len();
+        assert!(!apu.set_sample_rate(7_999));
+        assert_eq!(apu.sample_rate(), old_rate);
+        assert_eq!(apu.audio_samples.len(), old_len, "invalid rate must not discard queued PCM");
+
+        assert!(apu.set_sample_rate(48_000));
+        assert_eq!(apu.sample_rate(), 48_000);
+        assert!(apu.audio_samples.is_empty(), "valid rate changes must clear samples produced at the previous rate");
+    }
+
 }
