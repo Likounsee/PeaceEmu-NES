@@ -259,9 +259,9 @@ impl Ppu {
             if (4..=7).contains(&phase) {
                 let sprite = ((dot - 257) / 8) as usize;
                 let base = sprite * 4;
-                let top = (self.oam[base] as usize + 1) & 0xFF;
+                let top = self.oam[base] as usize + 1;
                 let target_y = if self.scanline == 261 { 0 } else { self.scanline as usize + 1 };
-                let row = target_y.wrapping_sub(top);
+                let row = target_y.checked_sub(top).unwrap_or(usize::MAX);
                 let height = if self.ctrl & 0x20 != 0 { 16 } else { 8 };
                 if row < height {
                     address = self.sprite_pattern_address(self.oam[base + 1] as usize, self.oam[base + 2], row);
@@ -322,7 +322,7 @@ impl Ppu {
             return false;
         }
 
-        let sprite_top = (self.oam[0] as usize + 1) & 0xFF;
+        let sprite_top = self.oam[0] as usize + 1;
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         if y < sprite_top || y >= sprite_top + height {
             return false;
@@ -411,7 +411,7 @@ impl Ppu {
         let mut in_range = 0usize;
         for sprite in 0..64usize {
             let base = sprite * 4;
-            let top = (self.oam[base] as usize + 1) & 0xFF;
+            let top = self.oam[base] as usize + 1;
             if y < top || y >= top + height { continue; }
             in_range += 1;
             if in_range > 8 { break; }
@@ -443,10 +443,12 @@ impl Ppu {
 
     /// Sets the sticky overflow flag when more than eight sprites cover this scanline.
     fn update_sprite_overflow(&mut self, y: usize) {
+        // Sprite evaluation at dot 256 selects sprites for the following scanline.
+        let y = y + 1;
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         let mut count = 0usize;
         for sprite in 0..64usize {
-            let top = (self.oam[sprite * 4] as usize + 1) & 0xFF;
+            let top = self.oam[sprite * 4] as usize + 1;
             if y >= top && y < top + height {
                 count += 1;
                 if count > 8 {
@@ -536,7 +538,7 @@ impl Ppu {
         let mut sprite_claimed = vec![false; 256 * 240];
         for sprite in 0..64usize {
             let base = sprite * 4;
-            let top = (self.oam[base] as usize + 1) & 0xFF;
+            let top = self.oam[base] as usize + 1;
             let tile = self.oam[base + 1] as usize;
             let attributes = self.oam[base + 2];
             let left = self.oam[base + 3] as usize;
@@ -913,7 +915,7 @@ mod tests {
         let mut ppu = Ppu::new();
         ppu.mask = 0x10;
         for sprite in 0..9usize {
-            ppu.oam[sprite * 4] = 255;
+            ppu.oam[sprite * 4] = 0;
         }
         ppu.render_frame(None);
         assert_ne!(ppu.status & 0x20, 0);
@@ -1089,7 +1091,7 @@ mod tests {
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x3F01, 0x2B, Some(&mut cartridge));
         ppu.mem_write(0x3F11, 0x17, Some(&mut cartridge));
-        ppu.oam[0..4].copy_from_slice(&[255, 1, 0, 16]);
+        ppu.oam[0..4].copy_from_slice(&[0, 1, 0, 16]);
         ppu.render_frame(Some(&cartridge));
         assert_eq!(ppu.framebuffer()[16], 0x10);
         assert_eq!(ppu.framebuffer()[0], 0x20);
@@ -1148,7 +1150,7 @@ mod tests {
         ppu.scanline = 0;
         ppu.dot = 0;
         ppu.mask = 0x14; // Sprites enabled, including the leftmost eight pixels.
-        ppu.oam[0..4].copy_from_slice(&[255, 1, 0, 0]);
+        ppu.oam[0..4].copy_from_slice(&[0, 1, 0, 0]);
         ppu.palette[0x11] = 0x21;
 
         ppu.tick_with_cartridge(4, Some(&cartridge));
@@ -1172,7 +1174,7 @@ mod tests {
         ppu.scanline = 0;
         ppu.dot = 0;
         ppu.mask = 0x1E; // Background/sprites and both left-edge enables.
-        ppu.oam[0..8].copy_from_slice(&[255, 1, 0x20, 0, 255, 2, 0, 0]);
+        ppu.oam[0..8].copy_from_slice(&[0, 1, 0x20, 0, 255, 2, 0, 0]);
         ppu.palette[1] = 0x09; // Visible background color.
         ppu.palette[0x11] = 0x21;
         ppu.palette[0x12] = 0x22;
@@ -1265,7 +1267,7 @@ mod tests {
         ppu.frame_fine_x = 0;
         ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
-        ppu.oam[0..4].copy_from_slice(&[255, 1, 0, 0]);
+        ppu.oam[0..4].copy_from_slice(&[0, 1, 0, 0]);
         assert_eq!(ppu.status & 0x40, 0);
         ppu.tick_with_cartridge(1, Some(&cartridge));
         assert_ne!(ppu.status & 0x40, 0, "hit must become visible at the overlapping pixel");
@@ -1280,13 +1282,13 @@ mod tests {
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap();
-        // Build the pattern/palette fixture directly; OAM Y=255 wraps to row zero.
+        // OAM Y stores the top row minus one; Y=0 starts at visible scanline one.
         ppu.mask = 0x1E;
         ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x3F01, 0x22, Some(&mut cartridge));
         ppu.mem_write(0x3F11, 0x30, Some(&mut cartridge));
-        ppu.oam[0..4].copy_from_slice(&[255, 1, 0, 0]);
+        ppu.oam[0..4].copy_from_slice(&[0, 1, 0, 0]);
         ppu.mem_write(0x2000, 0x00, Some(&mut cartridge));
         ppu.render_frame(Some(&cartridge));
         assert_ne!(ppu.status & 0x40, 0);
@@ -1304,7 +1306,7 @@ mod tests {
         ppu.mask = 0x1E; // Background/sprites and both left-edge pixels enabled.
         ppu.mem_write(0x0000, 0x80, Some(&mut cartridge)); // BG tile 0, pixel x=0.
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge)); // Sprite tile 1, pixel x=0.
-        ppu.oam[0..4].copy_from_slice(&[255, 1, 0, 0]); // Sprite 0 begins at screen (0, 0).
+        ppu.oam[0..4].copy_from_slice(&[0, 1, 0, 0]); // Sprite 0 begins at screen (0, 1).
 
         // Leave the pre-render line. The hit must not be delayed until dot 256.
         ppu.tick_with_cartridge(341, Some(&cartridge));
@@ -1327,7 +1329,7 @@ mod tests {
         background_disabled.mask = 0x14; // Sprites enabled, background disabled.
         background_disabled.mem_write(0x0000, 0x80, Some(&mut cartridge));
         background_disabled.mem_write(0x0010, 0x80, Some(&mut cartridge));
-        background_disabled.oam[0..4].copy_from_slice(&[255, 1, 0, 0]);
+        background_disabled.oam[0..4].copy_from_slice(&[0, 1, 0, 0]);
         background_disabled.render_frame(Some(&cartridge));
         assert_eq!(background_disabled.status & 0x40, 0);
 
@@ -1338,7 +1340,7 @@ mod tests {
         rightmost_pixel.mem_write(0x3F01, 0x22, Some(&mut cartridge));
         rightmost_pixel.mem_write(0x3F11, 0x30, Some(&mut cartridge));
         // OAM X=248 puts the pattern's rightmost set bit at screen x=255.
-        rightmost_pixel.oam[0..4].copy_from_slice(&[255, 1, 0, 248]);
+        rightmost_pixel.oam[0..4].copy_from_slice(&[0, 1, 0, 248]);
         rightmost_pixel.render_frame(Some(&cartridge));
         assert_eq!(rightmost_pixel.status & 0x40, 0);
     }
@@ -1357,7 +1359,7 @@ mod tests {
         ppu.mem_write(0x1020, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x1030, 0x80, Some(&mut cartridge)); // Lower half uses the next tile.
         ppu.mem_write(0x3F11, 0x2A, Some(&mut cartridge));
-        ppu.oam[0..4].copy_from_slice(&[255, 3, 0, 16]);
+        ppu.oam[0..4].copy_from_slice(&[0, 3, 0, 16]);
 
         ppu.render_frame(Some(&cartridge));
 
@@ -1377,7 +1379,7 @@ mod tests {
         ppu.mem_write(0x0010, 0x01, Some(&mut cartridge)); // Only the source rightmost pixel is opaque.
         ppu.mem_write(0x3F00, 0x0F, Some(&mut cartridge));
         ppu.mem_write(0x3F11, 0x2C, Some(&mut cartridge));
-        ppu.oam[0..4].copy_from_slice(&[255, 1, 0x40, 16]);
+        ppu.oam[0..4].copy_from_slice(&[0, 1, 0x40, 16]);
 
         ppu.render_frame(Some(&cartridge));
 
@@ -1398,7 +1400,7 @@ mod tests {
         // Only row 7 has an opaque leftmost pixel; vertical flip moves it to output row 0.
         ppu.mem_write(0x0017, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x3F11, 0x2B, Some(&mut cartridge));
-        ppu.oam[0..4].copy_from_slice(&[255, 1, 0x80, 16]);
+        ppu.oam[0..4].copy_from_slice(&[0, 1, 0x80, 16]);
 
         ppu.render_frame(Some(&cartridge));
 
@@ -1420,7 +1422,7 @@ mod tests {
         ppu.mem_write(0x3F00, 0x0F, Some(&mut cartridge));
         ppu.mem_write(0x3F01, 0x21, Some(&mut cartridge));
         ppu.mem_write(0x3F11, 0x30, Some(&mut cartridge));
-        ppu.oam[0..4].copy_from_slice(&[255, 1, 0, 0]);
+        ppu.oam[0..4].copy_from_slice(&[0, 1, 0, 0]);
 
         ppu.render_frame(Some(&cartridge));
 
@@ -1437,13 +1439,13 @@ mod tests {
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap();
 
-        // Two opaque sprites overlap at (0, 0), with distinct sprite palettes.
+        // Two opaque sprites overlap at (0, 1), with distinct sprite palettes.
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x0020, 0x80, Some(&mut cartridge));
         ppu.palette[0x11] = 0x30;
         ppu.palette[0x15] = 0x27;
         ppu.mask = 0x14; // Show sprites and the leftmost eight sprite pixels.
-        ppu.oam[0..8].copy_from_slice(&[255, 1, 0, 16, 255, 2, 1, 16]);
+        ppu.oam[0..8].copy_from_slice(&[0, 1, 0, 16, 255, 2, 1, 16]);
         assert_eq!(cartridge.ppu_read(0x10), Some(0x80));
         assert_eq!(ppu.palette[0x11], 0x30);
 
@@ -1459,7 +1461,7 @@ mod tests {
         ppu.dot = 0;
         ppu.mask = 0;
         for sprite in 0..9usize {
-            ppu.oam[sprite * 4] = 255; // All nine sprites cover scanline zero.
+            ppu.oam[sprite * 4] = 0; // All nine sprites cover scanline one.
         }
         ppu.tick(256);
         assert_eq!(ppu.status & 0x20, 0);
@@ -1470,7 +1472,7 @@ mod tests {
         let mut ppu = Ppu::new();
         ppu.mask = 0x10;
         for sprite in 0..9usize {
-            ppu.oam[sprite * 4] = 255; // Every sprite starts at scanline zero.
+            ppu.oam[sprite * 4] = 0; // Every sprite starts at scanline one.
         }
         ppu.render_frame(None);
         assert_ne!(ppu.status & 0x20, 0);
@@ -1488,7 +1490,7 @@ mod tests {
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge)); // Sprite tile one.
         ppu.mem_write(0x3F01, 0x22, Some(&mut cartridge));
         ppu.mem_write(0x3F11, 0x30, Some(&mut cartridge));
-        ppu.oam[0..4].copy_from_slice(&[255, 1, 0x20, 16]);
+        ppu.oam[0..4].copy_from_slice(&[0, 1, 0x20, 16]);
         ppu.render_frame(Some(&cartridge));
         assert_eq!(ppu.framebuffer()[16], 0x22);
     }
