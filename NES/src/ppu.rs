@@ -3117,7 +3117,7 @@ mod sprite_zero_flip_regressions {
 
     fn sprite_with_only_leftmost_pattern_bit() -> Cartridge {
         let mut rom = vec![0; 16 + 16_384 + 8_192];
-        rom[0..4].copy_from_slice(b"NES\\x1A");
+        rom[0..4].copy_from_slice(b"NES\x1A");
         rom[4] = 1;
         rom[5] = 1;
         // Tile zero, row zero: only bit 0 is opaque. Horizontal flip moves
