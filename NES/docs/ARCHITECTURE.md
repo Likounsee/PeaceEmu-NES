@@ -1,80 +1,91 @@
-# Architecture du module NES
+# Architecture du cœur NES
 
-## Objectif architectural
+## Objectif
 
-Ce dépôt implémente uniquement le matériel de la NES et son adaptateur vers PeaceEmu. L'application graphique et les services hôtes sont déjà développés dans [Likounsee/PeaceEmu](https://github.com/Likounsee/PeaceEmu) ; ils ne doivent pas être recodés ici.
+Ce dépôt contient le matériel émulé de la NES et une API de session. Il doit rester indépendant de l'interface graphique et des services de bibliothèque de [PeaceEmu](https://github.com/Likounsee/PeaceEmu). Le frontend Windows présent dans `src/bin/peaceemu-nes-desktop.rs` est un outil autonome de développement ; sa présence ne remplace pas l'intégration dans l'application hôte.
 
-## Frontière avec PeaceEmu
+## Vue d'ensemble
 
-Le dépôt hôte expose un contrat commun `EmulationCore` dans `emulation-core`. Le cœur NES devra fournir un adaptateur qui respecte ce contrat :
+```text
+ROM iNES
+   |
+   v
+Cartridge / mapper <------> PPU
+   |                         ^
+   v                         |
+CpuBus <----> CPU 2A03 ------+
+   |             |
+   +----------> APU ------> PCM mono
+   |
+   +----------> manettes série
 
-- `descriptor()` : identifiant système stable, version du cœur et capacités réellement implémentées ;
-- `load_content()` : valider le fichier de jeu avant de modifier l'état de la machine ;
-- `reset()` : réinitialiser la machine selon le comportement documenté ;
-- `run_until_event()` : exécuter jusqu'à une frontière observable ;
-- `send_input()` : transmettre les transitions des manettes ;
-- `take_video_frame()` et `take_audio_buffer()` : transférer les données au format commun de PeaceEmu ;
-- sauvegardes et save states : ne déclarer ces capacités que lorsqu'elles sont implémentées et validées.
+NesMachine coordonne le CPU, le bus, la PPU, l'APU et le déroulement des frames.
+NesSession expose les commandes utiles à l'application hôte.
+```
 
-L'adaptateur est une couche mince. Le CPU, le bus, la PPU, l'APU, les cartouches et le timing restent dans le cœur NES, sans dépendance vers egui/eframe ni vers les widgets de l'application.
+## Composants et responsabilités
 
-### Décision d'intégration à résoudre
+### CPU — `src/cpu.rs`
 
-Le crate `emulation-core` se trouve dans le workspace imbriqué du dépôt principal (`PeaceEmu/crates/core`) et n'est pas encore disponible ici comme dépendance versionnée publiée. Avant de prétendre que l'adaptateur est compilable avec l'hôte, choisir une stratégie de partage du contrat (par exemple extraire/versionner le crate commun ou fournir une dépendance Git correctement empaquetée). Ne pas copier les types en créant un faux contrat local, car deux types homonymes ne seraient pas compatibles à travers l'API Rust.
+Interpréteur Ricoh 2A03 : registres, flags, modes d'adressage, instructions officielles implémentées, sélection d'opcodes non officiels, pile et interruptions. Les opérations composites réutilisent les helpers locaux. Le modèle de cycles est partiel : les accès matériels ne sont pas tous émis à chaque cycle comme sur la puce réelle.
 
-## Composants du cœur
+### Bus — `src/bus.rs`
 
-### CPU Ricoh 2A03
+Achemine les accès CPU vers la RAM interne et ses miroirs, les registres PPU/APU, la cartouche et les manettes. Il prend en charge le DMA OAM et une première voie de lecture DMC. Le DMA OAM ajoute nominalement 513 ou 514 cycles ; l'arbitrage DMC et les interactions simultanées ne sont pas entièrement cycle-exacts.
 
-Exécute les instructions du 6502 modifié pour la NES. Le composant gère les registres, les modes d'adressage, les flags, les interruptions et le comportement temporel. Le comportement décimal spécifique au 2A03 doit être testé explicitement.
+### Cartouches — `src/cartridge.rs`
 
-Les instructions non officielles stables LAX/SAX sont maintenant prises en charge avec tests sur les registres, les flags, les adresses et les cycles. Leur comportement a été comparé à la table d'opcodes TetaNES ; voir [REFERENCE_IMPLEMENTATIONS.md](REFERENCE_IMPLEMENTATIONS.md) pour la provenance et la politique de réutilisation.
+Parse les en-têtes iNES legacy, valide les tailles de données, saute les trainers et expose PRG/CHR, RAM et mirroring. L'enum `Cartridge` route vers plusieurs implémentations de mappers. Le support porte sur des configurations documentées dans le README, pas sur toutes les variantes physiques de ces cartes. NES 2.0 est rejeté par la plupart des implémentations ; NROM possède un chemin partiel distinct, ce qui ne constitue pas un support NES 2.0 global.
 
-### Bus mémoire
+### PPU — `src/ppu.rs`
 
-Centralise les accès CPU vers la RAM interne, les registres PPU/APU, les ports manette série ($4016/$4017) et la cartouche. Les manettes disposent d'un strobe, d'un latch des huit boutons et d'un registre à décalage ; l'entrée publique passe par `NesMachine::set_controller_state`. Le DMA OAM copie une page entière et ajoute un blocage CPU de 513/514 cycles. Le DMC peut demander des lectures d'échantillons dans l'espace CPU ; son arbitrage et ses cycles de blocage restent approximatifs.
+Gère les registres vidéo, les accès VRAM, nametables, palettes, OAM, le scroll, les sprites, VBlank/NMI et le compteur de scanlines/dots. L'image est 256×240. Le rendu utilise des lignes et des instantanés ; le pipeline de fetchs et de pixels par dot n'est pas complet. Les IRQ MMC3 ne sont donc pas encore basées sur une reproduction complète des transitions A12 du bus PPU.
 
-### Cartouche et mapper
+### APU — `src/apu.rs`
 
-Valide les en-têtes iNES legacy, les tailles et les éventuels trainers avant d'exposer PRG-ROM, PRG-RAM de 8 Kio, CHR-ROM/CHR-RAM et le mirroring. Les trainers iNES de 512 octets sont chargés à l'offset `$1000` de la PRG-RAM, correspondant à `$7000–$71FF`. Commencer par NROM (mapper 0). Chaque mapper ultérieur doit disposer de tests spécifiques.
+Modélise les registres, pulse/triangle/bruit, séquenceur de frame, IRQ frame, un premier DMC et une sortie PCM mono normalisée. Le modèle audio et plusieurs détails de timing sont approximatifs. Les filtres et le resampling à fréquence hôte restent des étapes futures.
 
-### PPU
+### Machine — `src/machine.rs`
 
-Gère les registres vidéo, motifs, nametables, palettes, sprites, NMI et timing de balayage. Un rendu par instantané 256×240 existe, avec priorité OAM, masque grayscale de PPUMASK et approximations du sprite 0/overflow. Le compteur NTSC inclut le saut de dot du pré-rendu sur les images impaires lorsque le rendu est actif ; le pipeline dot-par-dot et les changements de scroll en cours de ligne restent à faire.
+Assemble les composants, charge une cartouche, réinitialise le CPU, permet des opérations CPU et fait progresser la machine par instruction/cycles ou par frame. Les frontières temporelles et l'état initial doivent rester testables.
 
-### APU
+### Session — `src/session.rs`
 
-L'APU modélise les registres, les compteurs de longueur, les enveloppes pulse, le sweep, le compteur linéaire triangle, le séquenceur de frame à 4/5 étapes et ses compteurs avancés cycle CPU par cycle CPU (indépendamment de la taille des lots), un mixage mono approximatif et un premier DMC (buffer d'échantillon, unité delta 7 bits, bouclage et IRQ). L'IRQ frame est acquittée à la lecture de $4015 ; l'IRQ DMC reste active jusqu'à son acquittement documenté. Restent notamment le blocage/arbitrage DMA DMC cycle-exact, les filtres audio, le resampling à fréquence hôte et le délai de reset précis de $4017.
+Fournit une façade indépendante de l'interface pour charger une ROM, réinitialiser, exécuter des frames, récupérer l'image et le PCM, transmettre les boutons et accéder à la RAM batterie. Les capacités exposées par cette façade ne prouvent pas à elles seules la compatibilité de jeux ni l'intégration au contrat hôte.
 
-### Contrôleurs
+### Binaire desktop — `src/bin/peaceemu-nes-desktop.rs`
 
-Les deux ports de manette série sont implémentés au niveau du bus, avec huit bits dans l'ordre A/B/Select/Start/Up/Down/Left/Right. L'adaptateur PeaceEmu doit encore traduire les transitions d'entrée hôtes vers `set_controller_state`.
+Frontend de test Windows utilisant les API système pour la fenêtre, l'affichage, l'entrée et l'audio. Il contient du code `unsafe` limité aux appels FFI nécessaires ; la bibliothèque de cœur conserve sa propre politique de sécurité. Le binaire affiche un message explicatif sur les plateformes non Windows. Les builds CI ne remplacent pas un essai interactif avec une ROM connue.
 
-### Machine et ordonnanceur
+## Frontière avec le dépôt PeaceEmu
 
-Coordonne CPU, PPU, APU, cartouche et contrôleurs. Le modèle de timing doit être explicite, déterministe et testable.
+Le dépôt hôte possède la bibliothèque de jeux, le cycle de vie de session, l'interface, la sortie vidéo/audio et les services de persistance. L'adaptateur doit convertir :
+- les boutons génériques en états des deux manettes NES ;
+- le framebuffer NES 256×240 et ses indices de palette en format vidéo commun ;
+- les échantillons mono en format audio attendu par l'hôte ;
+- la RAM batterie en données de sauvegarde persistantes.
 
-## Réutilisation de références existantes
+Le type partagé `EmulationCore` est défini dans le dépôt hôte. Il faut choisir et documenter une méthode fiable pour consommer ce crate depuis ce dépôt (version publiée, workspace commun ou dépendance Git valide) ; ne pas recréer des types homonymes locaux. Les save states ne sont pas à annoncer tant que leur format, leur version et leur validation ne sont pas implémentés.
 
-La stratégie de portage, les projets étudiés, les licences et les contraintes de compatibilité sont consignés dans [REFERENCE_IMPLEMENTATIONS.md](REFERENCE_IMPLEMENTATIONS.md). TetaNES est la référence principale examinée pour les comportements CPU/PPU/APU, mais sa version actuelle exige Rust 1.88 alors que ce module cible Rust 1.78 : ne pas ajouter sa version actuelle comme dépendance directe sans décision explicite sur le MSRV. RustyNES est sous GPL-3.0 ; aucun code provenant de ce projet ne doit être repris sans décision de licence explicite. Les algorithmes portés doivent être adaptés à nos structures et couverts par nos propres tests.
+## Références et licence
 
-## Règles d'implémentation
+La stratégie de comparaison des comportements, les projets étudiés et les licences sont consignés dans [REFERENCE_IMPLEMENTATIONS.md](REFERENCE_IMPLEMENTATIONS.md). Les spécifications NESdev servent de référence matérielle. Toute reprise de code doit être enregistrée avec la source exacte, la licence, les modifications et les notices requises.
 
-- Le cœur et ses composants ne dépendent pas de l'interface graphique.
-- Valider le contenu non fiable avant toute mutation d'état.
-- Préférer les tests unitaires déterministes pour le CPU, le bus et les cartouches.
-- Documenter les hypothèses de timing et les comportements matériels particuliers.
-- Chaque capacité annoncée dans les métadonnées doit correspondre à un comportement implémenté.
-- Ne jamais inclure de ROM commerciale.
+## Règles d'ingénierie
 
-## Ordre recommandé
+1. Chaque comportement matériel doit avoir une responsabilité et une hypothèse de timing documentée.
+2. Valider les données de ROM et les tailles avant de muter l'état de la machine.
+3. Ajouter des tests de régression avant de modifier le comportement temporel.
+4. Préférer les tests déterministes et les ROM de diagnostic redistribuables légalement.
+5. Ne pas confondre build réussi, test unitaire réussi et compatibilité de jeu.
+6. Maintenir le cœur indépendant du frontend et du système de bibliothèque.
+7. Ne pas supprimer les tests existants pour rendre la CI verte.
 
-1. Crate Rust et conventions de tests.
-2. CPU et tests d'instructions.
-3. Bus et RAM.
-4. Parsing de cartouche et NROM.
-5. Machine minimale et tests d'intégration.
-6. PPU et synchronisation.
-7. Compléter le pipeline PPU et le timing synchronisé.
-8. Raffiner le pipeline audio et l'arbitrage DMA DMC, puis connecter les manettes à l'adaptateur hôte.
-9. Adapter le contrat EmulationCore et étendre la compatibilité.
+## Priorités
+
+1. Harmoniser les manifestes Rust et la CI.
+2. Ajouter des ROM de diagnostic et un rapport de compatibilité reproductible.
+3. Passer de la génération de lignes à un pipeline PPU par dot.
+4. Synchroniser accès PPU, bus et IRQ MMC3.
+5. Raffiner CPU/interruptions/DMA, puis le DMC et la sortie audio.
+6. Valider le contrat d'intégration dans le dépôt hôte.
