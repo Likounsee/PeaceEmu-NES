@@ -1268,7 +1268,9 @@ mod tests {
         ppu.frame_scroll_v = 0;
         ppu.frame_fine_x = 0;
         ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x0001, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x0011, 0x80, Some(&mut cartridge));
         ppu.oam[0..4].copy_from_slice(&[0, 1, 0, 0]);
         assert_eq!(ppu.status & 0x40, 0);
         ppu.tick_with_cartridge(1, Some(&cartridge));
@@ -1287,7 +1289,9 @@ mod tests {
         // OAM Y stores the top row minus one; Y=0 starts at visible scanline one.
         ppu.mask = 0x1E;
         ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x0001, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x0011, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x3F01, 0x22, Some(&mut cartridge));
         ppu.mem_write(0x3F11, 0x30, Some(&mut cartridge));
         ppu.oam[0..4].copy_from_slice(&[0, 1, 0, 0]);
@@ -1312,9 +1316,10 @@ mod tests {
         ppu.mem_write(0x0011, 0x80, Some(&mut cartridge));
         ppu.oam[0..4].copy_from_slice(&[0, 1, 0, 0]); // Sprite 0 begins at screen (0, 1).
 
-        // Leave the pre-render line. The hit must not be delayed until dot 256.
-        ppu.tick_with_cartridge(341, Some(&cartridge));
-        assert_eq!(ppu.position(), (0, 0));
+        // Scanline zero is sprite-free; OAM Y=0 starts on scanline one.
+        ppu.scanline = 1;
+        ppu.dot = 0;
+        assert_eq!(ppu.position(), (1, 0));
         assert_eq!(ppu.status & 0x40, 0);
         ppu.tick_with_cartridge(1, Some(&cartridge));
         assert_ne!(ppu.status & 0x40, 0, "sprite-zero hit should occur at dot 1 for x=0");
@@ -1332,7 +1337,9 @@ mod tests {
         let mut background_disabled = Ppu::new();
         background_disabled.mask = 0x14; // Sprites enabled, background disabled.
         background_disabled.mem_write(0x0000, 0x80, Some(&mut cartridge));
+        background_disabled.mem_write(0x0001, 0x80, Some(&mut cartridge));
         background_disabled.mem_write(0x0010, 0x80, Some(&mut cartridge));
+        background_disabled.mem_write(0x0011, 0x80, Some(&mut cartridge));
         background_disabled.oam[0..4].copy_from_slice(&[0, 1, 0, 0]);
         background_disabled.render_frame(Some(&cartridge));
         assert_eq!(background_disabled.status & 0x40, 0);
@@ -1340,7 +1347,9 @@ mod tests {
         let mut rightmost_pixel = Ppu::new();
         rightmost_pixel.mask = 0x1E;
         rightmost_pixel.mem_write(0x0000, 0x01, Some(&mut cartridge));
+        rightmost_pixel.mem_write(0x0001, 0x01, Some(&mut cartridge));
         rightmost_pixel.mem_write(0x0010, 0x01, Some(&mut cartridge));
+        rightmost_pixel.mem_write(0x0011, 0x01, Some(&mut cartridge));
         rightmost_pixel.mem_write(0x3F01, 0x22, Some(&mut cartridge));
         rightmost_pixel.mem_write(0x3F11, 0x30, Some(&mut cartridge));
         // OAM X=248 puts the pattern's rightmost set bit at screen x=255.
@@ -1451,13 +1460,33 @@ mod tests {
         ppu.palette[0x11] = 0x30;
         ppu.palette[0x15] = 0x27;
         ppu.mask = 0x14; // Show sprites and the leftmost eight sprite pixels.
-        ppu.oam[0..8].copy_from_slice(&[0, 1, 0, 16, 255, 2, 1, 16]);
+        ppu.oam[0..8].copy_from_slice(&[0, 1, 0, 16, 0, 2, 1, 16]);
         assert_eq!(cartridge.ppu_read(0x10), Some(0x80));
         assert_eq!(ppu.palette[0x11], 0x30);
 
         ppu.render_frame(Some(&cartridge));
 
         assert_eq!(ppu.framebuffer()[256 + 16], 0x30);
+    }
+
+    #[test]
+    fn oam_y_values_ef_through_ff_hide_sprites_instead_of_wrapping_to_top() {
+        let mut ppu = Ppu::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        ppu.mask = 0x1E;
+        ppu.mem_write(0x0010, 0xFF, Some(&mut cartridge));
+        ppu.mem_write(0x0011, 0xFF, Some(&mut cartridge));
+        ppu.mem_write(0x3F11, 0x30, Some(&mut cartridge));
+
+        for y in 0xEF..=0xFF {
+            ppu.oam[0..4].copy_from_slice(&[y, 1, 0, 0]);
+            ppu.render_frame(Some(&cartridge));
+            assert_ne!(ppu.framebuffer()[256], 0x30, "OAM Y={y:#04X} must remain offscreen");
+            assert_eq!(ppu.status & 0x40, 0, "hidden sprite at OAM Y={y:#04X} cannot hit the background");
+        }
     }
 
     #[test]
