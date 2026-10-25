@@ -884,7 +884,7 @@ mod tests {
         apu.tick_cpu_cycles(200);
         assert!(apu.sample() > 0.0);
         apu.write(0x4015, 0x00);
-        assert!(apu.sample() > 0.0, "disabling the triangle channel stops its sequencer but retains the DAC level");
+        assert_eq!(apu.sample(), 0.0, "the triangle sequencer never started because its linear counter stayed at zero");
     }
 
     #[test]
