@@ -21,10 +21,10 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 
 ## Dernière itération
 
-- **APU/DMC** : les tests couvrent le buffer d'échantillon, les stalls DMA et l'indépendance entre IRQ frame, DMC et mapper.
-- **PPU/NMI/scroll** : ajout de régressions pour l'activation de NMI en plein VBlank (un seul front montant) et le passage de coarse-Y 30 à 31 sans bascule de nametable.
-- **MMC3** : ajout d'un test confirmant que le compteur continue d'évoluer alors que la sortie IRQ est désactivée, et que le prochain événement zéro peut déclencher l'IRQ après réactivation.
-- **Validation** : la dernière série de changements doit être jugée sur les workflows CI des commits correspondants ; les tests synthétiques ne remplacent pas les essais de ROM réelles, notamment pour l'alignement sprite/hitbox de *Super Mario Bros.*
+- **APU/DMC** : les tests couvrent le buffer d'échantillon, les stalls DMA, l'indépendance entre IRQ frame/DMC/mapper et la lecture DMC à travers une banque PRG MMC3 sélectionnée.
+- **PPU/NMI/scroll** : régressions pour l'activation de NMI en plein VBlank (un seul front montant), le passage de coarse-Y 30 à 31 sans bascule de nametable et les limites du scroll vertical.
+- **MMC3/CHR** : couverture de l'inversion des banques CHR, avec les deux fenêtres de 2 Kio et les quatre fenêtres de 1 Kio, en plus des tests de compteur IRQ/A12.
+- **Validation** : les changements les plus récents sont encore en cours de validation CI. Les tests synthétiques ne remplacent pas les essais de ROM réelles, notamment pour l'alignement sprite/hitbox de *Super Mario Bros.*
 
 
 ## Ce qui est implémenté
