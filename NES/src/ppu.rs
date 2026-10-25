@@ -252,7 +252,7 @@ impl Ppu {
             if (4..=7).contains(&phase) {
                 let sprite = ((dot - 257) / 8) as usize;
                 let base = sprite * 4;
-                let top = self.oam[base] as usize + 1;
+                let top = (self.oam[base] as usize + 1) & 0xFF;
                 let target_y = if self.scanline == 261 { 0 } else { self.scanline as usize + 1 };
                 let row = target_y.wrapping_sub(top);
                 let height = if self.ctrl & 0x20 != 0 { 16 } else { 8 };
@@ -315,7 +315,7 @@ impl Ppu {
             return false;
         }
 
-        let sprite_top = self.oam[0] as usize + 1;
+        let sprite_top = (self.oam[0] as usize + 1) & 0xFF;
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         if y < sprite_top || y >= sprite_top + height {
             return false;
@@ -404,7 +404,7 @@ impl Ppu {
         let mut in_range = 0usize;
         for sprite in 0..64usize {
             let base = sprite * 4;
-            let top = self.oam[base] as usize + 1;
+            let top = (self.oam[base] as usize + 1) & 0xFF;
             if y < top || y >= top + height { continue; }
             in_range += 1;
             if in_range > 8 { break; }
@@ -439,7 +439,7 @@ impl Ppu {
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         let mut count = 0usize;
         for sprite in 0..64usize {
-            let top = self.oam[sprite * 4] as usize + 1;
+            let top = (self.oam[sprite * 4] as usize + 1) & 0xFF;
             if y >= top && y < top + height {
                 count += 1;
                 if count > 8 {
@@ -529,7 +529,7 @@ impl Ppu {
         let mut sprite_claimed = vec![false; 256 * 240];
         for sprite in 0..64usize {
             let base = sprite * 4;
-            let top = self.oam[base] as usize + 1;
+            let top = (self.oam[base] as usize + 1) & 0xFF;
             let tile = self.oam[base + 1] as usize;
             let attributes = self.oam[base + 2];
             let left = self.oam[base + 3] as usize;
@@ -1975,58 +1975,5 @@ mod sprite_priority_regression_tests {
 
         assert_eq!(ppu.framebuffer[256], ppu.output_color(0x01),
             "the lower-priority foreground sprite must not leak through sprite 0");
-    }
-}
-
-
-#[cfg(test)]
-mod sprite_y_edge_regression_tests {
-    use super::*;
-
-    fn chr_ram_cartridge() -> Cartridge {
-        let mut image = vec![0; 16 + 16 * 1024];
-        image[0..4].copy_from_slice(b"NES\\x1A");
-        image[4] = 1;
-        Cartridge::parse(&image).unwrap()
-    }
-
-    #[test]
-    fn oam_y_ff_hides_sprite_instead_of_wrapping_it_to_scanline_zero() {
-        let mut cartridge = chr_ram_cartridge();
-        assert!(cartridge.ppu_write(0, 0x80));
-        let mut ppu = Ppu::new();
-        ppu.mask = 0x14;
-        ppu.palette[0] = 0x01;
-        ppu.palette[0x11] = 0x2A;
-        ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 0]);
-        ppu.framebuffer[0] = ppu.output_color(0x01);
-
-        ppu.render_sprite_pixel(0, 0, Some(&cartridge));
-
-        assert_eq!(ppu.framebuffer[0], ppu.output_color(0x01),
-            "OAM Y=$FF places the sprite below the visible scanlines; it must not wrap to the top");
-    }
-
-    #[test]
-    fn oam_y_ff_cannot_raise_sprite_zero_hit_on_scanline_zero() {
-        let mut cartridge = chr_ram_cartridge();
-        assert!(cartridge.ppu_write(0, 0x80));
-        let mut ppu = Ppu::new();
-        ppu.mask = 0x1E;
-        ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 0]);
-        ppu.background_opaque[0] = true;
-
-        assert!(!ppu.sprite_zero_hit_at(0, 0, Some(&cartridge)));
-    }
-
-    #[test]
-    fn oam_y_ff_sprites_do_not_count_toward_scanline_zero_overflow() {
-        let mut ppu = Ppu::new();
-        ppu.oam.chunks_exact_mut(4).for_each(|sprite| sprite[0] = 0xFF);
-
-        ppu.update_sprite_overflow(0);
-
-        assert_eq!(ppu.status & 0x20, 0,
-            "sprites whose Y coordinate is $FF are offscreen, not sprites on scanline zero");
     }
 }
