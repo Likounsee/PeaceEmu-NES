@@ -4971,3 +4971,50 @@ mod mapper_4_chr_window_regressions {
         }
     }
 }
+
+
+#[cfg(test)]
+mod mapper_4_prg_window_regressions {
+    use super::*;
+
+    fn mmc3_prg_image() -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + 4 * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 4; // Eight 8 KiB PRG banks.
+        image[6] = 0x40; // Mapper 4.
+        let start = INES_HEADER_LEN;
+        for bank in 0..8usize {
+            let offset = start + bank * 0x2000;
+            image[offset..offset + 0x2000].fill(bank as u8);
+        }
+        image
+    }
+
+    #[test]
+    fn prg_mode_swaps_only_the_r6_and_fixed_second_last_windows() {
+        let mut cart = Cartridge::parse(&mmc3_prg_image()).unwrap();
+        cart.cpu_write(0x8000, 0x06);
+        cart.cpu_write(0x8001, 3);
+        cart.cpu_write(0x8000, 0x07);
+        cart.cpu_write(0x8001, 5);
+
+        let normal = [3, 5, 6, 7];
+        for (slot, expected) in normal.into_iter().enumerate() {
+            assert_eq!(
+                cart.cpu_read(0x8000 + (slot as u16) * 0x2000),
+                Some(expected),
+                "normal PRG mode mapped the wrong 8 KiB bank in slot {slot}"
+            );
+        }
+
+        cart.cpu_write(0x8000, 0x46); // PRG mode 1, selecting R6.
+        let inverted = [6, 5, 3, 7];
+        for (slot, expected) in inverted.into_iter().enumerate() {
+            assert_eq!(
+                cart.cpu_read(0x8000 + (slot as u16) * 0x2000),
+                Some(expected),
+                "inverted PRG mode mapped the wrong 8 KiB bank in slot {slot}"
+            );
+        }
+    }
+}
