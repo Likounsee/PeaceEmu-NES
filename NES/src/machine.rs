@@ -303,6 +303,20 @@ mod tests {
     }
 
     #[test]
+    fn instruction_bus_accesses_and_remaining_cycles_keep_ppu_clock_synchronized() {
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
+        let before_cycles = machine.total_cycles();
+        assert_eq!(machine.ppu_position(), (261, 0));
+
+        let result = machine.step().unwrap();
+
+        assert_eq!(result.cycles, 2);
+        assert_eq!(machine.total_cycles() - before_cycles, 2);
+        assert_eq!(machine.ppu_position(), (261, 6),
+            "opcode fetch plus the unmodelled implied-instruction cycle must advance six PPU dots");
+    }
+
+    #[test]
     fn device_clock_advances_ppu_three_dots_per_cpu_cycle() {
         let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
         assert_eq!(machine.bus.ppu_position(), (261, 0));
