@@ -1173,3 +1173,42 @@ mod channel_enable_regression_tests {
         assert_eq!(apu.dmc_bytes_remaining, 65);
     }
 }
+
+
+#[cfg(test)]
+mod dmc_address_regression_tests {
+    use super::*;
+
+    #[test]
+    fn dmc_sample_address_wraps_from_ffff_to_8000() {
+        let mut apu = Apu::new();
+        apu.dmc_current_address = 0xFFFF;
+        apu.dmc_bytes_remaining = 2;
+        apu.dmc_sample_buffer = None;
+
+        apu.supply_dmc_byte(0xA5);
+
+        assert_eq!(apu.dmc_sample_buffer, Some(0xA5));
+        assert_eq!(apu.dmc_current_address, 0x8000);
+        assert_eq!(apu.dmc_bytes_remaining, 1);
+    }
+
+    #[test]
+    fn looping_dmc_restarts_the_sample_after_the_last_byte() {
+        let mut apu = Apu::new();
+        apu.registers[0x10] = 0x40; // Loop enabled, IRQ disabled.
+        apu.registers[0x12] = 0x04; // $C100.
+        apu.registers[0x13] = 0x01; // 17-byte sample.
+        apu.dmc_enabled = true;
+        apu.dmc_current_address = 0xC110;
+        apu.dmc_bytes_remaining = 1;
+        apu.dmc_sample_buffer = None;
+
+        apu.supply_dmc_byte(0x7E);
+
+        assert_eq!(apu.dmc_sample_buffer, Some(0x7E));
+        assert_eq!(apu.dmc_current_address, 0xC100);
+        assert_eq!(apu.dmc_bytes_remaining, 17);
+        assert!(!apu.dmc_irq);
+    }
+}

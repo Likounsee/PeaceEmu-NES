@@ -3144,3 +3144,56 @@ mod mapper_bounds_regression_tests {
         assert!(!cart.ppu_write(0, 0xFF), "CNROM CHR-ROM must remain read-only");
     }
 }
+
+
+#[cfg(test)]
+mod mmc1_prg_ram_and_mode_regression_tests {
+    use super::*;
+
+    fn image() -> Vec<u8> {
+        let mut data = vec![0; INES_HEADER_LEN + 4 * PRG_BANK_LEN];
+        data[0..4].copy_from_slice(b"NES\x1A");
+        data[4] = 4;
+        data[6] = 0x10; // MMC1, horizontal initial mirroring.
+        for bank in 0..4usize {
+            let start = INES_HEADER_LEN + bank * PRG_BANK_LEN;
+            data[start..start + PRG_BANK_LEN].fill(bank as u8);
+        }
+        data
+    }
+
+    fn serial_write(cart: &mut Mmc1, address: u16, value: u8) {
+        for bit in 0..5 {
+            assert!(cart.cpu_write(address, (value >> bit) & 1));
+        }
+    }
+
+    #[test]
+    fn prg_modes_two_and_three_switch_the_expected_16k_windows() {
+        let mut cart = Mmc1::parse(&image()).unwrap();
+
+        serial_write(&mut cart, 0x8000, 0x08); // Mode 2: first bank fixed at $8000.
+        serial_write(&mut cart, 0xE000, 0x02);
+        assert_eq!(cart.cpu_read(0x8000), Some(0));
+        assert_eq!(cart.cpu_read(0xC000), Some(2));
+
+        serial_write(&mut cart, 0x8000, 0x0C); // Mode 3: last bank fixed at $C000.
+        serial_write(&mut cart, 0xE000, 0x01);
+        assert_eq!(cart.cpu_read(0x8000), Some(1));
+        assert_eq!(cart.cpu_read(0xC000), Some(3));
+    }
+
+    #[test]
+    fn prg_register_bit_four_disables_ram_without_destroying_saved_contents() {
+        let mut cart = Mmc1::parse(&image()).unwrap();
+        assert!(cart.cpu_write(0x6000, 0xA7));
+        assert_eq!(cart.cpu_read(0x6000), Some(0xA7));
+
+        serial_write(&mut cart, 0xE000, 0x10);
+        assert_eq!(cart.cpu_read(0x6000), None, "disabled PRG-RAM should leave the bus undriven");
+        assert!(!cart.cpu_write(0x6000, 0x11));
+
+        serial_write(&mut cart, 0xE000, 0x00);
+        assert_eq!(cart.cpu_read(0x6000), Some(0xA7), "re-enabling RAM must preserve its contents");
+    }
+}

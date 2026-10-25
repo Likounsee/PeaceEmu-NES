@@ -1902,3 +1902,42 @@ mod sprite_pixel_regression_tests {
     }
 
 }
+
+
+#[cfg(test)]
+mod ppu_nametable_bus_regression_tests {
+    use super::*;
+
+    fn vertical_mirroring_cartridge() -> Cartridge {
+        let mut image = vec![0; INES_HEADER_LEN + PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 1;
+        image[6] = 0x01; // Vertical nametable mirroring.
+        Cartridge::parse(&image).unwrap()
+    }
+
+    #[test]
+    fn nametable_reads_and_writes_follow_cartridge_vertical_mirroring() {
+        let mut ppu = Ppu::new();
+        let mut cartridge = vertical_mirroring_cartridge();
+
+        ppu.mem_write(0x2000, 0x5A, Some(&mut cartridge));
+        assert_eq!(ppu.mem_read(0x2800, Some(&cartridge)), 0x5A);
+        assert_eq!(ppu.mem_read(0x2400, Some(&cartridge)), 0);
+        ppu.mem_write(0x2C00, 0xA5, Some(&mut cartridge));
+        assert_eq!(ppu.mem_read(0x2400, Some(&cartridge)), 0xA5);
+        assert_eq!(ppu.mem_read(0x2000, Some(&cartridge)), 0x5A);
+    }
+
+    #[test]
+    fn palette_data_register_masks_written_values_and_wraps_vram_address() {
+        let mut ppu = Ppu::new();
+        ppu.cpu_write_register(6, 0x3F, None);
+        ppu.cpu_write_register(6, 0x1F, None);
+        ppu.cpu_write_register(7, 0xFF, None);
+
+        assert_eq!(ppu.mem_read(0x3F1F, None), 0x3F);
+        assert_eq!(ppu.v, 0x3F20);
+        assert_eq!(ppu.mem_read(0x3F00, None), 0);
+    }
+}
