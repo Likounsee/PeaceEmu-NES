@@ -4125,10 +4125,11 @@ mod mapper_header_error_regressions {
     }
 
     #[test]
-    fn nes2_header_is_not_misreported_as_an_ines_mapper_error() {
+    fn nes2_nrom_header_decodes_rom_size_before_truncation_check() {
         let mut image = vec![0; INES_HEADER_LEN];
         image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 1; // 16 KiB PRG-ROM in NES 2.0 linear size encoding.
         image[7] = 0x08; // NES 2.0 marker.
-        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
+        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::TruncatedImage { .. })));
     }
 }
