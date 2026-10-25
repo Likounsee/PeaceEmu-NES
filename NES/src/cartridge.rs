@@ -3600,3 +3600,68 @@ mod mapper15_bank_mode_regressions {
         assert_eq!(cart.ppu_read(0x2000), None);
     }
 }
+
+
+#[cfg(test)]
+mod mmc1_board_boundary_regressions {
+    use super::*;
+
+    fn image(prg_banks: u8, four_screen: bool) -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = prg_banks;
+        image[6] = 0x10 | if four_screen { 0x08 } else { 0 };
+        for bank in 0..prg_banks as usize {
+            let start = INES_HEADER_LEN + bank * PRG_BANK_LEN;
+            image[start..start + PRG_BANK_LEN].fill(bank as u8);
+        }
+        image
+    }
+
+    fn write_serial(cart: &mut Cartridge, address: u16, value: u8) {
+        for bit in 0..5 {
+            assert!(cart.cpu_write(address, (value >> bit) & 1));
+        }
+    }
+
+    #[test]
+    fn mmc1_four_screen_wiring_overrides_serial_mirroring_changes() {
+        let mut cart = Cartridge::parse(&image(4, true)).unwrap();
+        assert_eq!(cart.mirroring(), Mirroring::FourScreen);
+        write_serial(&mut cart, 0x8000, 0x0C);
+        assert_eq!(cart.mirroring(), Mirroring::FourScreen);
+        write_serial(&mut cart, 0x8000, 0x0E);
+        assert_eq!(cart.mirroring(), Mirroring::FourScreen);
+    }
+
+    #[test]
+    fn mmc1_prg_ram_enable_bit_does_not_corrupt_prg_bank_selection() {
+        let mut cart = Cartridge::parse(&image(4, false)).unwrap();
+        assert!(cart.cpu_write(0x6000, 0x5A));
+        write_serial(&mut cart, 0xE000, 0x10);
+        assert_eq!(cart.cpu_read(0x6000), None);
+        assert_eq!(cart.cpu_read(0x8000), Some(0));
+        assert_eq!(cart.cpu_read(0xC000), Some(3));
+        write_serial(&mut cart, 0xE000, 0x02);
+        assert_eq!(cart.cpu_read(0x6000), Some(0x5A));
+        assert_eq!(cart.cpu_read(0x8000), Some(2));
+    }
+
+    #[test]
+    fn mmc1_chr_bank_selection_wraps_to_installed_four_kib_banks() {
+        let mut image = image(2, false);
+        image[5] = 2; // Two 8-KiB CHR banks = four 4-KiB banks.
+        image.resize(INES_HEADER_LEN + 2 * PRG_BANK_LEN + 2 * CHR_BANK_LEN, 0);
+        let chr_start = INES_HEADER_LEN + 2 * PRG_BANK_LEN;
+        for bank in 0..4 {
+            image[chr_start + bank * 0x1000..chr_start + (bank + 1) * 0x1000]
+                .fill(0x40 + bank as u8);
+        }
+        let mut cart = Cartridge::parse(&image).unwrap();
+        write_serial(&mut cart, 0x8000, 0x1C); // 4-KiB CHR mode.
+        write_serial(&mut cart, 0xA000, 0x1F);
+        write_serial(&mut cart, 0xC000, 0xFE);
+        assert_eq!(cart.ppu_read(0x0000), Some(0x43));
+        assert_eq!(cart.ppu_read(0x1000), Some(0x42));
+    }
+}
