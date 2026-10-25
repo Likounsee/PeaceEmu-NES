@@ -4926,7 +4926,7 @@ mod mapper_4_chr_window_regressions {
 
     fn mmc3_image(prg_banks: u8, chr_banks: u8) -> Vec<u8> {
         let mut image = vec![0; INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN + chr_banks as usize * CHR_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = prg_banks;
         image[5] = chr_banks;
         image[6] = 0x40;
