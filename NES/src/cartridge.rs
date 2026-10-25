@@ -4392,3 +4392,51 @@ mod bus_conflict_regression_tests {
         assert_eq!(no_conflict.ppu_read(0), Some(0x43));
     }
 }
+
+
+#[cfg(test)]
+mod mapper8_nes2_tests {
+    use super::*;
+
+    fn nes2_mapper8() -> Vec<u8> {
+        let prg_len = 4 * PRG_BANK_LEN;
+        let mut image = vec![0; INES_HEADER_LEN + prg_len];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 4;
+        image[5] = 0;
+        image[6] = 0x80;
+        image[7] = 0x08;
+        image[8] = 0;
+        image[9] = 0;
+        image[10] = 7;
+        image[11] = 9;
+        let start = INES_HEADER_LEN;
+        for bank in 0..2 {
+            image[start + bank * 2 * PRG_BANK_LEN..start + (bank + 1) * 2 * PRG_BANK_LEN]
+                .fill(0x20 + bank as u8);
+        }
+        image
+    }
+
+    #[test]
+    fn mapper8_nes2_header_and_extended_ram_sizes_are_parsed() {
+        let mut cart = Cartridge::parse(&nes2_mapper8()).unwrap();
+        assert!(matches!(cart, Cartridge::Mapper8(_)));
+        assert_eq!(cart.cpu_read(0x8000), Some(0x20));
+        cart.cpu_write(0x8000, 0x10);
+        assert_eq!(cart.cpu_read(0x8000), Some(0x21));
+        cart.cpu_write(0x6000, 0x5A);
+        assert_eq!(cart.cpu_read(0x6000), Some(0x5A));
+        assert!(cart.chr_is_ram());
+        cart.cpu_write(0x8000, 0x03);
+        assert!(cart.ppu_write(0x123, 0xA5));
+        assert_eq!(cart.ppu_read(0x123), Some(0xA5));
+    }
+
+    #[test]
+    fn mapper8_nes2_rejects_unknown_submappers() {
+        let mut image = nes2_mapper8();
+        image[8] = 0x10;
+        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
+    }
+}
