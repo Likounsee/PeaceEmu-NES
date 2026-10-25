@@ -2512,3 +2512,28 @@ mod sprite_composition_regressions {
             "the scanline sprite limit counts transparent sprites too");
     }
 }
+
+
+#[cfg(test)]
+mod sprite_8x16_top_wrap_regressions {
+    use super::*;
+
+    #[test]
+    fn wrapped_y_sprite_uses_8x16_tile_selection_on_scanline_zero() {
+        let mut image = vec![0; 16 + 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        let mut cart = Cartridge::parse(&image).unwrap();
+        // In 8x16 mode tile 0 selects pattern table 0; make its first pixel opaque.
+        cart.ppu_write(0, 0x80);
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x20;
+        ppu.mask = 0x14;
+        ppu.palette[0x11] = 0x2A;
+        ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 0]);
+
+        ppu.render_sprite_pixel(0, 0, Some(&cart));
+        assert_eq!(ppu.framebuffer[0], ppu.output_color(0x2A));
+    }
+}
