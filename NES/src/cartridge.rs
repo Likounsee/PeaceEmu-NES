@@ -631,7 +631,7 @@ pub struct Mapper8 {
     chr_bank_count: usize,
     prg_bank_count: usize,
     selected: u8,
-    fixed_mirroring: Option<Mirroring>,
+    mirroring: Mirroring,
 }
 
 impl Mapper8 {
@@ -662,8 +662,9 @@ impl Mapper8 {
         let chr_is_ram = chr_len == 0;
         let chr = if chr_is_ram { vec![0; CHR_BANK_LEN] }
             else { image[chr_start..chr_start + chr_len].to_vec() };
-        let fixed_mirroring = if image[6] & 0x08 != 0 { Some(Mirroring::FourScreen) }
-            else { None };
+        let mirroring = if image[6] & 0x08 != 0 { Mirroring::FourScreen }
+            else if image[6] & 0x01 != 0 { Mirroring::Vertical }
+            else { Mirroring::Horizontal };
         Ok(Self {
             prg_rom: image[prg_start..chr_start].to_vec(),
             prg_ram,
@@ -672,7 +673,7 @@ impl Mapper8 {
             chr_is_ram,
             prg_bank_count: prg_len / (2 * PRG_BANK_LEN),
             selected: 0,
-            fixed_mirroring,
+            mirroring,
         })
     }
 
@@ -681,7 +682,8 @@ impl Mapper8 {
         match address {
             0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
             0x8000..=0xFFFF => {
-                let index = (self.selected as usize % self.prg_bank_count) * 2 * PRG_BANK_LEN
+                let bank = ((self.selected >> 4) as usize & 0x03) % self.prg_bank_count;
+                let index = bank * 2 * PRG_BANK_LEN
                     + (address as usize - 0x8000);
                 Some(self.prg_rom[index])
             }
@@ -704,25 +706,20 @@ impl Mapper8 {
         }
     }
 
-    /// Returns fixed four-screen wiring or the selected one-screen nametable page.
-    pub fn mirroring(&self) -> Mirroring {
-        self.fixed_mirroring.unwrap_or_else(|| {
-            if self.selected & 0x80 == 0 { Mirroring::OneScreenLower }
-            else { Mirroring::OneScreenUpper }
-        })
-    }
+    /// Returns the cartridge's fixed nametable mirroring.
+    pub fn mirroring(&self) -> Mirroring { self.mirroring }
     /// Returns true when pattern memory is writable CHR-RAM.
     pub fn chr_is_ram(&self) -> bool { self.chr_is_ram }
     /// Reads the selected CHR bank.
     pub fn ppu_read(&self, address: u16) -> Option<u8> {
         if address >= 0x2000 || self.chr.is_empty() { return None; }
-        let bank = (self.selected as usize & 0x07) % self.chr_bank_count;
+        let bank = (self.selected as usize & 0x03) % self.chr_bank_count;
         Some(self.chr[bank * CHR_BANK_LEN + address as usize])
     }
     /// Writes pattern memory only when the cartridge uses CHR-RAM.
     pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
         if address >= 0x2000 || !self.chr_is_ram || self.chr.is_empty() { return false; }
-        let bank = (self.selected as usize & 0x07) % self.chr_bank_count;
+        let bank = (self.selected as usize & 0x03) % self.chr_bank_count;
         self.chr[bank * CHR_BANK_LEN + address as usize] = value;
         true
     }
@@ -4276,7 +4273,7 @@ mod mapper8_regressions {
         assert_eq!(cart.cpu_read(0x8000), Some(0));
         assert_eq!(cart.cpu_read(0xFFFF), Some(0));
         assert_eq!(cart.ppu_read(0), Some(0x40));
-        cart.cpu_write(0x8000, 3);
+        cart.cpu_write(0x8000, 0x33);
         assert_eq!(cart.cpu_read(0x8000), Some(3));
         assert_eq!(cart.cpu_read(0xFFFF), Some(3));
         assert_eq!(cart.ppu_read(0), Some(0x43));
