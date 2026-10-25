@@ -934,19 +934,27 @@ impl Gxrom {
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
         if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
-        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
-        let mapper = ((image[6] >> 4) as u16)
-            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        let nes2 = image[7] & 0x0C == 0x08;
+        let mapper = if nes2 {
+            ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
+                | (((image[8] & 0x0F) as u16) << 8)
+        } else {
+            ((image[6] >> 4) as u16)
+                | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
+        };
         if mapper != 66 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
+        if nes2 && image[8] >> 4 != 0 { return Err(CartridgeError::Nes2NotSupported); }
 
-        let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if image[4] < 2 || image[4] % 2 != 0 || prg_len > 4 * 2 * PRG_BANK_LEN {
+        let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
+            else { image[4] as usize * PRG_BANK_LEN };
+        if prg_len < 2 * PRG_BANK_LEN || prg_len % (2 * PRG_BANK_LEN) != 0
+            || prg_len > 4 * 2 * PRG_BANK_LEN {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
-        let chr_len = image[5] as usize * CHR_BANK_LEN;
-        // The legacy GxROM register exposes only two CHR bank bits, so
-        // at most four 8 KiB banks are addressable on this board.
-        if chr_len == 0 || chr_len > 4 * CHR_BANK_LEN {
+        let chr_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) }
+            else { image[5] as usize * CHR_BANK_LEN };
+        // GxROM exposes at most four 8 KiB CHR-ROM banks.
+        if chr_len == 0 || chr_len > 4 * CHR_BANK_LEN || chr_len % CHR_BANK_LEN != 0 {
             return Err(CartridgeError::InvalidChrSize(chr_len));
         }
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
@@ -957,7 +965,8 @@ impl Gxrom {
 
         let prg_start = INES_HEADER_LEN + trainer_len;
         let chr_start = prg_start + prg_len;
-        let mut prg_ram = vec![0; PRG_RAM_LEN];
+        let prg_ram_len = if nes2 { nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4)).min(PRG_RAM_LEN) } else { PRG_RAM_LEN };
+        let mut prg_ram = vec![0; prg_ram_len.max(if trainer_len != 0 { PRG_RAM_LEN } else { 0 })];
         if trainer_len != 0 {
             prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
         }
@@ -1912,7 +1921,7 @@ impl Cartridge {
             let mapper = ((image[6] >> 4) as u16)
                 | (image[7] & 0xF0) as u16
                 | (((image[8] & 0x0F) as u16) << 8);
-            if !matches!(mapper, 0 | 2 | 3 | 8) { return Err(CartridgeError::Nes2NotSupported); }
+            if !matches!(mapper, 0 | 2 | 3 | 8 | 66) { return Err(CartridgeError::Nes2NotSupported); }
         }
         let mapper = if nes2 {
             ((image[6] >> 4) as u16)
