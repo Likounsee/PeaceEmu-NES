@@ -3348,6 +3348,10 @@ mod mmc4_tests {
     }
 }
 
+#[cfg(test)]
+mod mmc4_extended_tests {
+    use super::*;
+
     #[test]
     fn mapper10_switches_the_upper_chr_latch_on_the_full_trigger_range() {
         let mut cart = Cartridge::parse(&mmc4_image(2, 4)).unwrap();
