@@ -1860,6 +1860,28 @@ mod sprite_overflow_regression_tests {
     use super::*;
 
     #[test]
+    fn oam_y_255_cannot_draw_or_trigger_sprite_zero_hit_at_top_edge() {
+        let mut image = vec![0; INES_HEADER_LEN + PRG_BANK_LEN + CHR_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        let chr_start = INES_HEADER_LEN + PRG_BANK_LEN;
+        image[chr_start] = 0xFF; // Make tile 0 opaque on its first row.
+        let cartridge = Cartridge::parse(&image).unwrap();
+
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x1E; // Enable both layers and both left-edge masks.
+        ppu.oam[0] = 255;
+        ppu.oam[1] = 0;
+        ppu.oam[3] = 0;
+        ppu.background_opaque[0] = true;
+        ppu.palette[0x11] = 0x2A;
+        ppu.render_sprite_pixel(0, 0, Some(&cartridge));
+        assert_eq!(ppu.framebuffer[0], 0, "Y=255 sprite must not appear at scanline zero");
+        assert!(!ppu.sprite_zero_hit_at(0, 0, Some(&cartridge)));
+    }
+
+    #[test]
     fn oam_y_255_does_not_wrap_sprites_into_scanline_zero() {
         let mut ppu = Ppu::new();
         assert_eq!(Ppu::sprite_top(0), 1);
