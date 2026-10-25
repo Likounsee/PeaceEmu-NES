@@ -3665,3 +3665,82 @@ mod mmc1_board_boundary_regressions {
         assert_eq!(cart.ppu_read(0x1000), Some(0x42));
     }
 }
+
+
+#[cfg(test)]
+mod unrom512_regressions {
+    use super::*;
+
+    fn image(prg_banks: u8, board_flags: u8) -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = prg_banks;
+        image[6] = 0xE0 | board_flags; // Mapper 30 low nibble and board wiring flags.
+        image[7] = 0x10; // Mapper 30 high nibble in legacy iNES.
+        for bank in 0..prg_banks as usize {
+            let start = INES_HEADER_LEN + bank * PRG_BANK_LEN;
+            image[start..start + PRG_BANK_LEN].fill(bank as u8);
+        }
+        image
+    }
+
+    #[test]
+    fn prg_bank_selection_wraps_to_installed_banks_and_keeps_last_bank_fixed() {
+        let mut cart = Cartridge::parse(&image(16, 0)).unwrap();
+        assert!(cart.cpu_write(0x8000, 0x1F));
+        assert_eq!(cart.cpu_read(0x8000), Some(15));
+        assert_eq!(cart.cpu_read(0xBFFF), Some(15));
+        assert_eq!(cart.cpu_read(0xC000), Some(15));
+        assert_eq!(cart.cpu_read(0xFFFF), Some(15));
+
+        assert!(cart.cpu_write(0xFFFF, 0x02));
+        assert_eq!(cart.cpu_read(0x8000), Some(2));
+        assert_eq!(cart.cpu_read(0xC000), Some(15));
+        assert!(!cart.cpu_write(0x7FFF, 0x01));
+    }
+
+    #[test]
+    fn chr_ram_banks_are_independent_and_address_bounds_are_enforced() {
+        let mut cart = Cartridge::parse(&image(16, 0)).unwrap();
+        for (bank, value) in [(0u8, 0x11), (1, 0x22), (2, 0x33), (3, 0x44)] {
+            assert!(cart.cpu_write(0x8000, bank << 5));
+            assert!(cart.ppu_write(0x0000, value));
+            assert!(cart.ppu_write(0x1FFF, value.wrapping_add(1)));
+        }
+        for (bank, value) in [(0u8, 0x11), (1, 0x22), (2, 0x33), (3, 0x44)] {
+            assert!(cart.cpu_write(0x8000, bank << 5));
+            assert_eq!(cart.ppu_read(0x0000), Some(value));
+            assert_eq!(cart.ppu_read(0x1FFF), Some(value + 1));
+        }
+        assert!(!cart.ppu_write(0x2000, 0xFF));
+        assert_eq!(cart.ppu_read(0x2000), None);
+    }
+
+    #[test]
+    fn one_screen_mirroring_switches_only_on_switchable_boards() {
+        let mut cart = Cartridge::parse(&image(16, 0x08)).unwrap();
+        assert_eq!(cart.mirroring(), Mirroring::OneScreenLower);
+        cart.cpu_write(0x8000, 0x00);
+        assert_eq!(cart.mirroring(), Mirroring::OneScreenLower);
+        cart.cpu_write(0x8000, 0x80);
+        assert_eq!(cart.mirroring(), Mirroring::OneScreenUpper);
+        cart.cpu_write(0x8000, 0x00);
+        assert_eq!(cart.mirroring(), Mirroring::OneScreenLower);
+
+        let mut four_screen = Cartridge::parse(&image(16, 0x09)).unwrap();
+        assert_eq!(four_screen.mirroring(), Mirroring::FourScreen);
+        four_screen.cpu_write(0x8000, 0x80);
+        assert_eq!(four_screen.mirroring(), Mirroring::FourScreen);
+    }
+
+    #[test]
+    fn parser_rejects_chr_rom_and_unsupported_prg_sizes() {
+        let mut chr_rom = image(16, 0);
+        chr_rom[5] = 1;
+        chr_rom.resize(INES_HEADER_LEN + 16 * PRG_BANK_LEN + CHR_BANK_LEN, 0);
+        assert!(matches!(Cartridge::parse(&chr_rom), Err(CartridgeError::InvalidChrSize(_))));
+
+        let invalid_prg = image(8, 0);
+        assert!(matches!(Cartridge::parse(&invalid_prg), Err(CartridgeError::InvalidPrgSize(_))));
+    }
+}
