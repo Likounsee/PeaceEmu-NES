@@ -21,7 +21,7 @@ La suite protège les comportements du cœur et évite les régressions. Elle ne
 - **APU :** registres, séquenceur de frame, compteurs de longueur, IRQ, sortie PCM normalisée, limites de fréquence audio, DMC et transferts d'échantillons.
 - **Machine/session :** reset et chargement, exécution de frames, framebuffer, PCM et accès à la RAM batterie.
 
-La liste est descriptive et non exhaustive. Les tests du mapper 66 (GxROM) vérifient désormais que les quatre banques CHR adressables sont sélectionnables et que les images déclarant plus de quatre banques CHR sont rejetées, car le registre de ce mapper n'expose que deux bits de sélection CHR. Vérifier le code des tests avant de supposer qu'un scénario précis est couvert.
+La liste est descriptive et non exhaustive. Les tests du mapper 66 (GxROM) vérifient désormais que les quatre banques CHR adressables sont sélectionnables et que les images déclarant plus de quatre banques CHR sont rejetées, car le registre de ce mapper n'expose que deux bits de sélection CHR. Des régressions supplémentaires couvrent l'indépendance des champs PRG/CHR du registre GxROM et l'activation, la protection en écriture puis la réactivation de la PRG-RAM du MMC3. Vérifier le code des tests avant de supposer qu'un scénario précis est couvert.
 
 ## Priorités de validation
 
