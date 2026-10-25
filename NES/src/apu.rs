@@ -1882,3 +1882,29 @@ mod dmc_address_and_loop_regressions {
         assert_eq!(apu.take_dmc_dma_request(), None);
     }
 }
+
+
+#[cfg(test)]
+mod dmc_irq_end_of_sample_regressions {
+    use super::*;
+
+    #[test]
+    fn final_dmc_byte_asserts_irq_and_only_irq_disable_acknowledges_it() {
+        let mut apu = Apu::new();
+        apu.write(0x4010, 0x80); // Enable DMC IRQ, with looping disabled.
+        apu.write(0x4012, 0x12);
+        apu.write(0x4013, 0); // One-byte sample.
+        apu.write(0x4015, 0x10);
+
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xC480));
+        apu.supply_dmc_byte(0x42);
+        assert!(apu.irq_pending(), "the final byte raises the DMC IRQ");
+
+        let status = apu.read(0x4015);
+        assert_ne!(status & 0x80, 0, "$4015 reports the DMC IRQ");
+        assert!(apu.irq_pending(), "reading $4015 does not acknowledge DMC IRQ");
+
+        apu.write(0x4010, 0x00); // Clearing IRQ-enable also acknowledges DMC IRQ.
+        assert!(!apu.irq_pending());
+    }
+}
