@@ -303,6 +303,28 @@ mod tests {
     }
 
     #[test]
+    fn oam_dma_adds_alignment_stall_cycles_and_advances_ppu() {
+        // LDA #$02; STA $4014. Reset starts at 7 cycles, so six instruction
+        // cycles leave odd parity and the DMA takes 514 cycles.
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[
+            0xA9, 0x02,
+            0x8D, 0x14, 0x40,
+            0xEA,
+        ])).unwrap();
+
+        machine.step().unwrap();
+        let before_cycles = machine.total_cycles();
+        let before_position = machine.ppu_position();
+        let result = machine.step().unwrap();
+
+        assert_eq!(result.cycles, 4, "STA retains its nominal instruction cycles");
+        assert_eq!(machine.total_cycles() - before_cycles, 4 + 514,
+            "odd CPU parity adds one alignment cycle to OAM DMA");
+        assert_ne!(machine.ppu_position(), before_position,
+            "OAM DMA stalls must advance the PPU as well as CPU time");
+    }
+
+    #[test]
     fn instruction_bus_accesses_and_remaining_cycles_keep_ppu_clock_synchronized() {
         let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
         let before_cycles = machine.total_cycles();
