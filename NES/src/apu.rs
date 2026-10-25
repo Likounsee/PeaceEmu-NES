@@ -129,6 +129,11 @@ impl Apu {
         if !(8_000..=192_000).contains(&sample_rate) {
             return false;
         }
+        // Reapplying the active rate must not discard samples already queued for
+        // playback; only an actual rate change invalidates the resampling phase.
+        if sample_rate == self.sample_rate {
+            return true;
+        }
         self.sample_rate = sample_rate;
         self.sample_phase = 0;
         self.pcm_low_pass = 0.0;
@@ -540,6 +545,21 @@ mod tests {
         assert!(apu.audio_samples.is_empty());
         assert_eq!(apu.sample_phase, 0);
         assert_eq!(apu.pcm_low_pass, 0.0);
+    }
+
+    #[test]
+    fn setting_the_current_sample_rate_preserves_queued_audio() {
+        let mut apu = Apu::new();
+        apu.tick_cpu_cycles(2_000);
+        let queued = apu.audio_samples.len();
+        let phase = apu.sample_phase;
+        let filter = apu.pcm_low_pass;
+
+        assert!(queued > 0);
+        assert!(apu.set_sample_rate(44_100));
+        assert_eq!(apu.audio_samples.len(), queued);
+        assert_eq!(apu.sample_phase, phase);
+        assert_eq!(apu.pcm_low_pass, filter);
     }
 
     #[test]
