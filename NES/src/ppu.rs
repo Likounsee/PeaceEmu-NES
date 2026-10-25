@@ -2978,6 +2978,6 @@ mod coarse_y_rollover_regressions {
     #[test]
     fn coarse_y_rollover_applies_each_row_in_a_multi_row_advance() {
         assert_eq!(Ppu::scroll_coarse_y(28, 0, 3), (1, 1));
-        assert_eq!(Ppu::scroll_coarse_y(30, 1, 2), (1, 1));
+        assert_eq!(Ppu::scroll_coarse_y(30, 1, 2), (0, 1));
     }
 }
