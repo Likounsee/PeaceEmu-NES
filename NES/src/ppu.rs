@@ -3174,3 +3174,37 @@ mod sprite_pattern_address_boundary_regressions {
         assert_eq!(ppu.sprite_pattern_address(5, 0x80, 7), 0x1050);
     }
 }
+
+
+#[cfg(test)]
+mod sprite_8x16_render_regressions {
+    use super::*;
+
+    #[test]
+    fn vertical_flip_composes_pixels_from_both_tiles_in_the_reversed_pair() {
+        let mut image = vec![0; 16 + 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        let chr_start = 16 + 16_384;
+        // Odd tile selects pattern table $1000. With vertical flip, output rows
+        // 0 and 8 source rows 15 and 7 respectively, crossing the tile boundary.
+        image[chr_start + 0x1017] = 0x80;
+        image[chr_start + 0x1007] = 0x80;
+        let cartridge = Cartridge::parse(&image).unwrap();
+
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x20; // 8x16 sprites.
+        ppu.mask = 0x14; // Sprites enabled and visible in the left eight pixels.
+        ppu.palette[0x11] = 0x2B;
+        ppu.oam[0..4].copy_from_slice(&[0, 1, 0x80, 16]);
+
+        ppu.render_frame(Some(&cartridge));
+
+        let sprite_color = ppu.output_color(0x2B);
+        assert_eq!(ppu.framebuffer[16], sprite_color, "flipped output row 0 must use tile 1 row 7");
+        assert_eq!(ppu.framebuffer[8 * 256 + 16], sprite_color, "flipped output row 8 must use tile 0 row 7");
+        assert_ne!(ppu.framebuffer[1 * 256 + 16], sprite_color, "other source rows stay transparent");
+        assert_ne!(ppu.framebuffer[9 * 256 + 16], sprite_color, "the opposite rows in each tile stay transparent");
+    }
+}
