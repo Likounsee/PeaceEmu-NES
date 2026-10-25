@@ -2298,7 +2298,7 @@ mod gxrom_tests {
         assert_eq!(cartridge.ppu_read(0), Some(0x73));
         assert!(!cartridge.chr_is_ram());
         assert!(!cartridge.ppu_write(0, 0xAA));
-        assert_eq!(cartridge.ppu_read(0), Some(0x72));
+        assert_eq!(cartridge.ppu_read(0), Some(0x73));
     }
 
     #[test]
