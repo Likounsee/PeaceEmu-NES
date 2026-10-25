@@ -444,7 +444,10 @@ impl Apu {
         let pulse_out = if pulse == 0.0 { 0.0 } else { 95.88 / (8128.0 / pulse + 100.0) };
         let triangle_period = u16::from(self.registers[0x0A]) | (u16::from(self.registers[0x0B] & 7) << 8);
         let triangle_value = if self.triangle_sequence < 16 { 15 - self.triangle_sequence } else { self.triangle_sequence - 16 };
-        let triangle = if self.length_counters[2] > 0 && self.triangle_linear_counter > 0 && triangle_period > 1 { f32::from(triangle_value) } else { 0.0 };
+        // The triangle channel has no volume envelope: when its length or linear
+        // counter expires, the sequencer stops but the DAC holds its last level.
+        // Keep that held level in the mixer instead of incorrectly forcing silence.
+        let triangle = if triangle_period > 1 { f32::from(triangle_value) } else { 0.0 };
         let noise_control = self.registers[0x0C];
         let noise_volume = if noise_control & 0x10 != 0 {
             noise_control & 0x0F
@@ -1370,5 +1373,36 @@ mod pulse_sequencer_restart_regressions {
         apu.write(0x4003, 0xF8);
         assert_eq!(apu.pulse_sequence[0], 0);
         assert_eq!(apu.length_counter(0), Some(0), "disabled channel must not load its length counter");
+    }
+}
+
+
+#[cfg(test)]
+mod triangle_dac_hold_regressions {
+    use super::*;
+
+    #[test]
+    fn triangle_dac_holds_last_level_when_length_and_linear_counters_stop() {
+        let mut low = Apu::new();
+        low.registers[0x0A] = 2; // Valid timer period; no timer sequence advance required.
+        low.triangle_sequence = 0; // DAC level 15.
+        low.length_counters[2] = 0;
+        low.triangle_linear_counter = 0;
+
+        let mut high = low.clone();
+        high.triangle_sequence = 15; // DAC level 0.
+
+        assert!(low.sample() > high.sample(),
+            "stopping the triangle sequencer must hold its DAC level rather than mute it");
+    }
+
+    #[test]
+    fn triangle_dac_still_outputs_zero_when_sequence_is_at_zero_level() {
+        let mut apu = Apu::new();
+        apu.registers[0x0A] = 2;
+        apu.triangle_sequence = 15;
+        apu.length_counters[2] = 0;
+        apu.triangle_linear_counter = 0;
+        assert_eq!(apu.sample(), 0.0);
     }
 }
