@@ -3252,3 +3252,68 @@ mod ppudata_palette_mirror_regressions {
         assert_eq!(ppu.cpu_read_register(7, None), 0x71);
     }
 }
+
+
+#[cfg(test)]
+mod nametable_address_bus_regressions {
+    use super::*;
+
+    #[test]
+    fn four_screen_cartridge_keeps_all_four_physical_nametables_distinct() {
+        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 2;
+        image[6] = 0x48; // Mapper 4 with hardwired four-screen mirroring.
+        let cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.mirroring(), Mirroring::FourScreen);
+
+        let mut ppu = Ppu::new();
+        for (address, value) in [
+            (0x2000, 0x11),
+            (0x2400, 0x22),
+            (0x2800, 0x33),
+            (0x2C00, 0x44),
+        ] {
+            ppu.mem_write(address, value, None);
+        }
+        // This unit-level PPU has no cartridge attached during the writes above,
+        // so exercise the mapper-aware path below with the same four-screen cart.
+        let mut ppu = Ppu::new();
+        let mut cart = cart;
+        for (address, value) in [
+            (0x2000, 0x11),
+            (0x2400, 0x22),
+            (0x2800, 0x33),
+            (0x2C00, 0x44),
+        ] {
+            ppu.mem_write(address, value, Some(&mut cart));
+        }
+        for (address, expected) in [
+            (0x2000, 0x11),
+            (0x2400, 0x22),
+            (0x2800, 0x33),
+            (0x2C00, 0x44),
+        ] {
+            assert_eq!(ppu.mem_read(address, Some(&cart)), expected);
+        }
+        assert_eq!(ppu.mem_read(0x3000, Some(&cart)), 0x11, "$3000 mirrors $2000 even with four-screen wiring");
+    }
+
+    #[test]
+    fn horizontal_and_vertical_nametable_mirrors_keep_their_expected_aliases() {
+        let mut horizontal = Ppu::new();
+        horizontal.mem_write(0x2000, 0x5A, None);
+        assert_eq!(horizontal.mem_read(0x2400, None), 0x5A);
+        horizontal.mem_write(0x2800, 0xA5, None);
+        assert_eq!(horizontal.mem_read(0x2C00, None), 0xA5);
+
+        let mut vertical_image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        vertical_image[0..4].copy_from_slice(b"NES\x1A");
+        vertical_image[4] = 2;
+        vertical_image[6] = 0x41; // Mapper 4, vertical mirroring.
+        let vertical_cart = Cartridge::parse(&vertical_image).unwrap();
+        let mut vertical = Ppu::new();
+        vertical.mem_write(0x2000, 0x3C, Some(&mut vertical_cart.clone()));
+        assert_eq!(vertical.mem_read(0x2800, Some(&vertical_cart)), 0x3C);
+    }
+}
