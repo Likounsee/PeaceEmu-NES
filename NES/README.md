@@ -22,9 +22,11 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 ## Dernière itération
 
 - **APU/DMC** : les tests couvrent le buffer d'échantillon, les stalls DMA, l'indépendance entre IRQ frame/DMC/mapper et la lecture DMC à travers une banque PRG MMC3 sélectionnée.
+- **Session audio** : la documentation précise désormais que changer réellement de fréquence réinitialise la file PCM, tandis que réappliquer la fréquence courante est un no-op ; un test vérifie le contrat de configuration côté hôte.
+- **PPU/sprite-zero** : nouveaux tests sur la limite du dernier pixel visible (hit autorisé à X=254, interdit à X=255) et sur le fait que le flag sprite-zero dépend du recouvrement opaque, pas de la priorité visuelle du sprite.
 - **PPU/NMI/scroll** : régressions pour l'activation de NMI en plein VBlank (un seul front montant), le passage de coarse-Y 30 à 31 sans bascule de nametable et les limites du scroll vertical.
 - **MMC3/CHR** : couverture de l'inversion des banques CHR, avec les deux fenêtres de 2 Kio et les quatre fenêtres de 1 Kio, en plus des tests de compteur IRQ/A12.
-- **Validation** : les changements les plus récents sont encore en cours de validation CI. Les tests synthétiques ne remplacent pas les essais de ROM réelles, notamment pour l'alignement sprite/hitbox de *Super Mario Bros.*
+- **Validation** : les workflows des derniers commits sont à vérifier avant de considérer les nouvelles régressions comme validées. Les tests synthétiques ne remplacent pas les essais de ROM réelles, notamment pour l'alignement sprite/hitbox de *Super Mario Bros.*
 
 
 ## Ce qui est implémenté
