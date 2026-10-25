@@ -3347,3 +3347,40 @@ mod mmc4_tests {
         ));
     }
 }
+
+    #[test]
+    fn mapper10_switches_the_upper_chr_latch_on_the_full_trigger_range() {
+        let mut cart = Cartridge::parse(&mmc4_image(2, 4)).unwrap();
+        cart.cpu_write(0xD000, 4);
+        cart.cpu_write(0xE000, 5);
+        assert_eq!(cart.ppu_read(0x1000), Some(0x24));
+
+        // The latch changes after the triggering read, including the last byte.
+        let _ = cart.ppu_read(0x1FEF);
+        assert_eq!(cart.ppu_read(0x1000), Some(0x25));
+        let _ = cart.ppu_read(0x1FD8);
+        assert_eq!(cart.ppu_read(0x1000), Some(0x24));
+    }
+
+    #[test]
+    fn mapper10_chr_rom_is_read_only_and_four_screen_mirroring_is_locked() {
+        let mut image = mmc4_image(2, 2);
+        image[6] |= 0x08; // Four-screen layout.
+        let mut cart = Cartridge::parse(&image).unwrap();
+
+        assert_eq!(cart.mirroring(), Mirroring::FourScreen);
+        cart.cpu_write(0xF000, 0);
+        assert_eq!(cart.mirroring(), Mirroring::FourScreen);
+        assert!(!cart.ppu_write(0x0000, 0xFF));
+        assert_eq!(cart.ppu_read(0x0000), Some(0x20));
+    }
+
+    #[test]
+    fn mapper10_prg_bank_register_wraps_to_available_16k_banks() {
+        let mut cart = Cartridge::parse(&mmc4_image(4, 2)).unwrap();
+        cart.cpu_write(0xA000, 0xFF);
+        assert_eq!(cart.cpu_read(0x8000), Some(3));
+        assert_eq!(cart.cpu_read(0xBFFF), Some(3));
+        assert_eq!(cart.cpu_read(0xC000), Some(3));
+    }
+}
