@@ -67,3 +67,6 @@ Régressions récentes : buffering et incrément de `$2007`, lecture palette imm
 
 
 Les régressions mapper 15 couvrent désormais les quatre modes de banking PRG (NROM-256, UNROM, NROM-64 et NROM-128), les limites de banque, le mirroring piloté par le bit 6 et les bornes de la CHR-RAM.
+
+
+Les dernières régressions couvrent aussi les limites de carte MMC1 (mirroring quatre écrans câblé, désactivation/réactivation de PRG-RAM et sélection CHR hors plage) ainsi que les alias des palettes PPU `$3F10/$14/$18/$1C`, le miroir de 32 octets et le masquage des couleurs sur six bits.
