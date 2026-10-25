@@ -5094,7 +5094,7 @@ mod mmc3_prg_ram_protection_regressions {
         assert!(cart.cpu_write(0x6000, 0x31));
         assert_eq!(cart.cpu_read(0x6000), Some(0x31));
 
-        cart.cpu_write(0xA001, 0x00); // Disabled and write-protected.
+        cart.cpu_write(0xA001, 0x00); // Disabled.
         assert_eq!(cart.cpu_read(0x6000), None);
         assert!(cart.cpu_write(0x6000, 0x42), "writes to a mapper register window are accepted even while RAM is disabled");
         cart.cpu_write(0xA001, 0xC0); // Enabled, write-protected.
