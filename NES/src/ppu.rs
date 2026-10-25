@@ -2883,3 +2883,30 @@ mod vblank_nmi_race_regressions {
         assert!(!ppu.suppress_vblank, "the suppression latch is consumed at dot 1");
     }
 }
+
+#[cfg(test)]
+mod nmi_control_edge_regressions {
+    use super::*;
+
+    #[test]
+    fn enabling_nmi_during_vblank_raises_one_edge_until_the_line_drops() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 241;
+        ppu.dot = 10;
+        ppu.status |= 0x80;
+        ppu.ctrl = 0;
+        ppu.nmi_line = false;
+        ppu.nmi_pending = false;
+
+        ppu.cpu_write_register(0, 0x80, None);
+        assert!(ppu.take_nmi_request(), "enabling NMI while vblank is active raises an edge");
+        ppu.cpu_write_register(0, 0x80, None);
+        assert!(!ppu.take_nmi_request(), "keeping the NMI output high must not create duplicate edges");
+
+        let _ = ppu.cpu_read_register(2, None);
+        assert!(!ppu.nmi_line, "reading PPUSTATUS lowers the vblank NMI output");
+        ppu.cpu_write_register(0, 0x80, None);
+        assert!(!ppu.nmi_line, "NMI cannot rise again after status read cleared vblank");
+        assert!(!ppu.take_nmi_request());
+    }
+}
