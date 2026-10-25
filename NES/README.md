@@ -21,11 +21,11 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 
 ## Dernière itération
 
-- APU/PCM : réappliquer la fréquence d'échantillonnage active préserve la file audio, la phase de resampling et le filtre ; un vrai changement de fréquence réinitialise l'ancien lot.
-- DMC : régression vérifiant qu'une seconde livraison DMA ne peut ni écraser l'octet déjà en attente dans le sample buffer, ni décrémenter une nouvelle fois le compteur ou l'adresse.
-- PPU : régression du read de `$2002` au dot 0 de VBlank ; le flag VBlank et son front NMI sont supprimés pour cette frame, sans effacer les autres bits de statut.
-- MMC3 : tests du filtre A12 à huit dots, du rebasage après reset PPU et de l'acquittement/réactivation IRQ ; la précision reste limitée par les adresses PPU réellement observées.
-- Les nouvelles régressions sont ajoutées sur la branche `NES`. La CI des commits de test est en cours ; ne pas considérer ces changements validés avant le résultat des workflows.
+- APU/DMC : tests de propriété du sample buffer, de l'acquittement des IRQ DMC et de la distinction entre lecture de `$4015` (efface l'IRQ frame, mais pas l'IRQ DMC) et écriture de `$4010` sans autorisation d'IRQ.
+- PPU/NMI : tests de suppression du VBlank par lecture de `$2002` au début de VBlank et de l'activation de NMI pendant un VBlank déjà actif, sans fronts dupliqués tant que la ligne reste haute.
+- MMC3 : tests du seuil exact du filtre A12 (sept dots bas rejetés, huit dots acceptés), du rebasage après reset PPU et de l'acquittement/réactivation de l'IRQ.
+- Les changements de code sont poussés sur la branche `NES`. Les workflows des trois nouveaux lots de tests sont en cours ; leur résultat complet doit être vérifié avant de les considérer validés.
+- Le timing MMC3 dépend encore de la granularité des adresses PPU réellement observées ; ces tests valident le filtre isolément, pas toute la compatibilité des jeux.
 
 ## Ce qui est implémenté
 
