@@ -21,17 +21,13 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 
 ## Dernière itération
 
-- APU/DMC : tests de propriété du sample buffer et de livraison des octets sans double consommation ; les fetchs DMA sont aussi vérifiés au niveau du bus.
-- Séquenceur APU : tests du délai de reset de `$4017` selon la parité CPU (3/4 cycles) et de l'inhibition immédiate de l'IRQ frame avant le reset différé.
-- Bus CPU : ajout d'une régression sur le bit 5 ouvert de `$4015`, avec vérification séparée des IRQ frame et DMC.
-- Machine : test d'intégration du DMC vérifiant que le fetch vient bien de la ROM via le bus CPU et que les quatre cycles de blocage avancent aussi l'horloge PPU partagée.
-- PPU/NMI : tests de suppression du VBlank par lecture de `$2002` au début du VBlank et d'activation du NMI pendant un VBlank déjà actif.
-- MMC3 : seuil du filtre A12 à sept/huit dots, rebasage après reset PPU et acquittement/réactivation IRQ. La précision des IRQ reste dépendante des adresses PPU réellement observées.
-- Les nouvelles régressions sont poussées sur la branche `NES` ; attendre les workflows complets avant de les considérer validées.
-- APU/IRQ : test de l'acquittement indépendant des IRQ frame et DMC lors de la lecture de `$4015`.
-- PPU/NMI : test de récupération après suppression d'un VBlank ; la suppression ne doit pas se propager au VBlank suivant.
-- MMC3 : test du compteur IRQ avec latch non nul, vérifiant le rechargement au premier front A12 qualifié puis le passage à zéro et l'assertion IRQ au front suivant.
-- Les workflows de ces nouveaux tests sont en cours sur la branche `NES` ; leur validation complète reste conditionnée aux résultats finaux de CI.
+- **APU/DMC** : tests de propriété du sample buffer, de livraison DMA sans double consommation, d'IRQ DMC et d'acquittement indépendant des IRQ frame/DMC par `$4015`.
+- **Séquenceur APU** : tests du délai de reset de `$4017` selon la parité CPU (3/4 cycles), de l'inhibition immédiate de l'IRQ frame et du comportement de lecture de statut.
+- **Bus/machine** : test du fetch DMC depuis la ROM via le bus CPU et des cycles de blocage qui font progresser l'horloge PPU partagée.
+- **PPU/NMI** : régressions pour la suppression de VBlank par lecture de `$2002`, la récupération au VBlank suivant et l'activation de NMI pendant un VBlank déjà actif sans créer de faux fronts répétés.
+- **MMC3** : tests du filtre A12 à sept/huit dots, du rebasage après reset PPU, de l'acquittement/réactivation IRQ, du latch non nul et de la commande de rechargement `$C001`.
+- Une fixture MMC3 utilise des octets de signature iNES explicites pour éviter toute ambiguïté d'échappement dans le test.
+- Les résultats finaux des workflows doivent être vérifiés après les derniers commits ; ces tests synthétiques ne remplacent pas une validation avec des ROM de diagnostic et des essais de jeu réels.
 
 ## Ce qui est implémenté
 
