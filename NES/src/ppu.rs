@@ -2524,9 +2524,8 @@ mod sprite_8x16_top_wrap_regressions {
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[5] = 1;
-        let mut cart = Cartridge::parse(&image).unwrap();
-        // In 8x16 mode tile 0 selects pattern table 0; make its first pixel opaque.
-        cart.ppu_write(0, 0x80);
+        image[16 + 16_384] = 0x80; // CHR tile 0 has an opaque top-left pixel.
+        let cart = Cartridge::parse(&image).unwrap();
         let mut ppu = Ppu::new();
         ppu.ctrl = 0x20;
         ppu.mask = 0x14;
