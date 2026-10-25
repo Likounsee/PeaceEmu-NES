@@ -1432,6 +1432,24 @@ mod frame_and_dmc_irq_regressions {
 
 
 #[cfg(test)]
+mod frame_irq_status_ack_regressions {
+    use super::*;
+
+    #[test]
+    fn status_read_acknowledges_frame_irq_without_clearing_dmc_irq() {
+        let mut apu = Apu::new();
+        apu.frame_irq = true;
+        apu.dmc_irq = true;
+
+        let status = apu.read(0x4015);
+        assert_ne!(status & 0x40, 0, "status reports pending frame IRQ");
+        assert_ne!(status & 0x80, 0, "status reports pending DMC IRQ");
+        assert!(!apu.frame_irq, "reading $4015 acknowledges frame IRQ");
+        assert!(apu.dmc_irq, "reading $4015 must not acknowledge DMC IRQ");
+    }
+}
+
+#[cfg(test)]
 mod pulse_sequencer_restart_regressions {
     use super::*;
 
