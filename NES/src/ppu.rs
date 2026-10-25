@@ -2041,4 +2041,32 @@ mod scroll_boundary_regressions {
         assert_eq!(ppu.v & 0x03E0, 0, "coarse row 31 wraps without toggling nametable");
         assert_eq!(ppu.v & 0x0800, 0);
     }
+
+    
+    #[test]
+    fn ppudata_increment_by_32_and_wraps_at_vram_boundary() {
+        let mut ppu = Ppu::new();
+        ppu.cpu_write_register(0, 0x04, None); // PPUCTRL: increment by 32.
+        ppu.v = 0x2100;
+        ppu.cpu_write_register(7, 0x5A, None);
+        assert_eq!(ppu.v, 0x2120);
+        ppu.cpu_write_register(7, 0xA5, None);
+        assert_eq!(ppu.v, 0x2140);
+
+        // v is a 15-bit internal register; each memory access is masked to 14 bits.
+        ppu.v = 0x3FFF;
+        ppu.cpu_write_register(7, 0x77, None);
+        assert_eq!(ppu.v, 0x401F, "increment-by-32 must preserve the 15-bit v-register behavior");
+    }
+
+    #[test]
+    fn ppustatus_read_resets_the_two_write_latch() {
+        let mut ppu = Ppu::new();
+        ppu.cpu_write_register(5, 0x2D, None);
+        assert!(ppu.write_latch);
+        let _ = ppu.cpu_read_register(2, None);
+        assert!(!ppu.write_latch, "reading PPUSTATUS resets the shared scroll/address write toggle");
+        ppu.cpu_write_register(5, 0x13, None);
+        assert!(ppu.write_latch, "the next scroll write must be treated as the first write");
+    }
 }
