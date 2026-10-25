@@ -770,3 +770,36 @@ mod mmc3_ppu_irq_integration_regressions {
         assert!(!bus.irq_pending(), "idle PPU dots must not synthesize MMC3 scanline IRQs");
     }
 }
+
+#[cfg(test)]
+mod instruction_bus_timing_regressions {
+    use super::*;
+
+    #[test]
+    fn status_read_observes_vblank_reached_during_operand_fetches() {
+        let mut bus = CpuBus::new();
+        bus.ppu.scanline = 241;
+        bus.ppu.dot = 0;
+        bus.begin_cpu_instruction();
+
+        // BIT $2002 fetches opcode and its two address bytes before reading status.
+        let _opcode = bus.read(0x8000);
+        let _low = bus.read(0x8001);
+        let _high = bus.read(0x8002);
+        let status = bus.read(0x2002);
+        let cycles = bus.end_cpu_instruction();
+
+        assert_eq!(cycles, 4);
+        assert_ne!(status & 0x80, 0, "vblank begins before the fourth-cycle status sample");
+        assert_eq!(bus.ppu.status & 0x80, 0, "$2002 read clears the vblank flag");
+        assert_eq!(bus.ppu.position(), (241, 12));
+    }
+
+    #[test]
+    fn direct_debug_reads_do_not_advance_emulated_time() {
+        let mut bus = CpuBus::new();
+        assert_eq!(bus.ppu_position(), (261, 0));
+        let _ = bus.read(0x2002);
+        assert_eq!(bus.ppu_position(), (261, 0));
+    }
+}
