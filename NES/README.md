@@ -30,6 +30,7 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 - Une fixture MMC3 utilise des octets de signature iNES explicites pour éviter toute ambiguïté d'échappement dans le test.
 - Les résultats finaux des workflows doivent être vérifiés après les derniers commits ; ces tests synthétiques ne remplacent pas une validation avec des ROM de diagnostic et des essais de jeu réels.
 
+- **CPU** : matrice de régression supplémentaire pour RLA, SRE, RRA, DCP et ISC sur les sept modes d'adressage, avec vérification des cycles, de l'adresse écrite et des effets sur les registres/flags. Les accès par page croisée sont couverts ; le timing bus complet reste à faire.
 ## Ce qui est implémenté
 
 - **CPU :** interpréteur 2A03 avec de nombreuses instructions officielles, plusieurs opcodes non officiels stables et composites, flags, pile et interruptions. Les opcodes inconnus produisent une erreur explicite. Le modèle n'est pas cycle-exact.
