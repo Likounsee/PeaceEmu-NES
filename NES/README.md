@@ -21,15 +21,11 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 
 ## Dernière itération
 
-- MMC3 : correction du rebasage du filtre A12 lorsque le compteur de dots PPU repart en arrière ; l'échantillon de bus observé au reset fixe maintenant correctement l'état haut/bas, pour éviter de compter trop tôt une durée A12 basse.
-- Tests MMC3 : couverture des fronts A12 filtrés à huit dots, du reset du compteur PPU, du seuil entre huit et neuf sprites et de la configuration PCM.
-- Les IRQ MMC3 restent dépendantes de la qualité et de la fréquence des adresses PPU réellement transmises au mapper ; la correction du filtre ne rend pas à elle seule le timing complet cycle-exact.
-
-## Dernière itération
-
-- APU : réappliquer la fréquence PCM déjà active est désormais un no-op, afin de préserver les échantillons déjà en attente et l'état du filtre/resampling.
-- MMC3 : tests du scénario d'acquittement d'une IRQ par $E000, puis de réactivation par $E001 ; une nouvelle IRQ doit attendre un nouveau front A12 qualifié.
-- Les workflows des commits précédents sont verts ; les validations des deux derniers changements sont en cours. Les IRQ restent limitées par la granularité réelle des accès PPU fournis au mapper.
+- APU/PCM : réappliquer la fréquence d'échantillonnage active préserve la file audio, la phase de resampling et le filtre ; un vrai changement de fréquence réinitialise l'ancien lot.
+- DMC : régression vérifiant qu'une seconde livraison DMA ne peut ni écraser l'octet déjà en attente dans le sample buffer, ni décrémenter une nouvelle fois le compteur ou l'adresse.
+- PPU : régression du read de `$2002` au dot 0 de VBlank ; le flag VBlank et son front NMI sont supprimés pour cette frame, sans effacer les autres bits de statut.
+- MMC3 : tests du filtre A12 à huit dots, du rebasage après reset PPU et de l'acquittement/réactivation IRQ ; la précision reste limitée par les adresses PPU réellement observées.
+- Les nouvelles régressions sont ajoutées sur la branche `NES`. La CI des commits de test est en cours ; ne pas considérer ces changements validés avant le résultat des workflows.
 
 ## Ce qui est implémenté
 
