@@ -28,7 +28,7 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 - **MMC3/CHR** : test exhaustif des huit fenêtres de 1 Kio en mode CHR normal et inversé, pour vérifier que les registres R0-R5 restent correctement placés sans alias.
 - **MMC3/PRG** : nouvelle régression vérifiant les quatre fenêtres de 8 Kio en modes PRG 0 et 1, notamment le déplacement du registre R6 et le maintien des deux banques fixes.
 - **PPU/sprites 8×16** : nouveaux tests des adresses de motifs aux frontières des deux tuiles et du retournement vertical sur les lignes 0, 7, 8 et 15 ; le mode 8×8 est aussi vérifié.
-- **Validation** : les workflows des derniers commits sont à vérifier avant de considérer les nouvelles régressions comme validées. Les tests synthétiques ne remplacent pas les essais de ROM réelles, notamment pour l'alignement sprite/hitbox de *Super Mario Bros.*
+- **Validation** : après correction de la signature iNES du fixture MMC3, la CI du commit de correction passe sur Rust stable, Rust 1.78, Windows et Ubuntu (tests, formatage, Clippy et compatibilité du module). Les tests synthétiques ne remplacent pas les essais de ROM réelles, notamment pour l'alignement sprite/hitbox de *Super Mario Bros.*
 
 
 ## Ce qui est implémenté
