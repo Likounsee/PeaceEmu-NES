@@ -1613,3 +1613,28 @@ mod pcm_queue_bound_regressions {
         assert!(apu.audio_samples.iter().all(|sample| sample.is_finite()));
     }
 }
+
+
+#[cfg(test)]
+mod zero_cycle_tick_regressions {
+    use super::*;
+
+    #[test]
+    fn zero_cycle_tick_does_not_initialize_or_advance_audio_hardware() {
+        let mut apu = Apu::new();
+        apu.write(0x4010, 0x8F);
+        apu.write(0x4011, 0x35);
+        apu.write(0x4017, 0x80);
+
+        let reset_delay = apu.frame_reset_delay;
+        let sample_phase = apu.sample_phase;
+        apu.tick_cpu_cycles(0);
+
+        assert_eq!(apu.noise_shift, 0);
+        assert_eq!(apu.frame_cycles, 0);
+        assert_eq!(apu.frame_reset_delay, reset_delay);
+        assert_eq!(apu.sample_phase, sample_phase);
+        assert!(apu.audio_samples.is_empty());
+        assert!(!apu.cpu_cycle_odd);
+    }
+}
