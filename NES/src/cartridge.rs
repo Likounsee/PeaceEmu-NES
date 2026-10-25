@@ -36,6 +36,11 @@ fn nes2_rom_size(lsb: u8, msb_nibble: u8, unit: usize) -> usize {
     }
 }
 
+/// Decodes a NES 2.0 RAM-size shift nibble (zero means no RAM).
+fn nes2_ram_size(shift: u8) -> usize {
+    if shift == 0 { 0 } else { 64usize.checked_shl(u32::from(shift)).unwrap_or(usize::MAX) }
+}
+
 /// Parsed NROM cartridge.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Nrom {
@@ -129,9 +134,19 @@ impl Nrom {
         let prg_start = INES_HEADER_LEN + trainer_len;
         let chr_start = prg_start + prg_len;
         let prg_rom = image[prg_start..chr_start].to_vec();
-        // NROM exposes 8 KiB of PRG-RAM at $6000-$7FFF. Legacy iNES trainers
-        // are copied to $7000-$71FF before the game starts.
-        let mut prg_ram = vec![0; PRG_RAM_LEN];
+        // Legacy iNES conventionally exposes 8 KiB of PRG-RAM. NES 2.0
+        // declares volatile and non-volatile PRG-RAM independently in byte 10;
+        // this NROM implementation maps at most the 8 KiB CPU window and mirrors
+        // smaller chips across it. A trainer requires the conventional window so
+        // its bytes can be installed at $7000-$71FF.
+        let declared_prg_ram_len = if nes2 {
+            nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4))
+        } else {
+            PRG_RAM_LEN
+        };
+        let prg_ram_len = declared_prg_ram_len.min(PRG_RAM_LEN)
+            .max(if trainer_len != 0 { PRG_RAM_LEN } else { 0 });
+        let mut prg_ram = vec![0; prg_ram_len];
         if trainer_len != 0 {
             prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
         }
@@ -146,7 +161,10 @@ impl Nrom {
     /// Reads cartridge RAM or PRG-ROM from the CPU address space.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
         match address {
-            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+            0x6000..=0x7FFF if !self.prg_ram.is_empty() => {
+                Some(self.prg_ram[(address as usize - 0x6000) % self.prg_ram.len()])
+            }
+            0x6000..=0x7FFF => None,
             0x8000..=0xFFFF => Some(self.prg_rom[(address as usize - 0x8000) % self.prg_rom.len()]),
             _ => None,
         }
@@ -154,8 +172,9 @@ impl Nrom {
 
     /// Writes the cartridge's 8 KiB PRG-RAM; PRG-ROM remains read-only.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
-        if !(0x6000..=0x7FFF).contains(&address) { return false; }
-        self.prg_ram[address as usize - 0x6000] = value;
+        if !(0x6000..=0x7FFF).contains(&address) || self.prg_ram.is_empty() { return false; }
+        let index = (address as usize - 0x6000) % self.prg_ram.len();
+        self.prg_ram[index] = value;
         true
     }
 
@@ -3090,6 +3109,25 @@ mod nes2_nrom_tests {
         assert_eq!(cart.cpu_read(0xC000), Some(0));
         assert_eq!(cart.ppu_read(0x123), Some(0xA6));
         assert!(!cart.chr_is_ram());
+    }
+
+    #[test]
+    fn nes2_nrom_respects_declared_absence_of_prg_ram() {
+        let image = nes2_nrom(1, 0);
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.cpu_read(0x6000), None);
+        assert!(!cart.cpu_write(0x6000, 0xA5));
+    }
+
+    #[test]
+    fn nes2_nrom_maps_declared_small_prg_ram_by_mirroring() {
+        let mut image = nes2_nrom(1, 0);
+        image[10] = 1; // 128 bytes of volatile PRG-RAM (64 << 1).
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.cpu_read(0x6000), Some(0));
+        assert!(cart.cpu_write(0x6080, 0xA5));
+        assert_eq!(cart.cpu_read(0x6000), Some(0xA5));
+        assert_eq!(cart.cpu_read(0x6080), Some(0xA5));
     }
 
     #[test]
