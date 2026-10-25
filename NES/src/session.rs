@@ -99,9 +99,9 @@ impl NesSession {
 
     /// Applies a new PCM output rate, keeping the public configuration in sync.
     ///
-    /// Supported rates are 8,000 through 192,000 samples per second. On success,
-    /// queued samples are cleared by the APU; an invalid rate leaves both rate and
-    /// configuration unchanged.
+    /// Supported rates are 8,000 through 192,000 samples per second. Changing to a
+    /// different valid rate clears queued samples and resets resampling state; applying
+    /// the already-active rate is a no-op. An invalid rate leaves configuration unchanged.
     pub fn set_audio_sample_rate(&mut self, sample_rate: u32) -> bool {
         if !self.machine.set_audio_sample_rate(sample_rate) {
             return false;
