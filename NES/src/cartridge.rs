@@ -4684,7 +4684,7 @@ mod mmc3_a12_exact_boundary_regressions {
 
     fn boundary_test_image() -> Vec<u8> {
         let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 2;
         image[6] = 0x40; // Mapper 4, CHR-RAM.
         image
