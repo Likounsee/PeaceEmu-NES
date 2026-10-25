@@ -34,6 +34,7 @@ pub struct Apu {
     pulse_sequence: [u8; 2],
     triangle_timer_counter: u16,
     triangle_sequence: u8,
+    triangle_has_clocked: bool,
     noise_timer_counter: u16,
     noise_shift: u16,
     cpu_cycle_odd: bool,
@@ -83,6 +84,7 @@ impl Default for Apu {
             pulse_sequence: [0; 2],
             triangle_timer_counter: 0,
             triangle_sequence: 0,
+            triangle_has_clocked: false,
             noise_timer_counter: 0,
             noise_shift: 0,
             cpu_cycle_odd: false,
@@ -244,6 +246,7 @@ impl Apu {
                 self.triangle_timer_counter = triangle_period;
                 if self.length_counters[2] > 0 && self.triangle_linear_counter > 0 {
                     self.triangle_sequence = (self.triangle_sequence + 1) & 31;
+                    self.triangle_has_clocked = true;
                 }
             } else { self.triangle_timer_counter -= 1; }
             if self.dmc_timer_counter == 0 {
@@ -447,7 +450,7 @@ impl Apu {
         // The triangle channel has no volume envelope: when its length or linear
         // counter expires, the sequencer stops but the DAC holds its last level.
         // Keep that held level in the mixer instead of incorrectly forcing silence.
-        let triangle = if triangle_period > 1 { f32::from(triangle_value) } else { 0.0 };
+        let triangle = if self.triangle_has_clocked && triangle_period > 1 { f32::from(triangle_value) } else { 0.0 };
         let noise_control = self.registers[0x0C];
         let noise_volume = if noise_control & 0x10 != 0 {
             noise_control & 0x0F
@@ -881,7 +884,7 @@ mod tests {
         apu.tick_cpu_cycles(200);
         assert!(apu.sample() > 0.0);
         apu.write(0x4015, 0x00);
-        assert_eq!(apu.sample(), 0.0);
+        assert!(apu.sample() > 0.0, "disabling the triangle channel stops its sequencer but retains the DAC level");
     }
 
     #[test]
