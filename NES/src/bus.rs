@@ -906,3 +906,23 @@ mod oam_dma_wrap_regressions {
         }
     }
 }
+
+
+#[cfg(test)]
+mod apu_bus_open_bus_regressions {
+    use super::*;
+
+    #[test]
+    fn status_read_preserves_only_open_bus_bit_five() {
+        let mut bus = CpuBus::new();
+        bus.write(0x0000, 0xFF); // Leave all CPU data-bus bits high.
+        bus.apu.frame_irq = true;
+        bus.apu.dmc_irq = true;
+
+        let status = bus.read(0x4015);
+        assert_eq!(status & 0x20, 0x20, "$4015 bit 5 is open bus");
+        assert_eq!(status & 0xC0, 0xC0, "both IRQ flags are independently reported");
+        assert_eq!(bus.read(0x4015) & 0x40, 0, "reading status acknowledges only frame IRQ");
+        assert_ne!(bus.read(0x4015) & 0x80, 0, "DMC IRQ remains pending after status reads");
+    }
+}
