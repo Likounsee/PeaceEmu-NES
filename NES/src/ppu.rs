@@ -441,20 +441,46 @@ impl Ppu {
         }
     }
 
-    /// Sets the sticky overflow flag when more than eight sprites cover this scanline.
+    /// Emulates the sprite-overflow scan for the following scanline.
+    ///
+    /// After the first eight in-range sprites, the 2C02's overflow logic does not
+    /// keep checking only Y bytes: its n/m counters can walk diagonally through
+    /// tile, attribute and X bytes. This intentionally reproduces the resulting
+    /// false positives and false negatives instead of using a simple sprite count.
     fn update_sprite_overflow(&mut self, y: usize) {
         // Sprite evaluation at dot 256 selects sprites for the following scanline.
-        let y = y + 1;
+        let target_y = y + 1;
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
-        let mut count = 0usize;
+        let in_range = |oam_y: u8| {
+            let top = oam_y as usize + 1;
+            target_y >= top && target_y < top + height
+        };
+
+        let mut found = 0usize;
+        let mut next_sprite = 0usize;
         for sprite in 0..64usize {
-            let top = self.oam[sprite * 4] as usize + 1;
-            if y >= top && y < top + height {
-                count += 1;
-                if count > 8 {
-                    self.status |= 0x20;
-                    return;
+            if in_range(self.oam[sprite * 4]) {
+                found += 1;
+                if found == 8 {
+                    next_sprite = sprite + 1;
+                    break;
                 }
+            }
+        }
+        if found < 8 || next_sprite >= 64 { return; }
+
+        // The hardware's post-eight-sprite scan advances n and m differently
+        // depending on whether the examined byte looks like an in-range Y value.
+        let mut n = next_sprite;
+        let mut m = 0usize;
+        while n < 64 {
+            if in_range(self.oam[n * 4 + m]) {
+                self.status |= 0x20;
+                m = (m + 1) & 3;
+                if m == 0 { n += 1; }
+            } else {
+                n += 1;
+                m = (m + 1) & 3;
             }
         }
     }
@@ -1186,6 +1212,34 @@ mod tests {
         ppu.tick_with_cartridge(1, Some(&cartridge));
 
         assert_eq!(ppu.framebuffer()[256], 0x09, "sprite 1 must not show through the higher-priority sprite 0");
+    }
+
+    #[test]
+    fn sprite_overflow_models_diagonal_oam_byte_scan() {
+        let mut ppu = Ppu::new();
+        // First eight sprites overlap target scanline 10 (OAM Y=9).
+        for sprite in 0..8usize {
+            ppu.oam[sprite * 4] = 9;
+        }
+        // Sprite 8 is out of range. The buggy n/m walk skips its tile byte,
+        // then interprets sprite 9's tile byte as a Y coordinate.
+        ppu.oam[8 * 4] = 200;
+        ppu.oam[9 * 4 + 1] = 9;
+        ppu.update_sprite_overflow(9);
+        assert_ne!(ppu.status & 0x20, 0,
+            "the 2C02 diagonal scan can raise overflow from a non-Y OAM byte");
+    }
+
+    #[test]
+    fn sprite_overflow_stays_clear_with_eight_or_fewer_matching_sprites() {
+        let mut ppu = Ppu::new();
+        for sprite in 0..8usize {
+            ppu.oam[sprite * 4] = 9;
+        }
+        ppu.oam[8 * 4] = 200;
+        ppu.oam[9 * 4 + 1] = 200;
+        ppu.update_sprite_overflow(9);
+        assert_eq!(ppu.status & 0x20, 0);
     }
 
     #[test]
