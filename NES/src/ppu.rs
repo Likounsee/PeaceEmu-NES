@@ -37,6 +37,7 @@ pub struct Ppu {
     background_opaque: Vec<bool>,
     ppu_cycle: u64,
     mapper_a12_high: bool,
+    mapper_bus_initialized: bool,
     mapper_bus_events: Vec<(u16, u64)>,
 }
 
@@ -50,7 +51,7 @@ impl Default for Ppu {
             frame_scroll_valid: false, line_scroll_v: 0,
             nmi_pending: false, nmi_line: false, suppress_vblank: false,
             framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
-            ppu_cycle: 0, mapper_a12_high: false, mapper_bus_events: Vec::new(),
+            ppu_cycle: 0, mapper_a12_high: false, mapper_bus_initialized: false, mapper_bus_events: Vec::new(),
         }
     }
 }
@@ -228,6 +229,12 @@ impl Ppu {
 
     /// Tracks mapper-visible A12 transitions at scheduled pattern-fetch slots.
     fn update_mapper_a12_bus(&mut self, cartridge: Option<&Cartridge>) {
+        // Publish the initial bus level once. Without this baseline event, an MMC3
+        // mapper first seeing A12 high cannot measure how long the bus was low.
+        if !self.mapper_bus_initialized {
+            self.mapper_bus_events.push((0, self.ppu_cycle.saturating_sub(1)));
+            self.mapper_bus_initialized = true;
+        }
         if self.mask & 0x18 == 0 || !(self.scanline < 240 || self.scanline == 261) {
             if self.mapper_a12_high {
                 self.mapper_a12_high = false;
@@ -879,7 +886,7 @@ mod tests {
         ppu.ctrl = 0x10;
         ppu.mask = 0x08;
         ppu.tick(5);
-        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 5)]);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 0), (0x1000, 5)]);
 
         ppu.mask = 0;
         ppu.tick(1);
@@ -2084,7 +2091,7 @@ mod mapper_a12_bus_regressions {
 
         assert_eq!(
             ppu.take_mapper_bus_events(),
-            vec![(0x1000, 5), (0, 9)],
+            vec![(0, 0), (0x1000, 5), (0, 9)],
             "A12 must rise on the pattern-fetch slot and fall when the next nametable slot begins"
         );
     }
