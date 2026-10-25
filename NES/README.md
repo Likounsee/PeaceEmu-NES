@@ -26,6 +26,8 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 - **PPU/sprite-zero** : les tests couvrent la limite du dernier pixel visible (hit autorisé à X=254, interdit à X=255), l'indépendance vis-à-vis de la priorité visuelle et l'alignement du hit avec le retournement horizontal du motif du sprite.
 - **PPU/NMI/scroll** : régressions pour l'activation de NMI en plein VBlank (un seul front montant), le passage de coarse-Y 30 à 31 sans bascule de nametable et les limites du scroll vertical.
 - **MMC3/CHR** : test exhaustif des huit fenêtres de 1 Kio en mode CHR normal et inversé, pour vérifier que les registres R0-R5 restent correctement placés sans alias.
+- **MMC3/PRG** : nouvelle régression vérifiant les quatre fenêtres de 8 Kio en modes PRG 0 et 1, notamment le déplacement du registre R6 et le maintien des deux banques fixes.
+- **PPU/sprites 8×16** : nouveaux tests des adresses de motifs aux frontières des deux tuiles et du retournement vertical sur les lignes 0, 7, 8 et 15 ; le mode 8×8 est aussi vérifié.
 - **Validation** : les workflows des derniers commits sont à vérifier avant de considérer les nouvelles régressions comme validées. Les tests synthétiques ne remplacent pas les essais de ROM réelles, notamment pour l'alignement sprite/hitbox de *Super Mario Bros.*
 
 
