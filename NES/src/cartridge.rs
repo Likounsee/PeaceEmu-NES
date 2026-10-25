@@ -4677,3 +4677,24 @@ mod gxrom_nes2_tests {
         assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
     }
 }
+
+#[cfg(test)]
+mod mmc3_a12_exact_boundary_regressions {
+    use super::*;
+
+    #[test]
+    fn a12_filter_rejects_seven_low_dots_and_accepts_eight() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        cart.cpu_write(0xC000, 0);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+
+        cart.observe_ppu_address(0x0000, 10);
+        cart.observe_ppu_address(0x1000, 17);
+        assert!(!cart.irq_pending(), "seven low dots must not clock MMC3 IRQ");
+
+        cart.observe_ppu_address(0x0000, 18);
+        cart.observe_ppu_address(0x1000, 26);
+        assert!(cart.irq_pending(), "eight low dots must clock MMC3 IRQ");
+    }
+}
