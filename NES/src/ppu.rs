@@ -2399,7 +2399,7 @@ mod sprite_y_wrap_regression_tests {
 
     fn nrom_with_sprite_pixel() -> Cartridge {
         let mut image = vec![0; 16 + 16_384 + 8_192];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[5] = 1;
         // Tile 0, row 0: leftmost pixel is opaque.
