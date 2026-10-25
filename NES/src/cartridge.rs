@@ -396,18 +396,27 @@ pub struct Uxrom {
 }
 
 impl Uxrom {
-    /// Parses a legacy iNES mapper-2 image with at least two 16 KiB PRG banks.
+    /// Parses an iNES or NES 2.0 mapper-2 image with at least two 16 KiB PRG banks.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
         if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
-        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
-        let mapper = ((image[6] >> 4) as u16)
-            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        let nes2 = image[7] & 0x0C == 0x08;
+        let mapper = if nes2 {
+            ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
+                | (((image[8] & 0x0F) as u16) << 8)
+        } else {
+            ((image[6] >> 4) as u16)
+                | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
+        };
         if mapper != 2 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
 
-        let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if image[4] < 2 { return Err(CartridgeError::InvalidPrgSize(prg_len)); }
-        let chr_len = image[5] as usize * CHR_BANK_LEN;
+        let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
+            else { image[4] as usize * PRG_BANK_LEN };
+        if prg_len < 2 * PRG_BANK_LEN || prg_len % PRG_BANK_LEN != 0 {
+            return Err(CartridgeError::InvalidPrgSize(prg_len));
+        }
+        let chr_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) }
+            else { image[5] as usize * CHR_BANK_LEN };
         if chr_len != 0 && chr_len != CHR_BANK_LEN {
             return Err(CartridgeError::InvalidChrSize(chr_len));
         }
@@ -418,12 +427,22 @@ impl Uxrom {
         }
         let prg_start = INES_HEADER_LEN + trainer_len;
         let chr_start = prg_start + prg_len;
-        let mut prg_ram = vec![0; PRG_RAM_LEN];
+        let declared_prg_ram_len = if nes2 {
+            nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4))
+        } else { PRG_RAM_LEN };
+        let prg_ram_len = declared_prg_ram_len.min(PRG_RAM_LEN)
+            .max(if trainer_len != 0 { PRG_RAM_LEN } else { 0 });
+        let mut prg_ram = vec![0; prg_ram_len];
         if trainer_len != 0 {
             prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
         }
-        let chr_is_ram = chr_len == 0;
-        let chr = if chr_is_ram { vec![0; CHR_BANK_LEN] } else { image[chr_start..chr_start + chr_len].to_vec() };
+        let declared_chr_ram_len = if nes2 {
+            nes2_ram_size(image[11] & 0x0F).saturating_add(nes2_ram_size(image[11] >> 4))
+        } else { CHR_BANK_LEN };
+        let chr_ram_len = declared_chr_ram_len.min(CHR_BANK_LEN);
+        let chr_is_ram = chr_len == 0 && chr_ram_len > 0;
+        let chr = if chr_len != 0 { image[chr_start..chr_start + chr_len].to_vec() }
+            else { vec![0; chr_ram_len] };
         let mirroring = if image[6] & 0x08 != 0 { Mirroring::FourScreen }
             else if image[6] & 0x01 != 0 { Mirroring::Vertical }
             else { Mirroring::Horizontal };
@@ -433,7 +452,9 @@ impl Uxrom {
     /// Reads PRG-RAM or the currently selected/fixed PRG-ROM bank.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
         match address {
-            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+            0x6000..=0x7FFF if !self.prg_ram.is_empty() =>
+                Some(self.prg_ram[(address as usize - 0x6000) % self.prg_ram.len()]),
+            0x6000..=0x7FFF => None,
             0x8000..=0xBFFF => {
                 let index = self.selected_bank * PRG_BANK_LEN + address as usize - 0x8000;
                 Some(self.prg_rom[index])
@@ -450,10 +471,12 @@ impl Uxrom {
     /// Writes PRG-RAM or selects a lower PRG bank; ROM bytes themselves remain read-only.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
-            0x6000..=0x7FFF => {
-                self.prg_ram[address as usize - 0x6000] = value;
+            0x6000..=0x7FFF if !self.prg_ram.is_empty() => {
+                let index = (address as usize - 0x6000) % self.prg_ram.len();
+                self.prg_ram[index] = value;
                 true
             }
+            0x6000..=0x7FFF => false,
             0x8000..=0xFFFF => {
                 // The bank register selects from the complete PRG-ROM bank set.
                 // The upper window remains hard-wired to the final bank, but the
@@ -472,12 +495,12 @@ impl Uxrom {
     pub fn chr_is_ram(&self) -> bool { self.chr_is_ram }
     /// Reads a byte from PPU pattern memory.
     pub fn ppu_read(&self, address: u16) -> Option<u8> {
-        if address >= 0x2000 { return None; }
+        if address >= 0x2000 || self.chr.is_empty() { return None; }
         Some(self.chr[address as usize % self.chr.len()])
     }
     /// Writes pattern memory only when it is CHR-RAM.
     pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
-        if address >= 0x2000 || !self.chr_is_ram { return false; }
+        if address >= 0x2000 || !self.chr_is_ram || self.chr.is_empty() { return false; }
         let index = address as usize % self.chr.len();
         self.chr[index] = value;
         true
@@ -3143,6 +3166,40 @@ mod nes2_nrom_tests {
         assert!(cart.ppu_write(0x0080, 0xA5));
         assert_eq!(cart.ppu_read(0x0000), Some(0xA5));
         assert_eq!(cart.ppu_read(0x0080), Some(0xA5));
+    }
+
+    #[test]
+    fn nes2_uxrom_supports_banked_prg_and_declared_ram() {
+        let mut image = nes2_nrom(3, 0);
+        image[6] = 0x20; // Mapper 2.
+        image[7] = 0x28; // NES 2.0, mapper low bits.
+        image[10] = 7; // 8 KiB PRG-RAM.
+        image[11] = 7; // 8 KiB CHR-RAM.
+        for bank in 0..3usize {
+            let start = INES_HEADER_LEN + bank * PRG_BANK_LEN;
+            image[start..start + PRG_BANK_LEN].fill((bank + 1) as u8);
+        }
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.cpu_read(0x8000), Some(1));
+        assert_eq!(cart.cpu_read(0xC000), Some(3));
+        assert!(cart.cpu_write(0x8000, 1));
+        assert_eq!(cart.cpu_read(0x8000), Some(2));
+        assert!(cart.cpu_write(0x6000, 0xA5));
+        assert_eq!(cart.cpu_read(0x6000), Some(0xA5));
+        assert!(cart.ppu_write(0x0000, 0x5A));
+        assert_eq!(cart.ppu_read(0x0000), Some(0x5A));
+    }
+
+    #[test]
+    fn nes2_uxrom_with_no_declared_ram_exposes_no_memory_window() {
+        let mut image = nes2_nrom(2, 0);
+        image[6] = 0x20; // Mapper 2.
+        image[7] = 0x28;
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.cpu_read(0x6000), None);
+        assert!(!cart.cpu_write(0x6000, 0xA5));
+        assert_eq!(cart.ppu_read(0x0000), None);
+        assert!(!cart.ppu_write(0x0000, 0x5A));
     }
 
     #[test]
