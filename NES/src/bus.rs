@@ -923,3 +923,32 @@ mod apu_bus_open_bus_regressions {
             "the undriven bit remains sourced from the previous bus value");
     }
 }
+
+
+#[cfg(test)]
+mod dmc_irq_bus_integration_regressions {
+    use super::*;
+
+    #[test]
+    fn terminal_dmc_fetch_asserts_cpu_irq_and_status_write_acknowledges_it() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x0000] = 0xA5;
+
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0x4010, 0x80); // Terminal DMC IRQ enabled.
+        bus.write(0x4012, 0x00); // Sample starts at $C000.
+        bus.write(0x4013, 0x00); // One byte.
+        bus.write(0x4015, 0x10);
+
+        assert_eq!(bus.tick_apu(1), 4);
+        assert!(bus.irq_pending(), "the last byte asserts the DMC IRQ on the CPU IRQ line");
+        assert_ne!(bus.read(0x4015) & 0x80, 0);
+        assert!(bus.irq_pending(), "reading status reports but does not clear DMC IRQ");
+
+        bus.write(0x4015, 0x00);
+        assert!(!bus.irq_pending(), "writing $4015 acknowledges the DMC IRQ");
+    }
+}
