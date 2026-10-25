@@ -2910,3 +2910,23 @@ mod nmi_control_edge_regressions {
         assert!(!ppu.take_nmi_request());
     }
 }
+
+
+#[cfg(test)]
+mod nmi_enable_during_vblank_regressions {
+    use super::*;
+
+    #[test]
+    fn enabling_nmi_during_active_vblank_latches_one_rising_edge() {
+        let mut ppu = Ppu::new();
+        ppu.status |= 0x80;
+        assert!(!ppu.nmi_line);
+        ppu.cpu_write_register(0, 0x80, None);
+        assert!(ppu.take_nmi_request(), "raising NMI enable while VBlank is active must raise an NMI edge");
+        assert!(!ppu.take_nmi_request(), "the same high line must not create duplicate NMI edges");
+
+        ppu.cpu_read_register(2, None);
+        assert!(!ppu.nmi_line, "reading PPUSTATUS clears VBlank and lowers the NMI line");
+        assert!(!ppu.take_nmi_request(), "lowering the line must not create another edge");
+    }
+}
