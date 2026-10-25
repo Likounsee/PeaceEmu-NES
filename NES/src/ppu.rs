@@ -2520,12 +2520,12 @@ mod sprite_8x16_top_wrap_regressions {
 
     #[test]
     fn wrapped_y_sprite_uses_8x16_tile_selection_on_scanline_zero() {
-        let mut image = vec![0; 16 + 16_384 + 8_192];
-        image[0..4].copy_from_slice(b"NES\x1A");
-        image[4] = 1;
-        image[5] = 1;
-        image[16 + 16_384] = 0x80; // CHR tile 0 has an opaque top-left pixel.
-        let cart = Cartridge::parse(&image).unwrap();
+        let mut rom = vec![0; 16 + 16_384 + 8_192];
+        rom[0..4].copy_from_slice(b"NES\x1A");
+        rom[4] = 1;
+        rom[5] = 1;
+        rom[16 + 16_384] = 0x80; // CHR tile 0 has an opaque top-left pixel.
+        let cart = Cartridge::parse(&rom).unwrap();
         let mut ppu = Ppu::new();
         ppu.ctrl = 0x20;
         ppu.mask = 0x14;
