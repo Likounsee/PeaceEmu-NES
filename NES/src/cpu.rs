@@ -1624,7 +1624,7 @@ mod interrupt_bus_cycle_regression_tests {
         image[16 + 0x3FFB] = 0x90;
         let mut bus = CpuBus::new();
         bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
-        bus.set_controller_state(0, 0b0000_0011);
+        bus.set_controller_state(0, 0b0000_0001);
         bus.write(0x4016, 1);
         bus.write(0x4016, 0);
 
