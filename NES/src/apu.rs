@@ -522,6 +522,27 @@ mod tests {
     }
 
     #[test]
+    fn pcm_sample_rate_validation_preserves_state_on_rejection_and_resets_queue_on_change() {
+        let mut apu = Apu::new();
+        apu.tick_cpu_cycles(2_000);
+        assert!(!apu.audio_samples.is_empty());
+        let queued = apu.audio_samples.len();
+        let phase = apu.sample_phase;
+
+        assert!(!apu.set_sample_rate(7_999));
+        assert!(!apu.set_sample_rate(192_001));
+        assert_eq!(apu.sample_rate(), 44_100);
+        assert_eq!(apu.audio_samples.len(), queued);
+        assert_eq!(apu.sample_phase, phase);
+
+        assert!(apu.set_sample_rate(48_000));
+        assert_eq!(apu.sample_rate(), 48_000);
+        assert!(apu.audio_samples.is_empty());
+        assert_eq!(apu.sample_phase, 0);
+        assert_eq!(apu.pcm_low_pass, 0.0);
+    }
+
+    #[test]
     fn zero_cpu_cycles_do_not_mutate_apu_state_or_emit_audio() {
         let mut apu = Apu::new();
         assert_eq!(apu.noise_shift, 0);
