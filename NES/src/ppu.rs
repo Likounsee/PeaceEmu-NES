@@ -139,7 +139,7 @@ impl Ppu {
                     // the new address retroactively to pixels already emitted.
                     if self.scanline < 240 && (1..=256).contains(&self.dot) && self.mask & 0x18 != 0 {
                         self.line_scroll_v = self.v;
-                        self.line_scroll_start_x = self.dot.saturating_sub(1) as usize;
+                        self.line_scroll_start_x = self.dot as usize;
                     }
                 }
                 self.write_latch = !self.write_latch;
@@ -786,8 +786,8 @@ mod mid_scanline_scroll_regressions {
         assert_eq!(ppu.v, 0x2100);
         assert_eq!(ppu.line_scroll_v, 0x2100,
             "the next background pixel must use the newly written VRAM address");
-        assert_eq!(ppu.line_scroll_start_x, 79,
-            "the new address must start at the current beam, not pixel zero");
+        assert_eq!(ppu.line_scroll_start_x, 80,
+            "the new address must start at the next unrendered pixel, not pixel zero");
     }
 
     #[test]
@@ -796,11 +796,11 @@ mod mid_scanline_scroll_regressions {
         ppu.scanline = 40;
         ppu.dot = 80;
         ppu.mask = 0x08;
-        ppu.line_scroll_start_x = 79;
+        ppu.line_scroll_start_x = 80;
         ppu.tick(1);
 
         assert_eq!(ppu.position(), (40, 81));
-        assert_eq!(ppu.line_scroll_start_x, 79,
+        assert_eq!(ppu.line_scroll_start_x, 80,
             "the origin stays fixed until the next scanline starts");
         ppu.tick(261);
 
