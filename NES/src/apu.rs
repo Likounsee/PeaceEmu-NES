@@ -450,7 +450,10 @@ impl Apu {
         // The triangle channel has no volume envelope: when its length or linear
         // counter expires, the sequencer stops but the DAC holds its last level.
         // Keep that held level in the mixer instead of incorrectly forcing silence.
-        let triangle = if self.triangle_has_clocked && triangle_period > 1 { f32::from(triangle_value) } else { 0.0 };
+        // The timer period controls how quickly the sequencer advances, not whether
+        // the DAC holds a value. Periods 0 and 1 are ultrasonic but still leave
+        // the last sequencer value on the triangle output when its counters stop.
+        let triangle = if self.triangle_has_clocked { f32::from(triangle_value) } else { 0.0 };
         let noise_control = self.registers[0x0C];
         let noise_volume = if noise_control & 0x10 != 0 {
             noise_control & 0x0F
@@ -1408,5 +1411,35 @@ mod triangle_dac_hold_regressions {
         apu.length_counters[2] = 0;
         apu.triangle_linear_counter = 0;
         assert_eq!(apu.sample(), 0.0);
+    }
+}
+
+
+#[cfg(test)]
+mod triangle_dac_period_regressions {
+    use super::*;
+
+    #[test]
+    fn triangle_dac_keeps_held_value_for_zero_and_one_timer_periods() {
+        for period in [0u8, 1u8] {
+            let mut apu = Apu::new();
+            apu.registers[0x0A] = period;
+            apu.triangle_sequence = 0; // Held DAC level 15.
+            apu.triangle_has_clocked = true;
+            apu.length_counters[2] = 0;
+            apu.triangle_linear_counter = 0;
+            assert!(apu.sample() > 0.0, "timer period {period} must not mute a previously clocked triangle DAC");
+        }
+    }
+
+    #[test]
+    fn triangle_dac_is_silent_until_the_sequencer_has_started() {
+        for period in [0u8, 1u8, 2u8] {
+            let mut apu = Apu::new();
+            apu.registers[0x0A] = period;
+            apu.triangle_sequence = 0;
+            apu.triangle_has_clocked = false;
+            assert_eq!(apu.sample(), 0.0, "unstarted triangle must be silent at timer period {period}");
+        }
     }
 }
