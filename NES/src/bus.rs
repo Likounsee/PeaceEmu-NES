@@ -210,7 +210,7 @@ mod tests {
     #[test]
     fn dmc_dma_refills_charge_stall_for_each_sample_buffer_fetch() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16..16 + 16_384].fill(0xA5);
         let mut bus = CpuBus::new();
