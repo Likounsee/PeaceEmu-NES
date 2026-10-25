@@ -10,11 +10,11 @@ Cœur matériel Nintendo Entertainment System en Rust. Le but est de fournir à 
 |---|---:|---|
 | CPU Ricoh 2A03 | 74 % | Instructions officielles courantes, opcodes non officiels sélectionnés, interruptions ; timing incomplet |
 | PPU | 72 % | Registres, mémoire vidéo, VBlank/NMI, rendu 256×240 ; pipeline par dot incomplète |
-| APU | 63 % | Pulse/triangle/bruit, séquenceur et DMC initial ; mixage et DMA approximatifs |
+| APU | 64 % | Pulse/triangle/bruit, séquenceur et DMC initial ; mixage et DMA approximatifs |
 | Bus et manettes | 76 % | RAM miroir, registres, ports série, DMA OAM, premiers accès DMC |
 | Cartouches/mappers | 86 % | Nombreuses cartes iNES legacy ; variantes et NES 2.0 non générales |
 | Machine/session | 77 % | Chargement, reset, frames, PCM, entrées et RAM batterie |
-| Tests et robustesse | 93 % | Régressions unitaires et d'intégration ; validation ROM réelle à élargir |
+| Tests et robustesse | 94 % | Régressions unitaires et d'intégration ; validation ROM réelle à élargir |
 | Intégration hôte | 45 % | L'adaptateur et le parcours complet doivent être validés avec le dépôt principal |
 
 Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas être moyennées comme une métrique de compatibilité.
@@ -24,6 +24,12 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 - MMC3 : correction du rebasage du filtre A12 lorsque le compteur de dots PPU repart en arrière ; l'échantillon de bus observé au reset fixe maintenant correctement l'état haut/bas, pour éviter de compter trop tôt une durée A12 basse.
 - Tests MMC3 : couverture des fronts A12 filtrés à huit dots, du reset du compteur PPU, du seuil entre huit et neuf sprites et de la configuration PCM.
 - Les IRQ MMC3 restent dépendantes de la qualité et de la fréquence des adresses PPU réellement transmises au mapper ; la correction du filtre ne rend pas à elle seule le timing complet cycle-exact.
+
+## Dernière itération
+
+- APU : réappliquer la fréquence PCM déjà active est désormais un no-op, afin de préserver les échantillons déjà en attente et l'état du filtre/resampling.
+- MMC3 : tests du scénario d'acquittement d'une IRQ par $E000, puis de réactivation par $E001 ; une nouvelle IRQ doit attendre un nouveau front A12 qualifié.
+- Les workflows des commits précédents sont verts ; les validations des deux derniers changements sont en cours. Les IRQ restent limitées par la granularité réelle des accès PPU fournis au mapper.
 
 ## Ce qui est implémenté
 
