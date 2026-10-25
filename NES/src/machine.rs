@@ -900,10 +900,10 @@ mod dmc_clock_integration_regressions {
 
     #[test]
     fn dmc_dma_stalls_advance_the_shared_cpu_ppu_timeline() {
-        let mut image = nrom_with_program(&[0xEA]);
-        image[16..16 + 16_384].fill(0xA5);
+        let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\\x1A");
         image[4] = 1;
+        image[16..16 + 16_384].fill(0xA5);
         image[16 + 0x3FFC] = 0x00;
         image[16 + 0x3FFD] = 0x80;
 
