@@ -609,7 +609,7 @@ pub struct Mapper87 {
 }
 
 impl Mapper87 {
-    /// Parses a legacy iNES mapper-87 image with 32 KiB PRG and 16 KiB CHR-ROM.
+    /// Parses a legacy iNES mapper-87 image with 32 KiB PRG and 32 KiB CHR-ROM.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
         if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
@@ -623,7 +623,7 @@ impl Mapper87 {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         let chr_len = image[5] as usize * CHR_BANK_LEN;
-        if chr_len != 2 * CHR_BANK_LEN {
+        if chr_len != 4 * CHR_BANK_LEN {
             return Err(CartridgeError::InvalidChrSize(chr_len));
         }
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
@@ -3961,7 +3961,7 @@ mod mapper87_tests {
         let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN + 2 * CHR_BANK_LEN];
         image[0..4].copy_from_slice(b"NES\\x1A");
         image[4] = 2;
-        image[5] = 2;
+        image[5] = 4;
         image[6] = 0x70; // Mapper 87 low nibble.
         image[7] = 0x50; // Mapper 87 high nibble.
         for bank in 0..2usize {
@@ -3969,7 +3969,7 @@ mod mapper87_tests {
             image[start..start + PRG_BANK_LEN].fill(0x30 + bank as u8);
         }
         let chr_start = INES_HEADER_LEN + 2 * PRG_BANK_LEN;
-        for bank in 0..2usize {
+        for bank in 0..4usize {
             let start = chr_start + bank * CHR_BANK_LEN;
             image[start..start + CHR_BANK_LEN].fill(0x60 + bank as u8);
         }
@@ -3984,11 +3984,13 @@ mod mapper87_tests {
         assert_eq!(cart.cpu_read(0xC000), Some(0x31));
         assert_eq!(cart.ppu_read(0x0000), Some(0x60));
 
-        // Hardware register bit 0 selects CHR bank bit 1.
+        // The two low register bits are swapped by the board wiring.
         assert!(cart.cpu_write(0x6000, 1));
-        assert_eq!(cart.ppu_read(0x0000), Some(0x61));
+        assert_eq!(cart.ppu_read(0x0000), Some(0x62));
         assert!(cart.cpu_write(0x7FFF, 2));
-        assert_eq!(cart.ppu_read(0x0000), Some(0x60));
+        assert_eq!(cart.ppu_read(0x0000), Some(0x61));
+        assert!(cart.cpu_write(0x6000, 3));
+        assert_eq!(cart.ppu_read(0x0000), Some(0x63));
         assert!(!cart.ppu_write(0x0000, 0xFF));
         assert_eq!(cart.cpu_read(0x6000), None);
     }
@@ -4000,7 +4002,7 @@ mod mapper87_tests {
         assert!(matches!(Cartridge::parse(&invalid_prg), Err(CartridgeError::InvalidPrgSize(_))));
 
         let mut invalid_chr = image();
-        invalid_chr[5] = 1;
+        invalid_chr[5] = 2;
         assert!(matches!(Cartridge::parse(&invalid_chr), Err(CartridgeError::InvalidChrSize(_))));
 
         let mut truncated = image();
