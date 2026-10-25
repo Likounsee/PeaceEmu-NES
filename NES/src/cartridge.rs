@@ -734,7 +734,7 @@ pub struct Mmc3 {
     banks: [u8; 8], bank_select: u8, mirroring: Mirroring,
     ram_enabled: bool, ram_write_protected: bool,
     irq_latch: u8, irq_counter: u8, irq_reload: bool, irq_enabled: bool, irq_pending: bool,
-    a12_high: bool, a12_low_since: Option<u64>,
+    a12_high: bool, a12_low_since: Option<u64>, last_ppu_cycle: Option<u64>,
 }
 impl Mmc3 {
     /// Parses a legacy iNES mapper-4 image (MMC3/TxROM).
@@ -762,7 +762,7 @@ impl Mmc3 {
         let mirroring = if image[6] & 0x08 != 0 { Mirroring::FourScreen } else if image[6] & 1 != 0 { Mirroring::Vertical } else { Mirroring::Horizontal };
         Ok(Self { prg_rom: image[prg_start..chr_start].to_vec(), prg_ram, chr, chr_is_ram,
             banks: [0, 2, 4, 5, 6, 7, 0, 1], bank_select: 0, mirroring, ram_enabled: true,
-            ram_write_protected: false, irq_latch: 0, irq_counter: 0, irq_reload: false, irq_enabled: false, irq_pending: false, a12_high: false, a12_low_since: Some(0) })
+            ram_write_protected: false, irq_latch: 0, irq_counter: 0, irq_reload: false, irq_enabled: false, irq_pending: false, a12_high: false, a12_low_since: None, last_ppu_cycle: None })
     }
     fn prg_index(&self, address: u16) -> usize {
         let count = self.prg_rom.len() / 0x2000;
@@ -827,6 +827,17 @@ impl Mmc3 {
     /// clocks the IRQ counter only after A12 has remained low for at least eight dots.
     /// Call this once for each actual PPU bus address, not once per CPU instruction.
     pub fn observe_ppu_address(&mut self, address: u16, ppu_cycle: u64) {
+        // A PPU reset can restart the cycle counter while the cartridge remains
+        // inserted. Rebase the A12 filter instead of treating a backwards timestamp
+        // as an enormous low interval or waiting for the old counter to catch up.
+        if self.last_ppu_cycle.is_some_and(|last| ppu_cycle < last) {
+            self.a12_high = false;
+            self.a12_low_since = Some(ppu_cycle);
+            self.last_ppu_cycle = Some(ppu_cycle);
+            return;
+        }
+        self.last_ppu_cycle = Some(ppu_cycle);
+
         let a12 = address & 0x1000 != 0;
         if !a12 {
             if self.a12_high || self.a12_low_since.is_none() {
