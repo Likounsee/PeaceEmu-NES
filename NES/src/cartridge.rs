@@ -3608,7 +3608,7 @@ mod mmc1_board_boundary_regressions {
 
     fn image(prg_banks: u8, four_screen: bool) -> Vec<u8> {
         let mut image = vec![0; INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = prg_banks;
         image[6] = 0x10 | if four_screen { 0x08 } else { 0 };
         for bank in 0..prg_banks as usize {
