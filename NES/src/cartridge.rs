@@ -3282,7 +3282,7 @@ mod image_boundary_regressions {
 mod mmc4_tests {
     use super::*;
 
-    pub(super) fn mmc4_image(prg_banks: u8, chr_banks: u8) -> Vec<u8> {
+    pub(crate) fn mmc4_image(prg_banks: u8, chr_banks: u8) -> Vec<u8> {
         let mut image = vec![
             0;
             INES_HEADER_LEN
