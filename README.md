@@ -1,30 +1,47 @@
 # PeaceEmu-NES
 
-Cœur d'émulation Nintendo Entertainment System pour l'application PeaceEmu.
+Cœur d'émulation Nintendo Entertainment System (NES) écrit en Rust pour le projet [PeaceEmu](https://github.com/Likounsee/PeaceEmu).
 
-Le développement se trouve dans [NES/](NES/). Consultez le [README du module](NES/README.md) et la [documentation d'architecture](NES/docs/ARCHITECTURE.md).
+- **Code du module :** [NES/](NES/)
+- **État et limites :** [NES/README.md](NES/README.md)
+- **Architecture :** [NES/docs/ARCHITECTURE.md](NES/docs/ARCHITECTURE.md)
+- **Références et politique de réutilisation :** [NES/docs/REFERENCE_IMPLEMENTATIONS.md](NES/docs/REFERENCE_IMPLEMENTATIONS.md)
+- **Tests :** [NES/tests/README.md](NES/tests/README.md)
 
-## État réel du projet
+## État du projet
 
-**Avancement estimé : 79 %** (estimation du développement, pas un taux de compatibilité des jeux ; voir `NES/README.md` pour l'inventaire détaillé par domaine).
+Le dépôt contient un cœur Rust fonctionnel en cours de développement : CPU Ricoh 2A03, bus mémoire, cartouches et plusieurs mappers iNES, PPU, APU, contrôleurs, machine et API de session. Un exécutable de test Windows est également présent dans `NES/src/bin/peaceemu-nes-desktop.rs`.
 
-Le crate Rust contient un CPU Ricoh 2A03 couvrant un large sous-ensemble d'instructions officielles ainsi que plusieurs NOP non officiels fréquents, un bus avec RAM miroir, 8 Kio de PRG-RAM de cartouche, chargement des trainers iNES, les ports manette série, le DMA OAM et un accès DMC initial, le parsing iNES/NROM mapper 0, une machine de haut niveau, une PPU avec registres/mémoire graphique/VBlank/NMI et rendu snapshot 256×240, ainsi qu'une APU avec séquenceur de frame et synthèse audio approximative. Les interruptions NMI/IRQ, plusieurs règles de timing PPU et les compteurs de cycles DMA OAM sont couverts par des tests.
+**Avancement estimé du cœur : 63 %.** Il s'agit d'une estimation d'ingénierie, pas d'un pourcentage de jeux compatibles ni d'une couverture de tests. Les limites principales restent la précision cycle par cycle, le pipeline PPU par dot, l'arbitrage DMC, la validation avec des ROM de diagnostic et la preuve de l'intégration complète avec le dépôt PeaceEmu.
 
-**Le cœur n'est pas encore déclaré jouable ni compatible avec une ROM complète.** La PPU rend encore une image par instantané plutôt que pixel par pixel. Le timing CPU/bus et le blocage DMC ne sont pas cycle-exacts ; les mappers autres que NROM, les filtres/resampling audio et l'adaptateur vers le contrat `EmulationCore` de PeaceEmu restent à faire. Aucun pourcentage ci-dessus ne doit être interprété comme une compatibilité commerciale.
+### Capacités actuelles (résumé)
 
-Les tests de session couvrent aussi la normalisation du PCM (valeurs finies dans [-1, 1]) et les bornes inclusives de fréquence audio configurables (8 000–192 000 Hz). Le statut CI doit être confirmé sur le commit le plus récent avant de déclarer ces ajouts validés.
+- CPU 2A03 avec un ensemble étendu d'instructions officielles et non officielles courantes ; les opcodes inconnus sont rejetés explicitement.
+- Bus avec RAM miroir, registres matériels, deux manettes série, DMA OAM et accès DMC initial.
+- Parseur iNES legacy et implémentations locales de NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4), AxROM (7), MMC2 (9), Color Dreams (11), CPROM (13), Mapper 15, BNROM (34), GxROM (66), Camerica (71) et UNROM-512 (30). Les variantes de chaque carte ne sont pas toutes prises en charge.
+- PPU avec registres, mémoire vidéo, timing de balayage et rendu 256×240 par ligne/snapshot ; ce n'est pas une pipeline pixel-par-pixel complète.
+- APU avec génération audio approximative, séquenceur de frame et premier DMC.
+- Machine/session exposant frames, PCM, entrées et accès à la RAM batterie.
 
-## Développement local
+**NES 2.0 n'est pas pris en charge de manière générale.** Le chemin NROM contient un décodage limité de certaines tailles NES 2.0, mais les autres implémentations de cartouches rejettent ce format. Ne pas annoncer une compatibilité NES 2.0 complète.
+
+## Vérifications locales
 
 Depuis la racine du dépôt :
 
-~~~sh
-cd NES
-cargo fmt --all -- --check
-cargo test --all-targets --locked
-cargo clippy --all-targets --locked -- -D warnings
-~~~
+```sh
+cargo fmt --manifest-path NES/Cargo.toml -- --check
+cargo test --manifest-path NES/Cargo.toml --locked
+cargo clippy --manifest-path NES/Cargo.toml --all-targets --locked -- -D warnings
+cargo build --manifest-path NES/Cargo.toml --bin peaceemu-nes-desktop --release --locked
+```
 
-Le workflow GitHub Actions dans `.github/workflows/nes.yml` exécute ces contrôles.
+Le dépôt contient deux workflows principaux de vérification : `.github/workflows/ci.yml` et `.github/workflows/nes.yml`. Le workflow de module le plus récent était vert lors de la dernière vérification ; consultez [GitHub Actions](https://github.com/Likounsee/PeaceEmu-NES/actions) pour le statut actuel. La CI verte confirme les vérifications automatisées, pas la compatibilité de tous les jeux.
 
-Aucune ROM commerciale ne doit être ajoutée au dépôt. Utiliser des homebrews ou des suites de test dont la licence autorise l'usage.
+## Note sur la version Rust
+
+Les manifestes racine et `NES/Cargo.toml` annoncent actuellement des versions minimales différentes. Ce point doit être harmonisé avant de publier une politique MSRV. Le fichier `NES/rust-toolchain.toml` utilise le canal `stable`.
+
+## ROM et licences
+
+Ne commitez aucune ROM commerciale ni aucun fichier de jeu dont la redistribution n'est pas autorisée. Utilisez des homebrews ou des suites de test dont la licence permet explicitement leur utilisation. Toute reprise de code tiers doit être documentée avec sa provenance, sa licence et les notices requises.
