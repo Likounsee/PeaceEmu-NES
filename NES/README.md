@@ -12,12 +12,18 @@ Cœur matériel Nintendo Entertainment System en Rust. Le but est de fournir à 
 | PPU | 72 % | Registres, mémoire vidéo, VBlank/NMI, rendu 256×240 ; pipeline par dot incomplète |
 | APU | 63 % | Pulse/triangle/bruit, séquenceur et DMC initial ; mixage et DMA approximatifs |
 | Bus et manettes | 76 % | RAM miroir, registres, ports série, DMA OAM, premiers accès DMC |
-| Cartouches/mappers | 85 % | Nombreuses cartes iNES legacy ; variantes et NES 2.0 non générales |
+| Cartouches/mappers | 86 % | Nombreuses cartes iNES legacy ; variantes et NES 2.0 non générales |
 | Machine/session | 77 % | Chargement, reset, frames, PCM, entrées et RAM batterie |
-| Tests et robustesse | 92 % | Régressions unitaires et d'intégration ; validation ROM réelle à élargir |
+| Tests et robustesse | 93 % | Régressions unitaires et d'intégration ; validation ROM réelle à élargir |
 | Intégration hôte | 45 % | L'adaptateur et le parcours complet doivent être validés avec le dépôt principal |
 
 Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas être moyennées comme une métrique de compatibilité.
+
+## Dernière itération
+
+- MMC3 : correction du rebasage du filtre A12 lorsque le compteur de dots PPU repart en arrière ; l'échantillon de bus observé au reset fixe maintenant correctement l'état haut/bas, pour éviter de compter trop tôt une durée A12 basse.
+- Tests MMC3 : couverture des fronts A12 filtrés à huit dots, du reset du compteur PPU, du seuil entre huit et neuf sprites et de la configuration PCM.
+- Les IRQ MMC3 restent dépendantes de la qualité et de la fréquence des adresses PPU réellement transmises au mapper ; la correction du filtre ne rend pas à elle seule le timing complet cycle-exact.
 
 ## Ce qui est implémenté
 
