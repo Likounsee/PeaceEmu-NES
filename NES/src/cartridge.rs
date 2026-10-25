@@ -5018,3 +5018,37 @@ mod mapper_4_prg_window_regressions {
         }
     }
 }
+
+
+#[cfg(test)]
+mod mmc3_prg_ram_protection_regressions {
+    use super::*;
+
+    fn image() -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 2;
+        image[6] = 0x40;
+        image
+    }
+
+    #[test]
+    fn write_protect_preserves_readable_ram_and_disable_blocks_both_accesses() {
+        let mut cart = Cartridge::parse(&image()).unwrap();
+        assert!(cart.cpu_write(0x6000, 0x3C));
+        assert_eq!(cart.cpu_read(0x6000), Some(0x3C));
+
+        cart.cpu_write(0xA001, 0xC0); // RAM enabled, writes protected.
+        assert_eq!(cart.cpu_read(0x6000), Some(0x3C));
+        assert!(cart.cpu_write(0x6000, 0xA5));
+        assert_eq!(cart.cpu_read(0x6000), Some(0x3C), "protected writes must not alter RAM");
+
+        cart.cpu_write(0xA001, 0x00); // RAM disabled.
+        assert_eq!(cart.cpu_read(0x6000), None);
+        assert!(cart.cpu_write(0x6000, 0x77), "ignored RAM writes are still handled by the mapper");
+        cart.cpu_write(0xA001, 0x80); // Re-enable, writes allowed.
+        assert_eq!(cart.cpu_read(0x6000), Some(0x3C), "disabled writes must not leak into RAM");
+        assert!(cart.cpu_write(0x6000, 0x5A));
+        assert_eq!(cart.cpu_read(0x6000), Some(0x5A));
+    }
+}
