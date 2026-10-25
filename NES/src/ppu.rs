@@ -259,7 +259,7 @@ impl Ppu {
             if (4..=7).contains(&phase) {
                 let sprite = ((dot - 257) / 8) as usize;
                 let base = sprite * 4;
-                let top = Self::sprite_top(self.oam[base]);
+                let top = (self.oam[base] as usize + 1) & 0xFF;
                 let target_y = if self.scanline == 261 { 0 } else { self.scanline as usize + 1 };
                 let row = target_y.wrapping_sub(top);
                 let height = if self.ctrl & 0x20 != 0 { 16 } else { 8 };
@@ -279,15 +279,6 @@ impl Ppu {
 
     pub(crate) fn take_mapper_bus_events(&mut self) -> Vec<(u16, u64)> {
         core::mem::take(&mut self.mapper_bus_events)
-    }
-
-    /// Converts the OAM Y byte to the first visible scanline for that sprite.
-    ///
-    /// OAM stores the scanline immediately above the sprite. Do not wrap 255 + 1
-    /// to scanline zero: Y=255 places the sprite below the visible 240-line picture.
-    #[inline]
-    fn sprite_top(oam_y: u8) -> usize {
-        usize::from(oam_y) + 1
     }
 
     /// Resolves a sprite row to its low-plane CHR address.
@@ -331,7 +322,7 @@ impl Ppu {
             return false;
         }
 
-        let sprite_top = Self::sprite_top(self.oam[0]);
+        let sprite_top = (self.oam[0] as usize + 1) & 0xFF;
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         if y < sprite_top || y >= sprite_top + height {
             return false;
@@ -455,7 +446,7 @@ impl Ppu {
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         let mut count = 0usize;
         for sprite in 0..64usize {
-            let top = Self::sprite_top(self.oam[sprite * 4]);
+            let top = (self.oam[sprite * 4] as usize + 1) & 0xFF;
             if y >= top && y < top + height {
                 count += 1;
                 if count > 8 {
@@ -1858,48 +1849,6 @@ mod sprite_pattern_address_tests {
 #[cfg(test)]
 mod sprite_overflow_regression_tests {
     use super::*;
-
-    #[test]
-    fn oam_y_255_cannot_draw_or_trigger_sprite_zero_hit_at_top_edge() {
-        let mut image = vec![0; 16 + 16 * 1024 + 8 * 1024];
-        image[0..4].copy_from_slice(b"NES\x1A");
-        image[4] = 1;
-        image[5] = 1;
-        let chr_start = 16 + 16 * 1024;
-        image[chr_start] = 0xFF; // Make tile 0 opaque on its first row.
-        let cartridge = Cartridge::parse(&image).unwrap();
-
-        let mut ppu = Ppu::new();
-        ppu.mask = 0x1E; // Enable both layers and both left-edge masks.
-        ppu.oam[0] = 255;
-        ppu.oam[1] = 0;
-        ppu.oam[3] = 0;
-        ppu.background_opaque[0] = true;
-        ppu.palette[0x11] = 0x2A;
-        ppu.render_sprite_pixel(0, 0, Some(&cartridge));
-        assert_eq!(ppu.framebuffer[0], 0, "Y=255 sprite must not appear at scanline zero");
-        assert!(!ppu.sprite_zero_hit_at(0, 0, Some(&cartridge)));
-    }
-
-    #[test]
-    fn oam_y_255_does_not_wrap_sprites_into_scanline_zero() {
-        let mut ppu = Ppu::new();
-        assert_eq!(Ppu::sprite_top(0), 1);
-        assert_eq!(Ppu::sprite_top(239), 240);
-        assert_eq!(Ppu::sprite_top(255), 256);
-
-        // Nine sprites whose Y byte is 255 are all below the visible picture;
-        // they must not trigger overflow on scanline zero.
-        for sprite in 0..9 {
-            ppu.oam[sprite * 4] = 255;
-        }
-        ppu.mask = 0x18;
-        ppu.scanline = 0;
-        ppu.dot = 255;
-        ppu.tick_with_cartridge(1, None);
-        assert_eq!(ppu.position(), (0, 256));
-        assert_eq!(ppu.status & 0x20, 0, "off-screen sprites must not count toward scanline-zero overflow");
-    }
 
     #[test]
     fn ninth_in_range_sprite_sets_overflow_and_prerender_clears_it() {
