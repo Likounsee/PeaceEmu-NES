@@ -150,8 +150,21 @@ impl Nrom {
         if trainer_len != 0 {
             prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
         }
-        let chr_is_ram = chr_len == 0;
-        let chr = if chr_is_ram { vec![0; CHR_BANK_LEN] } else { image[chr_start..chr_start + chr_len].to_vec() };
+        // Legacy iNES conventionally supplies 8 KiB of CHR-RAM when CHR-ROM
+        // is absent. NES 2.0 instead declares CHR-RAM and CHR-NVRAM in byte 11;
+        // a zero shift means that no such memory is present.
+        let declared_chr_ram_len = if nes2 {
+            nes2_ram_size(image[11] & 0x0F).saturating_add(nes2_ram_size(image[11] >> 4))
+        } else {
+            CHR_BANK_LEN
+        };
+        let chr_ram_len = declared_chr_ram_len.min(CHR_BANK_LEN);
+        let chr_is_ram = chr_len == 0 && chr_ram_len > 0;
+        let chr = if chr_len != 0 {
+            image[chr_start..chr_start + chr_len].to_vec()
+        } else {
+            vec![0; chr_ram_len]
+        };
         let mirroring = if image[6] & 0x08 != 0 { Mirroring::FourScreen }
             else if image[6] & 0x01 != 0 { Mirroring::Vertical }
             else { Mirroring::Horizontal };
@@ -185,13 +198,13 @@ impl Nrom {
 
     /// Reads a byte from PPU pattern memory.
     pub fn ppu_read(&self, address: u16) -> Option<u8> {
-        if address >= 0x2000 { return None; }
+        if address >= 0x2000 || self.chr.is_empty() { return None; }
         Some(self.chr[address as usize % self.chr.len()])
     }
 
     /// Writes pattern memory only when it is CHR-RAM.
     pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
-        if address >= 0x2000 || !self.chr_is_ram { return false; }
+        if address >= 0x2000 || !self.chr_is_ram || self.chr.is_empty() { return false; }
         let index = address as usize % self.chr.len();
         self.chr[index] = value;
         true
@@ -3091,6 +3104,7 @@ mod nes2_nrom_tests {
     #[test]
     fn nes2_nrom_with_chr_ram_loads_and_mirrors_16k_prg() {
         let mut image = nes2_nrom(1, 0);
+        image[11] = 7; // 8 KiB of volatile CHR-RAM (64 << 7).
         image[INES_HEADER_LEN..INES_HEADER_LEN + PRG_BANK_LEN].fill(0x5A);
         let cart = Cartridge::parse(&image).unwrap();
         assert!(matches!(cart, Cartridge::Nrom(_)));
@@ -3109,6 +3123,26 @@ mod nes2_nrom_tests {
         assert_eq!(cart.cpu_read(0xC000), Some(0));
         assert_eq!(cart.ppu_read(0x123), Some(0xA6));
         assert!(!cart.chr_is_ram());
+    }
+
+    #[test]
+    fn nes2_nrom_respects_declared_absence_of_chr_ram() {
+        let image = nes2_nrom(1, 0);
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert!(!cart.chr_is_ram());
+        assert_eq!(cart.ppu_read(0x0000), None);
+        assert!(!cart.ppu_write(0x0000, 0xA5));
+    }
+
+    #[test]
+    fn nes2_nrom_maps_declared_small_chr_ram_by_mirroring() {
+        let mut image = nes2_nrom(1, 0);
+        image[11] = 1; // 128 bytes of volatile CHR-RAM.
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.ppu_read(0x0000), Some(0));
+        assert!(cart.ppu_write(0x0080, 0xA5));
+        assert_eq!(cart.ppu_read(0x0000), Some(0xA5));
+        assert_eq!(cart.ppu_read(0x0080), Some(0xA5));
     }
 
     #[test]
