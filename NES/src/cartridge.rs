@@ -4318,7 +4318,7 @@ mod bus_conflict_regression_tests {
         let prg_banks = 4usize;
         let chr_banks = 1usize;
         let mut image = vec![0; INES_HEADER_LEN + prg_banks * PRG_BANK_LEN + chr_banks * CHR_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = prg_banks as u8;
         image[5] = chr_banks as u8;
         image[6] = 0x20;
@@ -4336,7 +4336,7 @@ mod bus_conflict_regression_tests {
         let prg_len = 2 * PRG_BANK_LEN;
         let chr_banks = 4usize;
         let mut image = vec![0; INES_HEADER_LEN + prg_len + chr_banks * CHR_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 2;
         image[5] = chr_banks as u8;
         image[6] = 0x30;
