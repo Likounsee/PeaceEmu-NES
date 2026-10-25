@@ -661,7 +661,9 @@ impl Gxrom {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         let chr_len = image[5] as usize * CHR_BANK_LEN;
-        if chr_len == 0 || chr_len > 8 * CHR_BANK_LEN {
+        // The legacy GxROM register exposes only two CHR bank bits, so
+        // at most four 8 KiB banks are addressable on this board.
+        if chr_len == 0 || chr_len > 4 * CHR_BANK_LEN {
             return Err(CartridgeError::InvalidChrSize(chr_len));
         }
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
@@ -2316,6 +2318,7 @@ mod gxrom_tests {
         assert!(matches!(Cartridge::parse(&gxrom_image(1, 1)), Err(CartridgeError::InvalidPrgSize(_))));
         assert!(matches!(Cartridge::parse(&gxrom_image(2, 0)), Err(CartridgeError::InvalidChrSize(0))));
         assert!(matches!(Cartridge::parse(&gxrom_image(10, 1)), Err(CartridgeError::InvalidPrgSize(_))));
+        assert!(matches!(Cartridge::parse(&gxrom_image(2, 5)), Err(CartridgeError::InvalidChrSize(_))));
         let mut image = gxrom_image(2, 1);
         image.pop();
         assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::TruncatedImage { .. })));
