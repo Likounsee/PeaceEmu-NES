@@ -3232,3 +3232,23 @@ mod ppudata_palette_buffer_regressions {
         assert_eq!(ppu.cpu_read_register(7, None), 0x5A, "the next non-palette read returns the refilled buffer");
     }
 }
+
+
+#[cfg(test)]
+mod ppudata_palette_mirror_regressions {
+    use super::*;
+
+    #[test]
+    fn palette_alias_read_refills_buffer_from_corresponding_nametable_address() {
+        let mut ppu = Ppu::new();
+        ppu.open_bus = 0x80;
+        ppu.mem_write(0x2F10, 0x71, None);
+        ppu.mem_write(0x3F00, 0x23, None);
+        ppu.v = 0x3F10; // Mirrors universal background entry $3F00.
+
+        assert_eq!(ppu.cpu_read_register(7, None), 0xA3);
+        assert_eq!(ppu.read_buffer, 0x71, "the hidden buffer fetch must use $2F10, not palette RAM");
+        ppu.v = 0x2000;
+        assert_eq!(ppu.cpu_read_register(7, None), 0x71);
+    }
+}
