@@ -2469,6 +2469,45 @@ mod mmc3_tests {
         assert_eq!(cart.cpu_read(0xE000), Some(7), "last 8 KiB bank remains fixed in both modes");
     }
 
+
+    #[test]
+    fn mapper_4_a12_low_duration_is_measured_from_first_low_dot() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        cart.cpu_write(0xC000, 0);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+
+        cart.observe_ppu_address(0x0000, 100);
+        cart.observe_ppu_address(0x0000, 104);
+        cart.observe_ppu_address(0x0000, 107);
+        cart.observe_ppu_address(0x1000, 107);
+        assert!(!cart.irq_pending(), "repeated low observations must not manufacture eight low dots");
+
+        cart.observe_ppu_address(0x0000, 108);
+        cart.observe_ppu_address(0x0000, 111);
+        cart.observe_ppu_address(0x1000, 116);
+        assert!(!cart.irq_pending(), "five elapsed low dots are below the MMC3 filter threshold");
+
+        cart.observe_ppu_address(0x0000, 117);
+        cart.observe_ppu_address(0x1000, 125);
+        assert!(cart.irq_pending(), "exactly eight elapsed low dots qualify the next rising edge");
+    }
+
+    #[test]
+    fn mapper_4_a12_timestamp_regression_cannot_underflow_low_duration() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        cart.cpu_write(0xC000, 0);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+
+        cart.observe_ppu_address(0x0000, 50);
+        cart.observe_ppu_address(0x1000, 40);
+        assert!(!cart.irq_pending(), "a non-monotonic timestamp must not pass the low-time filter");
+        cart.observe_ppu_address(0x0000, 60);
+        cart.observe_ppu_address(0x1000, 68);
+        assert!(cart.irq_pending(), "a subsequent valid eight-dot interval still clocks IRQ");
+    }
+
     #[test]
     fn mapper_4_a12_edges_do_not_clock_when_irq_is_disabled() {
         let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
