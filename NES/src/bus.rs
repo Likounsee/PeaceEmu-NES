@@ -934,7 +934,7 @@ mod dmc_irq_bus_integration_regressions {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
-        image[16 + 0x0000] = 0xA5;
+        image[16] = 0xA5;
 
         let mut bus = CpuBus::new();
         bus.insert_cartridge(Cartridge::parse(&image).unwrap());
