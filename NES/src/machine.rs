@@ -916,7 +916,7 @@ mod dmc_clock_integration_regressions {
         let before_ppu = machine.ppu_position();
         machine.clock_devices_for_cpu_cycles(1);
 
-        assert_eq!(machine.ppu_position(), (0, 15),
+        assert_eq!(machine.ppu_position(), (261, 15),
             "one elapsed CPU cycle plus four DMC stall cycles must advance fifteen PPU dots from pre-render");
         assert_ne!(machine.ppu_position(), before_ppu,
             "the DMC stall must advance the same PPU timeline as ordinary CPU cycles");
