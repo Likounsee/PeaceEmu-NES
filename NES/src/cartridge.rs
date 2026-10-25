@@ -2485,7 +2485,7 @@ mod mmc3_tests {
 
         cart.observe_ppu_address(0x0000, 108);
         cart.observe_ppu_address(0x0000, 111);
-        cart.observe_ppu_address(0x1000, 116);
+        cart.observe_ppu_address(0x1000, 113);
         assert!(!cart.irq_pending(), "five elapsed low dots are below the MMC3 filter threshold");
 
         cart.observe_ppu_address(0x0000, 117);
