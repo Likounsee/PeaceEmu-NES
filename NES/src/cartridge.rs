@@ -4706,3 +4706,33 @@ mod mmc3_a12_exact_boundary_regressions {
         assert!(cart.irq_pending(), "eight low dots must clock MMC3 IRQ");
     }
 }
+
+
+#[cfg(test)]
+mod mmc3_irq_counter_sequence_regressions {
+    use super::*;
+
+    fn image() -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 2;
+        image[6] = 0x40;
+        image
+    }
+
+    #[test]
+    fn nonzero_irq_latch_reaches_zero_on_the_following_qualified_edge() {
+        let mut cart = Cartridge::parse(&image()).unwrap();
+        cart.cpu_write(0xC000, 1);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+
+        cart.observe_ppu_address(0x0000, 10);
+        cart.observe_ppu_address(0x1000, 18); // Reload counter with latch 1.
+        assert!(!cart.irq_pending());
+
+        cart.observe_ppu_address(0x0000, 19);
+        cart.observe_ppu_address(0x1000, 27); // Decrement 1 -> 0.
+        assert!(cart.irq_pending(), "the IRQ asserts when the counter decrements to zero");
+    }
+}
