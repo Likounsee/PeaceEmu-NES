@@ -2224,6 +2224,47 @@ mod sprite_pixel_regression_tests {
     }
 
     #[test]
+    fn oam_y_ff_places_sprite_on_visible_scanline_zero() {
+        assert_eq!(sprite_top(0xFF), 0);
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x10;
+        ppu.oam[0] = 0xFF;
+        ppu.oam[1] = 0;
+        ppu.oam[3] = 12;
+        ppu.palette[0x11] = 0x2A;
+        let mut image = vec![0; 16 + 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        image[16 + 16_384] = 0b1000_0000;
+        let cart = Cartridge::parse(&image).unwrap();
+        ppu.render_sprite_pixel(12, 0, Some(&cart));
+        assert_eq!(ppu.framebuffer[12], ppu.output_color(0x2A));
+    }
+
+    #[test]
+    fn opaque_high_priority_sprite_blocks_lower_priority_sprite_even_behind_background() {
+        let mut image = vec![0; 16 + 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        let chr = 16 + 16_384;
+        image[chr] = 0b1000_0000; // Tile 0: opaque at left edge.
+        image[chr + 16] = 0b1000_0000; // Tile 1: opaque at left edge too.
+        let cart = Cartridge::parse(&image).unwrap();
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x14; // Sprites enabled.
+        ppu.oam[0..4].copy_from_slice(&[0, 0, 0x20, 24]); // First sprite behind BG.
+        ppu.oam[4..8].copy_from_slice(&[0, 1, 0, 24]); // Second sprite would otherwise show.
+        ppu.background_opaque[24] = true;
+        ppu.palette[0x15] = 0x12;
+        ppu.palette[0x11] = 0x2A;
+        ppu.framebuffer[24] = ppu.output_color(0x0F);
+        ppu.render_sprite_pixel(24, 0, Some(&cart));
+        assert_eq!(ppu.framebuffer[24], ppu.output_color(0x0F));
+    }
+
+    #[test]
     fn sprite_zero_hit_is_suppressed_at_x_255() {
         let mut ppu = Ppu::new();
         ppu.mask = 0x1E;
