@@ -24,7 +24,7 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 - **APU/DMC** : tests de propriété du sample buffer, de livraison DMA sans double consommation et de séparation des IRQ frame/DMC, y compris lors de l'inhibition immédiate via `$4017`.
 - **MMC3** : test complémentaire garantissant qu'un niveau A12 maintenu à 1 ne redéclenche pas l'IRQ ; un nouveau déclenchement exige un retour bas suffisamment long puis un vrai front montant qualifié.
 - **Séquenceur APU** : tests du délai de reset de `$4017` selon la parité CPU (3/4 cycles), de l'inhibition immédiate de l'IRQ frame et du comportement de lecture de statut.
-- **Bus/machine** : test du fetch DMC depuis la ROM via le bus CPU et des cycles de blocage qui font progresser l'horloge PPU partagée.
+- **Bus/machine** : tests du fetch DMC depuis la ROM, du blocage sans double DMA lorsque le sample buffer est plein et de l'indépendance des IRQ MMC3/DMC sur la ligne IRQ CPU.
 - **PPU/NMI/scroll** : régressions pour la suppression de VBlank par `$2002`, l'activation de NMI pendant VBlank et les retours de coarse-Y (ligne 29 : changement de nametable ; ligne 31 : pas de changement).
 - **Derniers tests en parallèle** : le bus CPU vérifie désormais la propagation de l'IRQ terminal DMC et son acquittement via `$4015` ; le PPU teste directement les trois branches de l'incrément de Y (fine-Y, coarse-Y 29 et coarse-Y 31), y compris la conservation des bits de scroll indépendants.
 - **MMC3** : tests du filtre A12 à sept/huit dots, du rebasage après reset PPU, de l'acquittement/réactivation IRQ, du latch non nul, de `$C001` et du maintien du rechargement lorsqu'un front est filtré.
