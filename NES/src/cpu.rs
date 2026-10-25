@@ -1783,3 +1783,32 @@ mod indexed_read_and_decimal_regressions {
         assert_eq!(cpu.state().a, 0x0A, "the NES 2A03 does not perform BCD arithmetic");
     }
 }
+
+
+#[cfg(test)]
+mod indexed_indirect_cycle_regressions {
+    use super::*;
+
+    #[test]
+    fn indirect_indexed_load_adds_a_cycle_only_on_page_crossing() {
+        let mut bus = CpuBus::new();
+        bus.write(0x0600, 0xB1); // LDA ($20),Y
+        bus.write(0x0601, 0x20);
+        bus.write(0x0020, 0xFF);
+        bus.write(0x0021, 0x06);
+        bus.write(0x06FF, 0x34);
+        bus.write(0x0700, 0x56);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        cpu.state.y = 0;
+        let same_page = cpu.step(&mut bus).unwrap();
+        assert_eq!(same_page.cycles, 5);
+        assert_eq!(cpu.state().a, 0x34);
+
+        cpu.set_pc(0x0600);
+        cpu.state.y = 1;
+        let crossed = cpu.step(&mut bus).unwrap();
+        assert_eq!(crossed.cycles, 6);
+        assert_eq!(cpu.state().a, 0x56);
+    }
+}
