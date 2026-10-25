@@ -803,3 +803,34 @@ mod instruction_bus_timing_regressions {
         assert_eq!(bus.ppu_position(), (261, 0));
     }
 }
+
+#[cfg(test)]
+mod added_controller_regression_tests {
+    use super::*;
+
+    #[test]
+    fn controller_ports_latch_and_shift_independently() {
+        let mut bus = CpuBus::new();
+        bus.set_controller_state(0, 0b0000_0101);
+        bus.set_controller_state(1, 0b0000_1010);
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+
+        let port_one: Vec<u8> = (0..4).map(|_| bus.read(0x4016) & 1).collect();
+        let port_two: Vec<u8> = (0..4).map(|_| bus.read(0x4017) & 1).collect();
+        assert_eq!(port_one, [1, 0, 1, 0]);
+        assert_eq!(port_two, [0, 1, 0, 1]);
+    }
+
+    #[test]
+    fn invalid_controller_port_does_not_panic_or_mutate_existing_ports() {
+        let mut bus = CpuBus::new();
+        bus.set_controller_state(0, 1);
+        bus.set_controller_state(1, 2);
+        bus.set_controller_state(usize::MAX, 0xFF);
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+        assert_eq!(bus.read(0x4016) & 1, 1);
+        assert_eq!(bus.read(0x4017) & 1, 0);
+    }
+}
