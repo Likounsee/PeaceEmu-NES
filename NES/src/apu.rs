@@ -191,7 +191,12 @@ impl Apu {
                     self.length_counters[channel] = LENGTH_TABLE[(value >> 3) as usize];
                 }
                 match channel {
-                    0 | 1 => self.pulse_envelope_start[channel] = true,
+                    0 | 1 => {
+                        // Writing the high timer register restarts the pulse duty
+                        // sequencer at its first step, as on the 2A03.
+                        self.pulse_sequence[channel] = 0;
+                        self.pulse_envelope_start[channel] = true;
+                    }
                     2 => self.triangle_reload_flag = true,
                     _ => {},
                 }
@@ -1337,5 +1342,33 @@ mod frame_and_dmc_irq_regressions {
         assert!(apu.irq_pending(), "reading status must not acknowledge DMC IRQ");
         apu.write(0x4010, 0x00);
         assert!(!apu.irq_pending(), "clearing DMC IRQ enable also clears the pending DMC IRQ");
+    }
+}
+
+
+#[cfg(test)]
+mod pulse_sequencer_restart_regressions {
+    use super::*;
+
+    #[test]
+    fn writing_pulse_high_timer_restarts_each_duty_sequencer() {
+        let mut apu = Apu::new();
+        apu.pulse_sequence = [5, 7];
+
+        apu.write(0x4003, 0xF8);
+        assert_eq!(apu.pulse_sequence[0], 0, "pulse 1 high timer write restarts its duty sequence");
+        assert_eq!(apu.pulse_sequence[1], 7, "pulse 1 must not disturb pulse 2");
+
+        apu.write(0x4007, 0xF8);
+        assert_eq!(apu.pulse_sequence[1], 0, "pulse 2 high timer write restarts its duty sequence");
+    }
+
+    #[test]
+    fn pulse_high_timer_write_restarts_sequence_even_when_channel_is_disabled() {
+        let mut apu = Apu::new();
+        apu.pulse_sequence[0] = 6;
+        apu.write(0x4003, 0xF8);
+        assert_eq!(apu.pulse_sequence[0], 0);
+        assert_eq!(apu.length_counter(0), Some(0), "disabled channel must not load its length counter");
     }
 }
