@@ -348,7 +348,7 @@ mod audio_rate_noop_regressions {
 
     fn looping_rom_for_audio_rate_test() -> Vec<u8> {
         let mut rom = vec![0; 16 + 16 * 1024];
-        rom[..4].copy_from_slice(b"NES\\x1A");
+        rom[..4].copy_from_slice(&[0x4E, 0x45, 0x53, 0x1A]);
         rom[4] = 1;
         rom[16..19].copy_from_slice(&[0x4C, 0x00, 0x80]);
         rom[16 + 0x3FFC] = 0x00;
