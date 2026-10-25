@@ -3110,6 +3110,25 @@ mod camerica_tests {
     }
 
     #[test]
+    fn mapper_71_nes2_rejects_unsupported_submappers() {
+        let mut image = camerica_image(4);
+        image[7] = 0x48;
+        image[8] = 0x10; // Submapper 1 is not implemented.
+        image[9] = 0;
+        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
+    }
+
+    #[test]
+    fn mapper_71_nes2_rejects_ram_larger_than_the_cpu_window() {
+        let mut image = camerica_image(4);
+        image[7] = 0x48;
+        image[8] = 0;
+        image[9] = 0;
+        image[10] = 8; // 16 KiB volatile RAM, beyond this board implementation.
+        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
+    }
+
+    #[test]
     fn mapper_71_rejects_chr_rom_and_invalid_prg_sizes() {
         assert!(matches!(Cartridge::parse(&camerica_image(1)), Err(CartridgeError::InvalidPrgSize(_))));
         let mut image = camerica_image(4);
