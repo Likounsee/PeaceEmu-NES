@@ -1303,3 +1303,39 @@ mod pcm_queue_regressions {
     }
 
 }
+
+
+#[cfg(test)]
+mod frame_and_dmc_irq_regressions {
+    use super::*;
+
+    #[test]
+    fn frame_irq_inhibit_clears_pending_irq_immediately() {
+        let mut apu = Apu::new();
+        apu.tick_cpu_cycles(14_915);
+        assert!(apu.irq_pending(), "four-step frame sequence should raise frame IRQ");
+
+        apu.write(0x4017, 0x40); // Inhibit frame IRQ.
+        assert!(!apu.irq_pending(), "setting inhibit must clear an already-pending frame IRQ immediately");
+        apu.tick_cpu_cycles(14_915);
+        assert!(!apu.irq_pending(), "frame IRQ must stay suppressed while inhibit is set");
+    }
+
+    #[test]
+    fn dmc_terminal_irq_is_raised_only_after_final_sample_byte() {
+        let mut apu = Apu::new();
+        apu.write(0x4010, 0x80); // IRQ enabled, loop disabled.
+        apu.write(0x4012, 0x00);
+        apu.write(0x4013, 0x00); // One-byte sample.
+        apu.write(0x4015, 0x10);
+
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xC000));
+        assert!(!apu.irq_pending(), "requesting the final byte is not itself terminal completion");
+        apu.supply_dmc_byte(0xA5);
+        assert!(apu.irq_pending(), "the last byte raises DMC IRQ when IRQ is enabled");
+        assert_eq!(apu.read(0x4015) & 0x80, 0x80);
+        assert!(apu.irq_pending(), "reading status must not acknowledge DMC IRQ");
+        apu.write(0x4010, 0x00);
+        assert!(!apu.irq_pending(), "clearing DMC IRQ enable also clears the pending DMC IRQ");
+    }
+}
