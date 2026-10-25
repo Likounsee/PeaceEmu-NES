@@ -38,7 +38,7 @@ La liste ci-dessous décrit des familles de comportements implémentées localem
 | Zone | Adaptations présentes | Limites importantes |
 |---|---|---|
 | CPU | LAX/SAX, ANC/ALR/ARR/AXS, opérations composites SLO/RLA/SRE/RRA/DCP/ISC, NOP avec lectures, certains stores instables AHX/TAS/SHX/SHY | Pas d'exécution complète du bus à chaque cycle ; certains opcodes instables sont des approximations |
-| Cartouches | NROM, MMC1, UxROM, CNROM, MMC3, MMC2, AxROM, CPROM, GxROM, Color Dreams, Camerica, BNROM et UNROM-512, plus mapper 15 | Couverture limitée aux variantes et tailles explicitement prises en charge ; NES 2.0 global et tous les bus conflicts non pris en charge |
+| Cartouches | NROM, MMC1, UxROM, CNROM, MMC3, MMC2, MMC4, AxROM, CPROM, GxROM, Color Dreams, Camerica, BNROM et UNROM-512, plus mapper 15 | Couverture limitée aux variantes et tailles explicitement prises en charge ; NES 2.0 global et tous les bus conflicts non pris en charge |
 | PPU | Alias de palettes, mirroring nametable, progression de scanline/dot, NMI et certains événements de scroll | Pipeline de pixels/fetchs par dot incomplète ; IRQ MMC3 encore approximée |
 | APU | Séquenceur de frame, enveloppes/sweep/compteur linéaire approximatifs, sortie PCM et DMC initial | Filtres, resampling hôte et arbitrage DMC cycle-exact non terminés |
 
