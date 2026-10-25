@@ -21,8 +21,8 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 
 ## Dernière itération
 
-- **PPU/PPUDATA** : test de lecture palette immédiate, conservation des bits hauts du bus ouvert et rechargement du buffer avec l'adresse miroir `$2Fxx`.
-- **MMC3/PRG-RAM** : tests de l'indépendance entre activation RAM et write-protect, incluant la conservation des données pendant une écriture protégée.
+- **PPU/PPUDATA** : test supplémentaire de l'alias palette `$3F10` → `$3F00` et du rechargement du buffer différé depuis l'adresse nametable correspondante `$2F10`.
+- **MMC3/PRG-RAM** : le test d'activation/protection démarre désormais avec un état explicite (RAM activée et inscriptible), puis vérifie désactivation, protection et réactivation sans dépendre implicitement des valeurs de démarrage.
 - **APU/DMC** : les tests couvrent le buffer d'échantillon, les stalls DMA, l'indépendance entre IRQ frame/DMC/mapper et la lecture DMC à travers une banque PRG MMC3 sélectionnée.
 - **Session audio** : la documentation précise désormais que changer réellement de fréquence réinitialise la file PCM, tandis que réappliquer la fréquence courante est un no-op ; un test vérifie le contrat de configuration côté hôte.
 - **PPU/sprite-zero** : les tests couvrent la limite du dernier pixel visible (hit autorisé à X=254, interdit à X=255), l'indépendance vis-à-vis de la priorité visuelle et l'alignement du hit avec le retournement horizontal du motif du sprite.
