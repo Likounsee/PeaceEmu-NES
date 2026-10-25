@@ -214,7 +214,7 @@ mod tests {
 
     #[test]
     fn battery_ram_requires_battery_flag_and_survives_console_reset() {
-        let mut ordinary = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
+        let ordinary = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
         assert!(!ordinary.has_battery_backed_ram());
         assert!(matches!(ordinary.save_battery_ram(), Err(NesSessionError::Machine(MachineError::NoBatteryRam))));
 
