@@ -1088,12 +1088,14 @@ mod tests {
         let mut cartridge = Cartridge::parse(&image).unwrap();
         ppu.mask = 0x1F; // Background, sprites, both left columns and grayscale.
         ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x0001, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x0011, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x3F01, 0x2B, Some(&mut cartridge));
         ppu.mem_write(0x3F11, 0x17, Some(&mut cartridge));
         ppu.oam[0..4].copy_from_slice(&[0, 1, 0, 16]);
         ppu.render_frame(Some(&cartridge));
-        assert_eq!(ppu.framebuffer()[16], 0x10);
+        assert_eq!(ppu.framebuffer()[256 + 16], 0x10);
         assert_eq!(ppu.framebuffer()[0], 0x20);
     }
 
@@ -1147,7 +1149,7 @@ mod tests {
         let mut cartridge = Cartridge::parse(&image).unwrap();
         cartridge.ppu_write(16, 0xFF); // Sprite tile 1: opaque first row.
         let mut ppu = Ppu::new();
-        ppu.scanline = 0;
+        ppu.scanline = 1;
         ppu.dot = 0;
         ppu.mask = 0x14; // Sprites enabled, including the leftmost eight pixels.
         ppu.oam[0..4].copy_from_slice(&[0, 1, 0, 0]);
@@ -1157,8 +1159,8 @@ mod tests {
         ppu.palette[0x11] = 0x22;
         ppu.tick_with_cartridge(4, Some(&cartridge));
 
-        assert_eq!(&ppu.framebuffer()[0..4], &[0x21; 4]);
-        assert_eq!(&ppu.framebuffer()[4..8], &[0x22; 4]);
+        assert_eq!(&ppu.framebuffer()[256..260], &[0x21; 4]);
+        assert_eq!(&ppu.framebuffer()[260..264], &[0x22; 4]);
     }
 
     #[test]
@@ -1260,7 +1262,7 @@ mod tests {
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap();
         ppu.mask = 0x1E;
-        ppu.scanline = 0;
+        ppu.scanline = 1;
         ppu.dot = 0;
         ppu.frame_scroll_valid = true;
         ppu.frame_scroll_v = 0;
@@ -1292,7 +1294,7 @@ mod tests {
         ppu.mem_write(0x2000, 0x00, Some(&mut cartridge));
         ppu.render_frame(Some(&cartridge));
         assert_ne!(ppu.status & 0x40, 0);
-        assert_eq!(ppu.framebuffer()[0], 0x30);
+        assert_eq!(ppu.framebuffer()[256], 0x30);
     }
 
     #[test]
@@ -1305,7 +1307,9 @@ mod tests {
 
         ppu.mask = 0x1E; // Background/sprites and both left-edge pixels enabled.
         ppu.mem_write(0x0000, 0x80, Some(&mut cartridge)); // BG tile 0, pixel x=0.
+        ppu.mem_write(0x0001, 0x80, Some(&mut cartridge)); // Same pixel on the next tile row.
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge)); // Sprite tile 1, pixel x=0.
+        ppu.mem_write(0x0011, 0x80, Some(&mut cartridge));
         ppu.oam[0..4].copy_from_slice(&[0, 1, 0, 0]); // Sprite 0 begins at screen (0, 1).
 
         // Leave the pre-render line. The hit must not be delayed until dot 256.
@@ -1363,8 +1367,8 @@ mod tests {
 
         ppu.render_frame(Some(&cartridge));
 
-        assert_eq!(ppu.framebuffer()[16], 0x2A);
-        assert_eq!(ppu.framebuffer()[16 + 8 * 256], 0x2A);
+        assert_eq!(ppu.framebuffer()[256 + 16], 0x2A);
+        assert_eq!(ppu.framebuffer()[16 + 9 * 256], 0x2A);
     }
 
     #[test]
@@ -1383,8 +1387,8 @@ mod tests {
 
         ppu.render_frame(Some(&cartridge));
 
-        assert_eq!(ppu.framebuffer()[16], 0x2C, "horizontal flip moves the source rightmost pixel to the left");
-        assert_eq!(ppu.framebuffer()[23], 0x0F, "the opposite output edge remains transparent");
+        assert_eq!(ppu.framebuffer()[256 + 16], 0x2C, "horizontal flip moves the source rightmost pixel to the left");
+        assert_eq!(ppu.framebuffer()[256 + 23], 0x0F, "the opposite output edge remains transparent");
     }
 
     #[test]
@@ -1404,8 +1408,8 @@ mod tests {
 
         ppu.render_frame(Some(&cartridge));
 
-        assert_eq!(ppu.framebuffer()[16], 0x2B);
-        assert_eq!(ppu.framebuffer()[16 + 256], 0x0F);
+        assert_eq!(ppu.framebuffer()[256 + 16], 0x2B);
+        assert_eq!(ppu.framebuffer()[16 + 2 * 256], 0x0F);
     }
 
     #[test]
@@ -1418,7 +1422,9 @@ mod tests {
         // Background is enabled but clipped on the left; sprites are enabled and visible there.
         ppu.mask = 0x1C;
         ppu.mem_write(0x0000, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x0001, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge));
+        ppu.mem_write(0x0011, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x3F00, 0x0F, Some(&mut cartridge));
         ppu.mem_write(0x3F01, 0x21, Some(&mut cartridge));
         ppu.mem_write(0x3F11, 0x30, Some(&mut cartridge));
@@ -1426,8 +1432,8 @@ mod tests {
 
         ppu.render_frame(Some(&cartridge));
 
-        assert_eq!(ppu.framebuffer()[0], 0x30, "sprite pixel must remain visible in the leftmost eight pixels");
-        assert_eq!(ppu.framebuffer()[1], 0x0F, "transparent sprite pixels show the clipped background color");
+        assert_eq!(ppu.framebuffer()[256], 0x30, "sprite pixel must remain visible in the leftmost eight pixels");
+        assert_eq!(ppu.framebuffer()[257], 0x0F, "transparent sprite pixels show the clipped background color");
         assert_eq!(ppu.status & 0x40, 0, "sprite-zero hit is suppressed where the background is clipped");
     }
 
@@ -1451,7 +1457,7 @@ mod tests {
 
         ppu.render_frame(Some(&cartridge));
 
-        assert_eq!(ppu.framebuffer()[16], 0x30);
+        assert_eq!(ppu.framebuffer()[256 + 16], 0x30);
     }
 
     #[test]
@@ -1487,12 +1493,14 @@ mod tests {
         let mut cartridge = Cartridge::parse(&image).unwrap();
         ppu.mask = 0x1E;
         ppu.mem_write(0x0000, 0x80, Some(&mut cartridge)); // Background tile zero.
+        ppu.mem_write(0x0001, 0x80, Some(&mut cartridge)); // Row rendered at scanline one.
         ppu.mem_write(0x0010, 0x80, Some(&mut cartridge)); // Sprite tile one.
+        ppu.mem_write(0x0011, 0x80, Some(&mut cartridge));
         ppu.mem_write(0x3F01, 0x22, Some(&mut cartridge));
         ppu.mem_write(0x3F11, 0x30, Some(&mut cartridge));
         ppu.oam[0..4].copy_from_slice(&[0, 1, 0x20, 16]);
         ppu.render_frame(Some(&cartridge));
-        assert_eq!(ppu.framebuffer()[16], 0x22);
+        assert_eq!(ppu.framebuffer()[256 + 16], 0x22);
     }
 
     #[test]
