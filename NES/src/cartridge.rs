@@ -3051,6 +3051,27 @@ mod mmc3_tests {
     }
 
     #[test]
+    fn mapper_4_irq_disable_acknowledges_pending_and_reenable_waits_for_next_edge() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        cart.cpu_write(0xC000, 0);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+
+        cart.observe_ppu_address(0x0000, 0);
+        cart.observe_ppu_address(0x1000, 8);
+        assert!(cart.irq_pending());
+
+        cart.cpu_write(0xE000, 0);
+        assert!(!cart.irq_pending(), "writing $E000 must acknowledge a pending IRQ");
+        cart.cpu_write(0xE001, 0);
+        assert!(!cart.irq_pending(), "enabling IRQ must not immediately restore the old pending state");
+
+        cart.observe_ppu_address(0x0000, 9);
+        cart.observe_ppu_address(0x1000, 17);
+        assert!(cart.irq_pending(), "a new qualified A12 edge may assert IRQ again");
+    }
+
+    #[test]
     fn mapper_4_irq_filter_does_not_count_reset_high_as_a_low_interval() {
         let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
         cart.cpu_write(0xC000, 0);
