@@ -612,7 +612,7 @@ impl Mapper87 {
     /// Parses a legacy iNES mapper-87 image with 32 KiB PRG and 32 KiB CHR-ROM.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
         if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
         let mapper = ((image[6] >> 4) as u16)
             | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
@@ -3959,7 +3959,7 @@ mod mapper87_tests {
 
     fn image() -> Vec<u8> {
         let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN + 4 * CHR_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 2;
         image[5] = 4;
         image[6] = 0x70; // Mapper 87 low nibble.
