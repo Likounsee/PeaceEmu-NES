@@ -1909,7 +1909,7 @@ mod ppu_nametable_bus_regression_tests {
     use super::*;
 
     fn vertical_mirroring_cartridge() -> Cartridge {
-        let mut image = vec![0; INES_HEADER_LEN + PRG_BANK_LEN];
+        let mut image = vec![0; 16 + 16 * 1024];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[6] = 0x01; // Vertical nametable mirroring.
