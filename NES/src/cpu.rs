@@ -1668,4 +1668,29 @@ mod brk_stack_regression_tests {
         assert_eq!(bus.read(0x01FB) & (flags::BREAK | flags::UNUSED), flags::BREAK | flags::UNUSED);
         assert_ne!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
     }
+    #[test]
+    fn brk_padding_byte_read_advances_controller_serial_port() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFE] = 0x00;
+        image[16 + 0x3FFF] = 0x90;
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
+        bus.set_controller_state(0, 0b0000_0011);
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+
+        // $4015 supplies BRK as the opcode; the padding byte is read from $4016.
+        bus.write(0x4015, 0x00);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x4015);
+        let result = cpu.step(&mut bus).unwrap();
+
+        assert_eq!(result.opcode, 0x00);
+        assert_eq!(cpu.state().pc, 0x9000);
+        assert_eq!(bus.read(0x4016) & 1, 1,
+            "BRK must consume the first controller bit while reading its padding byte");
+    }
+
 }
