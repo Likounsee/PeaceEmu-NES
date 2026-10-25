@@ -1812,3 +1812,94 @@ mod indexed_indirect_cycle_regressions {
         assert_eq!(cpu.state().a, 0x56);
     }
 }
+
+
+#[cfg(test)]
+mod unofficial_rmw_addressing_matrix_regressions {
+    use super::*;
+
+    const CYCLES: [u8; 7] = [8, 5, 6, 8, 6, 7, 7];
+    const OPERANDS: [[u8; 2]; 7] = [
+        [0x20, 0x00], // (indirect,X)
+        [0x30, 0x00], // zero page
+        [0x00, 0x03], // absolute
+        [0x24, 0x00], // (indirect),Y
+        [0x2C, 0x00], // zero page,X
+        [0xFF, 0x02], // absolute,Y (page crossing)
+        [0xFF, 0x02], // absolute,X (page crossing)
+    ];
+    const FAMILIES: [[u8; 7]; 5] = [
+        [0x23, 0x27, 0x2F, 0x33, 0x37, 0x3B, 0x3F], // RLA
+        [0x43, 0x47, 0x4F, 0x53, 0x57, 0x5B, 0x5F], // SRE
+        [0x63, 0x67, 0x6F, 0x73, 0x77, 0x7B, 0x7F], // RRA
+        [0xC3, 0xC7, 0xCF, 0xD3, 0xD7, 0xDB, 0xDF], // DCP
+        [0xE3, 0xE7, 0xEF, 0xF3, 0xF7, 0xFB, 0xFF], // ISC
+    ];
+
+    fn configure_target(bus: &mut CpuBus, cpu: &mut Cpu, mode: usize) -> u16 {
+        match mode {
+            0 => {
+                cpu.state.x = 4;
+                bus.write(0x0024, 0x00);
+                bus.write(0x0025, 0x03);
+                0x0300
+            }
+            1 => 0x0030,
+            2 => 0x0300,
+            3 => {
+                cpu.state.y = 1;
+                bus.write(0x0024, 0xFF);
+                bus.write(0x0025, 0x02);
+                0x0300
+            }
+            4 => {
+                cpu.state.x = 4;
+                0x0030
+            }
+            5 => {
+                cpu.state.y = 1;
+                0x0300
+            }
+            _ => {
+                cpu.state.x = 1;
+                0x0300
+            }
+        }
+    }
+
+    #[test]
+    fn rla_sre_rra_dcp_and_isc_cover_every_addressing_mode() {
+        for (family, opcodes) in FAMILIES.iter().enumerate() {
+            for (mode, opcode) in opcodes.iter().copied().enumerate() {
+                let operands = OPERANDS[mode];
+                let (mut cpu, mut bus) = setup(&[opcode, operands[0], operands[1]]);
+                let target = configure_target(&mut bus, &mut cpu, mode);
+                bus.write(target, 0x03);
+                cpu.state.status |= flags::UNUSED;
+                let expected_memory = match family {
+                    0 => { cpu.state.a = 0xF0; cpu.state.status |= flags::CARRY; 0x07 }
+                    1 => { cpu.state.a = 0xF0; cpu.state.status &= !flags::CARRY; 0x01 }
+                    2 => { cpu.state.a = 0x10; cpu.state.status &= !flags::CARRY; 0x01 }
+                    3 => { cpu.state.a = 0x02; cpu.state.status &= !flags::CARRY; 0x02 }
+                    _ => { cpu.state.a = 0x10; cpu.state.status |= flags::CARRY; 0x04 }
+                };
+
+                assert_eq!(cpu.step(&mut bus).unwrap().cycles, CYCLES[mode],
+                    "opcode {opcode:#04X} has incorrect nominal cycles");
+                assert_eq!(bus.read(target), expected_memory,
+                    "opcode {opcode:#04X} modified the wrong address or byte");
+
+                match family {
+                    0 => assert_eq!(cpu.state.a, 0x00, "RLA must AND the rotated byte into A"),
+                    1 => assert_eq!(cpu.state.a, 0xF1, "SRE must XOR the shifted byte into A"),
+                    2 => assert_eq!(cpu.state.a, 0x12, "RRA must feed rotate carry into ADC"),
+                    3 => {
+                        assert_ne!(cpu.state.status & flags::CARRY, 0, "DCP compare should set carry on equality");
+                        assert_ne!(cpu.state.status & flags::ZERO, 0, "DCP compare should set zero on equality");
+                    }
+                    _ => assert_eq!(cpu.state.a, 0x0C, "ISC must increment memory then subtract with carry"),
+                }
+            }
+        }
+    }
+}
