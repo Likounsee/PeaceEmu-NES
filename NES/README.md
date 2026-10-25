@@ -32,6 +32,8 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 - **PPU/sprites 8×16** : test de rendu de pixels réels à travers la frontière entre les deux tuiles, avec retournement vertical ; la coordonnée de scanline tient compte du décalage Y de l'OAM.
 - **MMC3/PRG-RAM** : test des trois états de la RAM ($A001) : lecture/écriture autorisées, RAM lisible mais protégée en écriture, puis RAM désactivée et réactivée sans fuite d'écritures.
 - **Validation** : après ajustement du test de rendu 8×16 à la coordonnée Y de l'OAM et suppression d'une opération identité détectée par Clippy, la CI passe sur Rust stable, Rust 1.78 et Windows : tests, formatage et Clippy réussis. Les tests synthétiques ne remplacent pas les essais de ROM réelles, notamment pour l'alignement sprite/hitbox de *Super Mario Bros.*
+- **APU/DMC IRQ** : nouvelle régression pour la levée de l'IRQ à la fin d'un échantillon d'un octet, sa lecture via `$4015` sans acquittement et son effacement via `$4010`.
+- **MMC3/mirroring** : nouvelle régression garantissant que le registre `$A000` ne remplace pas le câblage four-screen imposé par la cartouche.
 
 
 ## Ce qui est implémenté
