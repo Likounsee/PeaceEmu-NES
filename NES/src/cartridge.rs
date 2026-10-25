@@ -859,7 +859,7 @@ impl Mmc3 {
         self.a12_low_since = None;
     }
 
-    /// Clocks the scanline IRQ counter; precise PPU A12 filtering is not yet modelled.
+    /// Manually clocks the IRQ counter for diagnostics; normal PPU operation clocks it through filtered A12 rising edges.
     pub fn clock_irq_counter(&mut self) {
         if self.irq_counter == 0 || self.irq_reload { self.irq_counter = self.irq_latch; }
         else { self.irq_counter = self.irq_counter.wrapping_sub(1); }
