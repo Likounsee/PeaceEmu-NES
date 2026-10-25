@@ -4064,3 +4064,37 @@ mod mapper87_tests {
         assert!(matches!(Cartridge::parse(&truncated), Err(CartridgeError::TruncatedImage { .. })));
     }
 }
+
+#[cfg(test)]
+mod added_nes2_size_regression_tests {
+    use super::*;
+
+    #[test]
+    fn nes2_exponent_sizes_decode_exponent_and_multiplier_independently() {
+        assert_eq!(nes2_rom_size(0x00, 0x0F, PRG_BANK_LEN), 1);
+        assert_eq!(nes2_rom_size(0x04, 0x0F, PRG_BANK_LEN), 2);
+        assert_eq!(nes2_rom_size(0x03, 0x0F, CHR_BANK_LEN), 7);
+        assert_eq!(nes2_rom_size(0x07, 0x0F, CHR_BANK_LEN), 14);
+    }
+
+    #[test]
+    fn nes2_ram_shift_zero_means_absent_and_positive_shifts_are_exact() {
+        assert_eq!(nes2_ram_size(0), 0);
+        assert_eq!(nes2_ram_size(1), 128);
+        assert_eq!(nes2_ram_size(7), 8_192);
+    }
+
+    #[test]
+    fn nes2_nrom_rejects_truncated_exponent_encoded_prg_rom() {
+        let mut image = vec![0; INES_HEADER_LEN + 1];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 0x04; // Exponent encoding: 2 bytes, not a linear bank count.
+        image[5] = 0;
+        image[7] = 0x08; // NES 2.0.
+        image[9] = 0x0F; // Exponent/multiplier encoding for PRG size.
+        assert!(matches!(
+            Nrom::parse(&image),
+            Err(CartridgeError::InvalidPrgSize(_)) | Err(CartridgeError::TruncatedImage { .. })
+        ));
+    }
+}
