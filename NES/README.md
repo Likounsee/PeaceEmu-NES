@@ -22,6 +22,7 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 ## Dernière itération
 
 - APU/DMC : tests de propriété du sample buffer et de livraison des octets sans double consommation ; les fetchs DMA sont aussi vérifiés au niveau du bus.
+- Séquenceur APU : tests du délai de reset de `$4017` selon la parité CPU (3/4 cycles) et de l'inhibition immédiate de l'IRQ frame avant le reset différé.
 - Bus CPU : ajout d'une régression sur le bit 5 ouvert de `$4015`, avec vérification séparée des IRQ frame et DMC.
 - Machine : test d'intégration du DMC vérifiant que le fetch vient bien de la ROM via le bus CPU et que les quatre cycles de blocage avancent aussi l'horloge PPU partagée.
 - PPU/NMI : tests de suppression du VBlank par lecture de `$2002` au début du VBlank et d'activation du NMI pendant un VBlank déjà actif.
