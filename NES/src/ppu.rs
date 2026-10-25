@@ -1891,4 +1891,14 @@ mod sprite_pixel_regression_tests {
         assert_eq!(ppu.framebuffer[0], ppu.output_color(0x2A));
         assert!(!ppu.background_opaque[0]);
     }
+    #[test]
+    fn disabled_rendering_clears_background_opacity_for_reused_pixels() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x08;
+        ppu.background_opaque[17] = true;
+        ppu.mask = 0;
+        ppu.render_background_pixel(17, 0, None);
+        assert!(!ppu.background_opaque[17], "disabled background must not leave stale opaque pixels");
+    }
+
 }

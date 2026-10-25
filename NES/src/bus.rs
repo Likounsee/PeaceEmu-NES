@@ -597,4 +597,22 @@ mod open_bus_regression_tests {
         assert_eq!(value & 0x40, 0x40, "controller drives D6 high");
         assert_eq!(value & 0xBE, 0xA4 & 0xBE, "undriven data-bus bits retain open-bus values");
     }
+    #[test]
+    fn oam_dma_wraps_from_the_current_oam_address() {
+        let mut bus = CpuBus::new();
+        for offset in 0..=u8::MAX {
+            bus.write(0x0200 | u16::from(offset), offset ^ 0x5A);
+        }
+        bus.write(0x2003, 0xFE);
+        bus.write(0x4014, 0x02);
+        let page = bus.take_oam_dma_request().expect("DMA page should be queued");
+        bus.transfer_oam_dma(page);
+
+        for (address, offset) in [(0xFEu8, 0u8), (0xFF, 1), (0x00, 2), (0x01, 3)] {
+            bus.write(0x2003, address);
+            assert_eq!(bus.read(0x2004), offset ^ 0x5A, "OAM wraps at 0xFF");
+        }
+        assert_eq!(bus.take_oam_dma_request(), None);
+    }
+
 }
