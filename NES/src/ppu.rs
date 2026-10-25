@@ -1877,7 +1877,7 @@ mod sprite_pixel_regression_tests {
         ppu.oam[2] = 0;
         ppu.oam[3] = 248;
         ppu.background_opaque[255] = true;
-        ppu.nametable[0] = 1;
+        ppu.nametables[0] = 1;
         ppu.palette[1] = 1;
         assert!(!ppu.sprite_zero_hit_at(255, 0, None), "the NES never sets sprite-zero hit at x=255");
     }
