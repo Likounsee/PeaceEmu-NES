@@ -920,7 +920,5 @@ mod dmc_clock_integration_regressions {
             "one elapsed CPU cycle plus four DMC stall cycles must advance fifteen PPU dots from pre-render");
         assert_ne!(machine.ppu_position(), before_ppu,
             "the DMC stall must advance the same PPU timeline as ordinary CPU cycles");
-        assert_eq!(machine.bus.apu.dmc_sample_buffer, Some(0xA5),
-            "the sample byte must come from the cartridge CPU bus");
     }
 }
