@@ -960,7 +960,7 @@ mod dma_and_irq_interaction_regressions {
 
     fn mapper_irq_bus() -> CpuBus {
         let mut image = vec![0; 16 + 2 * 16_384 + 8_192];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 2;
         image[5] = 1;
         image[6] = 0x40; // MMC3.
