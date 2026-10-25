@@ -2981,3 +2981,49 @@ mod coarse_y_rollover_regressions {
         assert_eq!(Ppu::scroll_coarse_y(30, 1, 2), (0, 1));
     }
 }
+
+
+#[cfg(test)]
+mod increment_y_register_regressions {
+    use super::*;
+
+    #[test]
+    fn fine_y_rollover_from_coarse_y_29_toggles_vertical_nametable() {
+        let mut ppu = Ppu::new();
+        ppu.v = 0x7000 | (29 << 5) | (1 << 10) | 3;
+
+        ppu.increment_y();
+
+        assert_eq!(ppu.v & 0x7000, 0, "fine Y wraps from seven to zero");
+        assert_eq!(ppu.v & 0x03E0, 0, "coarse Y 29 wraps to row zero");
+        assert_ne!(ppu.v & 0x0800, 0, "coarse Y 29 toggles the vertical nametable");
+        assert_ne!(ppu.v & 0x0400, 0, "horizontal nametable bit is preserved");
+        assert_eq!(ppu.v & 0x001F, 3, "coarse X is preserved");
+    }
+
+    #[test]
+    fn fine_y_rollover_from_coarse_y_31_wraps_without_toggling_nametable() {
+        let mut ppu = Ppu::new();
+        ppu.v = 0x7000 | (31 << 5) | (1 << 11) | 7;
+
+        ppu.increment_y();
+
+        assert_eq!(ppu.v & 0x7000, 0);
+        assert_eq!(ppu.v & 0x03E0, 0);
+        assert_ne!(ppu.v & 0x0800, 0, "vertical nametable remains unchanged at coarse Y 31");
+        assert_eq!(ppu.v & 0x001F, 7);
+    }
+
+    #[test]
+    fn fine_y_increment_does_not_touch_coarse_y_before_fine_y_rollover() {
+        let mut ppu = Ppu::new();
+        ppu.v = (3 << 12) | (12 << 5) | (1 << 11) | 9;
+
+        ppu.increment_y();
+
+        assert_eq!((ppu.v >> 12) & 7, 4);
+        assert_eq!((ppu.v >> 5) & 31, 12);
+        assert_ne!(ppu.v & 0x0800, 0);
+        assert_eq!(ppu.v & 0x001F, 9);
+    }
+}
