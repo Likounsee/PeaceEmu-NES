@@ -3462,3 +3462,76 @@ mod mmc4_extended_tests {
         assert_eq!(cart.cpu_read(0xC000), Some(3));
     }
 }
+
+
+#[cfg(test)]
+mod mapper_register_boundary_regressions {
+    use super::*;
+
+    fn mmc3_ram_image() -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 2;
+        image[6] = 0x40; // Mapper 4, CHR-RAM.
+        image
+    }
+
+    #[test]
+    fn mmc3_prg_ram_enable_and_write_protect_bits_are_independent() {
+        let mut cart = Cartridge::parse(&mmc3_ram_image()).unwrap();
+
+        assert!(cart.cpu_write(0x6000, 0x5A));
+        assert_eq!(cart.cpu_read(0x6000), Some(0x5A));
+
+        // $A001 bit 7 disables PRG-RAM; bit 6 controls write protection.
+        assert!(cart.cpu_write(0xA001, 0x00));
+        assert_eq!(cart.cpu_read(0x6000), None);
+        assert!(cart.cpu_write(0x6000, 0xA5)); // Disabled writes are consumed but ignored.
+        assert_eq!(cart.cpu_read(0x6000), None);
+
+        assert!(cart.cpu_write(0xA001, 0xC0)); // Enabled and protected.
+        assert_eq!(cart.cpu_read(0x6000), Some(0x5A));
+        assert!(cart.cpu_write(0x6000, 0xA5));
+        assert_eq!(cart.cpu_read(0x6000), Some(0x5A), "write protection must preserve RAM");
+
+        assert!(cart.cpu_write(0xA001, 0x80)); // Enabled and writable again.
+        assert!(cart.cpu_write(0x6000, 0xA5));
+        assert_eq!(cart.cpu_read(0x6000), Some(0xA5));
+    }
+
+    #[test]
+    fn gxrom_prg_and_chr_register_fields_select_their_full_ranges_independently() {
+        let prg_banks = 8usize;
+        let chr_banks = 4usize;
+        let mut image = vec![0; INES_HEADER_LEN + prg_banks * PRG_BANK_LEN + chr_banks * CHR_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = prg_banks as u8;
+        image[5] = chr_banks as u8;
+        image[6] = 0x60; // Mapper 6 high nibble = 6, low nibble = 0 => mapper 6, not GxROM.
+        // Use mapper 66 (high mapper nibble 4 in flags 7 + low nibble 2 in flags 6).
+        image[6] = 0x20;
+        image[7] = 0x40;
+        for bank in 0..(prg_banks / 2) {
+            let start = INES_HEADER_LEN + bank * 2 * PRG_BANK_LEN;
+            image[start..start + 2 * PRG_BANK_LEN].fill(0x40 + bank as u8);
+        }
+        let chr_start = INES_HEADER_LEN + prg_banks * PRG_BANK_LEN;
+        for bank in 0..chr_banks {
+            let start = chr_start + bank * CHR_BANK_LEN;
+            image[start..start + CHR_BANK_LEN].fill(0x70 + bank as u8);
+        }
+        let mut cart = Cartridge::parse(&image).unwrap();
+
+        assert_eq!(cart.cpu_read(0x8000), Some(0x40));
+        assert_eq!(cart.ppu_read(0x0000), Some(0x70));
+
+        assert!(cart.cpu_write(0x8000, 0x30)); // PRG bank 3, CHR bank 0.
+        assert_eq!(cart.cpu_read(0x8000), Some(0x43));
+        assert_eq!(cart.ppu_read(0x0000), Some(0x70));
+
+        assert!(cart.cpu_write(0x8000, 0x23)); // PRG bank 2, CHR bank 3.
+        assert_eq!(cart.cpu_read(0x8000), Some(0x42));
+        assert_eq!(cart.ppu_read(0x0000), Some(0x73));
+        assert_eq!(cart.ppu_read(0x1FFF), Some(0x73));
+    }
+}
