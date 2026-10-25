@@ -2468,7 +2468,7 @@ mod sprite_composition_regressions {
 
     fn cart_with_opaque_tile_zero() -> Cartridge {
         let mut image = vec![0; 16 + 16_384 + 8_192];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[5] = 1;
         image[16 + 16_384] = 0x80;
