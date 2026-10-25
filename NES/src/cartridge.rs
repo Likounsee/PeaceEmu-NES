@@ -4109,3 +4109,26 @@ mod added_nes2_size_regression_tests {
         ));
     }
 }
+
+
+#[cfg(test)]
+mod mapper_header_error_regressions {
+    use super::*;
+
+    #[test]
+    fn unsupported_ines_mapper_is_reported_before_rom_size_validation() {
+        let mut image = vec![0; INES_HEADER_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[6] = 0x20; // Mapper 2 (UxROM), not implemented by this core.
+        assert_eq!(Cartridge::parse(&image), Err(CartridgeError::UnsupportedMapper(2)));
+    }
+
+    #[test]
+    fn nes2_header_is_not_misreported_as_an_ines_mapper_error() {
+        let mut image = vec![0; INES_HEADER_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[7] = 0x08; // NES 2.0 marker.
+        assert_eq!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported));
+    }
+}
