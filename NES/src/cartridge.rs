@@ -4791,7 +4791,7 @@ mod mmc3_filtered_reload_regressions {
 
     #[test]
     fn seven_dot_edge_does_not_consume_pending_irq_reload() {
-        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        let mut cart = Cartridge::parse(&test_image()).unwrap();
         cart.cpu_write(0xC000, 1);
         cart.cpu_write(0xC001, 0);
         cart.cpu_write(0xE001, 0);
