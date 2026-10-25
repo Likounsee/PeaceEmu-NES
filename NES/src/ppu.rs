@@ -822,6 +822,40 @@ mod mid_scanline_scroll_regressions {
     }
 
     #[test]
+    fn ppudata_does_not_rebase_scroll_when_rendering_is_disabled() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 12;
+        ppu.dot = 100;
+        ppu.mask = 0;
+        ppu.v = 0x2000;
+        ppu.line_scroll_v = 0x2123;
+        ppu.line_scroll_start_x = 24;
+
+        ppu.cpu_write_register(7, 0x55, None);
+
+        assert_eq!(ppu.v, 0x2001);
+        assert_eq!(ppu.line_scroll_v, 0x2123);
+        assert_eq!(ppu.line_scroll_start_x, 24);
+    }
+
+    #[test]
+    fn ppudata_does_not_rebase_scroll_during_vblank() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 250;
+        ppu.dot = 100;
+        ppu.mask = 0x08;
+        ppu.v = 0x2000;
+        ppu.line_scroll_v = 0x2123;
+        ppu.line_scroll_start_x = 24;
+
+        ppu.cpu_write_register(7, 0x55, None);
+
+        assert_eq!(ppu.v, 0x2001);
+        assert_eq!(ppu.line_scroll_v, 0x2123);
+        assert_eq!(ppu.line_scroll_start_x, 24);
+    }
+
+    #[test]
     fn new_scanline_resets_the_scroll_sampling_origin() {
         let mut ppu = Ppu::new();
         ppu.scanline = 40;
