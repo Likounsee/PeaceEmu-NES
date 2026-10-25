@@ -4,17 +4,17 @@ Cœur matériel Nintendo Entertainment System en Rust. Le but est de fournir à 
 
 ## État en un coup d'œil
 
-**Avancement estimé : 65 %.** Cette estimation porte sur le travail d'ingénierie du cœur ; elle ne mesure ni la couverture des lignes, ni le taux de jeux compatibles.
+**Avancement estimé : 70 %.** Cette estimation porte sur le travail d'ingénierie du cœur ; elle ne mesure ni la couverture des lignes, ni le taux de jeux compatibles.
 
 | Domaine | Estimation | Résumé |
 |---|---:|---|
-| CPU Ricoh 2A03 | 72 % | Instructions officielles courantes, opcodes non officiels sélectionnés, interruptions ; timing incomplet |
-| PPU | 58 % | Registres, mémoire vidéo, VBlank/NMI, rendu 256×240 ; pipeline par dot incomplète |
-| APU | 60 % | Pulse/triangle/bruit, séquenceur et DMC initial ; mixage et DMA approximatifs |
-| Bus et manettes | 72 % | RAM miroir, registres, ports série, DMA OAM, premiers accès DMC |
-| Cartouches/mappers | 79 % | Nombreuses cartes iNES legacy ; variantes et NES 2.0 non générales |
-| Machine/session | 72 % | Chargement, reset, frames, PCM, entrées et RAM batterie |
-| Tests et robustesse | 68 % | Régressions unitaires et d'intégration ; validation ROM réelle à élargir |
+| CPU Ricoh 2A03 | 74 % | Instructions officielles courantes, opcodes non officiels sélectionnés, interruptions ; timing incomplet |
+| PPU | 70 % | Registres, mémoire vidéo, VBlank/NMI, rendu 256×240 ; pipeline par dot incomplète |
+| APU | 63 % | Pulse/triangle/bruit, séquenceur et DMC initial ; mixage et DMA approximatifs |
+| Bus et manettes | 76 % | RAM miroir, registres, ports série, DMA OAM, premiers accès DMC |
+| Cartouches/mappers | 85 % | Nombreuses cartes iNES legacy ; variantes et NES 2.0 non générales |
+| Machine/session | 77 % | Chargement, reset, frames, PCM, entrées et RAM batterie |
+| Tests et robustesse | 90 % | Régressions unitaires et d'intégration ; validation ROM réelle à élargir |
 | Intégration hôte | 45 % | L'adaptateur et le parcours complet doivent être validés avec le dépôt principal |
 
 Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas être moyennées comme une métrique de compatibilité.
@@ -35,7 +35,7 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 2. Le pipeline PPU par dot, les fetchs et les événements MMC3 basés sur les transitions A12 filtrées restent à finaliser.
 3. L'arbitrage DMA DMC, les filtres audio, le resampling à la fréquence hôte et certains détails de séquenceur APU sont approximatifs.
 4. Les mappers implémentés ne couvrent pas toutes les révisions de cartes ni tous les sous-mappers. Les bus conflicts ne sont modélisés que pour les sous-mappers NES 2.0 explicitement pris en charge de UxROM/CNROM ; les variantes iNES historiques restent indéterminées.
-5. NES 2.0 est pris en charge partiellement pour NROM, UxROM, CNROM, Mapper 8 et GxROM (66), notamment le décodage de tailles ROM et de certaines tailles RAM. Les autres mappers et sous-mappers non explicitement gérés restent refusés ou non validés.
+5. NES 2.0 est pris en charge partiellement pour NROM, UxROM, CNROM, Mapper 8, GxROM (66) et Camerica (71), notamment le décodage de tailles ROM et de certaines tailles RAM. Pour Camerica, seuls les sous-mappers 0, les tailles PRG compatibles et jusqu'à 8 Kio de PRG-RAM sont acceptés ; les autres variantes restent refusées. Les autres mappers et sous-mappers non explicitement gérés restent refusés ou non validés.
 6. La suite synthétique doit être complétée par des ROM de diagnostic/homebrew redistribuables légalement.
 7. Le contrat `EmulationCore`, l'adaptateur et le lancement depuis la bibliothèque PeaceEmu doivent être compilés et testés ensemble dans le dépôt hôte.
 8. Les deux manifestes `Cargo.toml` déclarent désormais Rust 1.78 comme MSRV ; il reste à vérifier cette promesse avec une toolchain 1.78 en CI.
