@@ -423,8 +423,11 @@ impl Uxrom {
                 true
             }
             0x8000..=0xFFFF => {
-                let switchable_banks = self.prg_rom.len() / PRG_BANK_LEN - 1;
-                self.selected_bank = value as usize % switchable_banks;
+                // The bank register selects from the complete PRG-ROM bank set.
+                // The upper window remains hard-wired to the final bank, but the
+                // lower window may also select that same bank on UxROM boards.
+                let bank_count = self.prg_rom.len() / PRG_BANK_LEN;
+                self.selected_bank = value as usize % bank_count;
                 true
             }
             _ => false,
@@ -1956,6 +1959,21 @@ mod uxrom_tests {
         assert_eq!(cartridge.cpu_read(0xC000), Some(3));
         assert!(cartridge.cpu_write(0xFFFF, 1));
         assert_eq!(cartridge.cpu_read(0x8000), Some(1));
+        assert_eq!(cartridge.cpu_read(0xC000), Some(3));
+    }
+
+    #[test]
+    fn mapper_two_can_select_the_fixed_last_bank_in_the_lower_window() {
+        let mut cartridge = Cartridge::parse(&uxrom_image(4)).unwrap();
+
+        assert!(cartridge.cpu_write(0x8000, 3));
+        assert_eq!(cartridge.cpu_read(0x8000), Some(3));
+        assert_eq!(cartridge.cpu_read(0xBFFF), Some(3));
+        assert_eq!(cartridge.cpu_read(0xC000), Some(3));
+
+        // Register values beyond the installed bank count wrap safely.
+        assert!(cartridge.cpu_write(0x8000, 4));
+        assert_eq!(cartridge.cpu_read(0x8000), Some(0));
         assert_eq!(cartridge.cpu_read(0xC000), Some(3));
     }
 
