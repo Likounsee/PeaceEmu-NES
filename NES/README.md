@@ -24,8 +24,8 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 - **APU/DMC** : tests de propriété du sample buffer, de livraison DMA sans double consommation, d'IRQ DMC et d'acquittement indépendant des IRQ frame/DMC par `$4015`.
 - **Séquenceur APU** : tests du délai de reset de `$4017` selon la parité CPU (3/4 cycles), de l'inhibition immédiate de l'IRQ frame et du comportement de lecture de statut.
 - **Bus/machine** : test du fetch DMC depuis la ROM via le bus CPU et des cycles de blocage qui font progresser l'horloge PPU partagée.
-- **PPU/NMI** : régressions pour la suppression de VBlank par lecture de `$2002`, la récupération au VBlank suivant et l'activation de NMI pendant un VBlank déjà actif sans créer de faux fronts répétés.
-- **MMC3** : tests du filtre A12 à sept/huit dots, du rebasage après reset PPU, de l'acquittement/réactivation IRQ, du latch non nul et de la commande de rechargement `$C001`.
+- **PPU/NMI/scroll** : régressions pour la suppression de VBlank par `$2002`, l'activation de NMI pendant VBlank et les retours de coarse-Y (ligne 29 : changement de nametable ; ligne 31 : pas de changement).
+- **MMC3** : tests du filtre A12 à sept/huit dots, du rebasage après reset PPU, de l'acquittement/réactivation IRQ, du latch non nul, de `$C001` et du maintien du rechargement lorsqu'un front est filtré.
 - Une fixture MMC3 utilise des octets de signature iNES explicites pour éviter toute ambiguïté d'échappement dans le test.
 - Les résultats finaux des workflows doivent être vérifiés après les derniers commits ; ces tests synthétiques ne remplacent pas une validation avec des ROM de diagnostic et des essais de jeu réels.
 
