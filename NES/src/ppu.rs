@@ -1976,7 +1976,7 @@ mod sprite_pixel_regression_tests {
     #[test]
     fn sprite_zero_hit_and_composited_pixel_use_the_same_sprite_sample() {
         let mut image = vec![0; 16 + 16_384 + 8_192];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[5] = 1;
         let chr = 16 + 16_384;
