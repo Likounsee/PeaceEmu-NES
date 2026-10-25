@@ -584,8 +584,6 @@ impl Ppu {
             let tile = self.oam[base + 1] as usize;
             let attributes = self.oam[base + 2];
             let left = self.oam[base + 3] as usize;
-            let flip_h = attributes & 0x40 != 0;
-            let flip_v = attributes & 0x80 != 0;
             let behind_background = attributes & 0x20 != 0;
             for sy in 0..sprite_height {
                 let y = top + sy;
@@ -1974,6 +1972,30 @@ mod sprite_overflow_regression_tests {
 #[cfg(test)]
 mod sprite_pixel_regression_tests {
     use super::*;
+
+    #[test]
+    fn sprite_zero_hit_and_composited_pixel_use_the_same_sprite_sample() {
+        let mut image = vec![0; 16 + 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        let chr = 16 + 16_384;
+        image[chr] = 0b1000_0000;
+        let cart = Cartridge::parse(&image).unwrap();
+
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x1E;
+        ppu.oam[0] = 0;
+        ppu.oam[1] = 0;
+        ppu.oam[2] = 0;
+        ppu.oam[3] = 16;
+        ppu.palette[0x11] = 0x2A;
+        ppu.background_opaque[1 * 256 + 16] = true;
+
+        assert!(ppu.sprite_zero_hit_at(16, 1, Some(&cart)));
+        ppu.render_sprite_pixel(16, 1, Some(&cart));
+        assert_eq!(ppu.framebuffer[1 * 256 + 16], ppu.output_color(0x2A));
+    }
 
     #[test]
     fn sprite_pixel_sampler_applies_horizontal_flip_consistently() {
