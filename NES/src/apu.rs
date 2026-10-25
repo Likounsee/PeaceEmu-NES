@@ -1724,3 +1724,31 @@ mod dmc_buffer_ownership_regressions {
         assert_eq!(apu.take_dmc_dma_request(), None);
     }
 }
+
+#[cfg(test)]
+mod dmc_irq_status_regressions {
+    use super::*;
+
+    #[test]
+    fn reading_status_clears_frame_irq_but_preserves_dmc_irq() {
+        let mut apu = Apu::new();
+        apu.frame_irq = true;
+        apu.dmc_irq = true;
+
+        let status = apu.read(0x4015);
+        assert_ne!(status & 0x40, 0, "status must report the frame IRQ before clearing it");
+        assert_ne!(status & 0x80, 0, "status must report the DMC IRQ");
+        assert!(!apu.frame_irq, "reading $4015 acknowledges frame IRQ");
+        assert!(apu.dmc_irq, "reading $4015 must not acknowledge DMC IRQ");
+        assert!(apu.irq_pending());
+    }
+
+    #[test]
+    fn disabling_dmc_irq_in_its_control_register_clears_pending_dmc_irq() {
+        let mut apu = Apu::new();
+        apu.dmc_irq = true;
+        apu.write(0x4010, 0x0F); // IRQ enable clear.
+        assert!(!apu.dmc_irq);
+        assert!(!apu.irq_pending());
+    }
+}
