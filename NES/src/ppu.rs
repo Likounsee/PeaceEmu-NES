@@ -3143,3 +3143,34 @@ mod sprite_zero_flip_regressions {
             "horizontal flip must move pattern bit 0 onto screen X=16");
     }
 }
+
+
+#[cfg(test)]
+mod sprite_pattern_address_boundary_regressions {
+    use super::*;
+
+    #[test]
+    fn vertical_flip_in_8x16_sprites_crosses_tile_pair_in_reverse() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x20; // 8x16 sprites.
+        // An odd tile selects pattern table $1000; the even tile starts the pair.
+        assert_eq!(ppu.sprite_pattern_address(3, 0, 0), 0x1020);
+        assert_eq!(ppu.sprite_pattern_address(3, 0, 7), 0x1027);
+        assert_eq!(ppu.sprite_pattern_address(3, 0, 8), 0x1030);
+
+        assert_eq!(ppu.sprite_pattern_address(3, 0x80, 0), 0x1037);
+        assert_eq!(ppu.sprite_pattern_address(3, 0x80, 7), 0x1030);
+        assert_eq!(ppu.sprite_pattern_address(3, 0x80, 8), 0x1027);
+        assert_eq!(ppu.sprite_pattern_address(3, 0x80, 15), 0x1020);
+    }
+
+    #[test]
+    fn vertical_flip_in_8x8_sprites_reverses_rows_without_changing_table() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x08; // Sprite pattern table at $1000.
+        assert_eq!(ppu.sprite_pattern_address(5, 0, 0), 0x1050);
+        assert_eq!(ppu.sprite_pattern_address(5, 0, 7), 0x1057);
+        assert_eq!(ppu.sprite_pattern_address(5, 0x80, 0), 0x1057);
+        assert_eq!(ppu.sprite_pattern_address(5, 0x80, 7), 0x1050);
+    }
+}
