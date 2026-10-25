@@ -2559,7 +2559,7 @@ mod beam_timed_sprite_zero_regressions {
         ppu.scanline = 0;
         ppu.dot = 0;
         ppu.mask = 0x1E; // Background, sprites, and both left-edge enables.
-        ppu.oam[0..4].copy_from_slice(&[0, 0, 0, 0]);
+        ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 0]);
 
         ppu.tick_with_cartridge(1, Some(&cartridge));
         assert_ne!(ppu.status & 0x40, 0,
@@ -2574,7 +2574,7 @@ mod beam_timed_sprite_zero_regressions {
         ppu.scanline = 0;
         ppu.dot = 255;
         ppu.mask = 0x1E;
-        ppu.oam[0..4].copy_from_slice(&[0, 0, 0, 255]);
+        ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 255]);
 
         ppu.tick_with_cartridge(1, Some(&cartridge));
         assert_eq!(ppu.status & 0x40, 0,
