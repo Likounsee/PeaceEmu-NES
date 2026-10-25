@@ -208,6 +208,24 @@ mod tests {
     }
 
     #[test]
+    fn dmc_dma_refills_charge_stall_for_each_sample_buffer_fetch() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16..16 + 16_384].fill(0xA5);
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0x4010, 0x0F); // Fastest DMC rate.
+        bus.write(0x4012, 0x00);
+        bus.write(0x4013, 0x01); // 17-byte sample, long enough for multiple refills.
+        bus.write(0x4015, 0x10);
+
+        let stalls = bus.tick_apu(4_000);
+        assert!(stalls >= 8, "multiple sample-buffer refills should each charge a four-cycle stall; got {stalls}");
+        assert_eq!(stalls % 4, 0, "each current-model DMC fetch costs four CPU cycles");
+    }
+
+    #[test]
     fn mmc3_mapper_irq_is_visible_on_the_cpu_irq_line() {
         let mut image = vec![0; 16 + 2 * 16_384 + 8_192];
         image[0..4].copy_from_slice(b"NES\x1A");
