@@ -23,7 +23,7 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 
 - **CPU :** interpréteur 2A03 avec de nombreuses instructions officielles, plusieurs opcodes non officiels stables et composites, flags, pile et interruptions. Les opcodes inconnus produisent une erreur explicite. Le modèle n'est pas cycle-exact.
 - **Bus :** RAM interne de 2 Kio et miroirs, espace cartouche, registres PPU/APU, ports série des manettes, DMA OAM à blocage nominal de 513/514 cycles et accès DMC initial.
-- **Cartouches :** parseur iNES legacy, trainers, PRG-RAM/CHR-RAM, mirroring et dispatch statique pour NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4), AxROM (7), MMC2 (9), Color Dreams (11), CPROM (13), Mapper 15, BNROM (34), GxROM (66), Camerica (71) et UNROM-512 (30).
+- **Cartouches :** parseur iNES legacy, trainers, PRG-RAM/CHR-RAM, mirroring et dispatch statique pour NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4), AxROM (7), MMC2 (9), MMC4 (10), Color Dreams (11), CPROM (13), Mapper 15, BNROM (34), GxROM (66), Camerica (71) et UNROM-512 (30).
 - **PPU :** registres CPU, VRAM, nametables, palettes, OAM, sprites, scroll, VBlank/NMI et progression du balayage. La production de l'image reste partiellement basée sur des lignes/snapshots, pas une simulation complète de chaque dot.
 - **APU :** pulse, triangle, bruit, séquenceur de frame, sortie PCM mono et premier DMC avec buffer, unité delta, bouclage et IRQ. Le timing du DMC et le resampling hôte sont à améliorer.
 - **Machine et session :** chargement/reset de ROM, exécution de frames, framebuffer, audio PCM, entrées manette et accès à la RAM batterie.
