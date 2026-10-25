@@ -1541,7 +1541,7 @@ mod tests {
         ppu.mask = 0x14;
         ppu.palette[0x11] = 0x30;
         let mut image = vec![0; 16 + 16_384 + 8_192];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[5] = 1;
         image[16 + 16_384] = 0x80; // Tile zero, row zero, leftmost pixel opaque.
