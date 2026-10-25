@@ -1980,6 +1980,36 @@ mod sprite_priority_regression_tests {
 
 
 #[cfg(test)]
+mod cpu_data_port_regressions {
+    use super::*;
+
+    #[test]
+    fn non_palette_data_reads_are_buffered_and_advance_vram() {
+        let mut ppu = Ppu::new();
+        ppu.mem_write(0x2000, 0xAB, None);
+        ppu.mem_write(0x2001, 0xCD, None);
+        ppu.v = 0x2000;
+
+        assert_eq!(ppu.cpu_read_register(7, None), 0x00);
+        assert_eq!(ppu.v, 0x2001);
+        assert_eq!(ppu.cpu_read_register(7, None), 0xAB);
+        assert_eq!(ppu.v, 0x2002);
+        assert_eq!(ppu.cpu_read_register(7, None), 0xCD);
+    }
+
+    #[test]
+    fn palette_data_reads_are_immediate_and_preserve_open_bus_high_bits() {
+        let mut ppu = Ppu::new();
+        ppu.mem_write(0x3F00, 0x2B, None);
+        ppu.cpu_write_register(0, 0xC0, None);
+        ppu.v = 0x3F00;
+
+        assert_eq!(ppu.cpu_read_register(7, None), 0xEB);
+        assert_eq!(ppu.v, 0x3F01);
+    }
+}
+
+#[cfg(test)]
 mod scroll_boundary_regressions {
     use super::*;
 
