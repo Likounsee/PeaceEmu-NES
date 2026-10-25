@@ -1647,7 +1647,7 @@ mod brk_stack_regression_tests {
     #[test]
     fn brk_pushes_pc_after_padding_and_break_marked_status() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         // Interrupt vectors are read from cartridge PRG-ROM, not writable CPU RAM.
         image[16 + 0x3FFE] = 0x34;
@@ -1671,13 +1671,13 @@ mod brk_stack_regression_tests {
     #[test]
     fn brk_padding_byte_read_advances_controller_serial_port() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16 + 0x3FFE] = 0x00;
         image[16 + 0x3FFF] = 0x90;
         let mut bus = CpuBus::new();
         bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
-        bus.set_controller_state(0, 0b0000_0011);
+        bus.set_controller_state(0, 0b0000_0001);
         bus.write(0x4016, 1);
         bus.write(0x4016, 0);
 
