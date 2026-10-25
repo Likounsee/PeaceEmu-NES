@@ -2124,8 +2124,8 @@ mod sprite_pattern_address_regressions {
         let mut ppu = Ppu::new();
         ppu.ctrl = 0x20; // 8x16 sprites.
         assert_eq!(ppu.sprite_pattern_address(0x02, 0, 0), 0x0020);
-        assert_eq!(ppu.sprite_pattern_address(0x03, 0, 0), 0x1030);
-        assert_eq!(ppu.sprite_pattern_address(0x03, 0, 8), 0x1020);
+        assert_eq!(ppu.sprite_pattern_address(0x03, 0, 0), 0x1020);
+        assert_eq!(ppu.sprite_pattern_address(0x03, 0, 8), 0x1030);
     }
 
     #[test]
@@ -2136,7 +2136,8 @@ mod sprite_pattern_address_regressions {
         let flipped_top = ppu.sprite_pattern_address(0x03, 0x80, 0);
         let normal_bottom = ppu.sprite_pattern_address(0x03, 0, 15);
         assert_eq!(flipped_top, normal_bottom);
-        assert_eq!(normal_top, 0x1030);
+        assert_eq!(normal_top, 0x1020);
+        assert_eq!(normal_bottom, 0x1037);
         assert_eq!(ppu.sprite_pattern_address(0x03, 0x80, 15), normal_top);
     }
 }
