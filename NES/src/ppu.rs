@@ -2633,8 +2633,10 @@ mod background_only_sprite_evaluation_regressions {
         let mut ppu = Ppu::new();
         ppu.mask = 0x08; // Background on, sprite pixels off.
         for sprite in 0..9usize {
+            // All nine sprites overlap scanline zero; X positions do not affect
+            // scanline evaluation, but keeping them distinct avoids pixel overlap.
             ppu.oam[sprite * 4..sprite * 4 + 4]
-                .copy_from_slice(&[0, 0, 0, (sprite * 8) as u8]);
+                .copy_from_slice(&[0, 0, 0, (sprite * 16) as u8]);
         }
 
         ppu.render_frame(None);
