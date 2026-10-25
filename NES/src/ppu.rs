@@ -2930,3 +2930,30 @@ mod nmi_enable_during_vblank_regressions {
         assert!(!ppu.take_nmi_request(), "lowering the line must not create another edge");
     }
 }
+
+
+#[cfg(test)]
+mod vblank_suppression_recovery_regressions {
+    use super::*;
+
+    #[test]
+    fn suppressing_one_vblank_does_not_disable_the_next_vblank_nmi() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x80;
+        ppu.scanline = 241;
+        ppu.dot = 0;
+
+        let _ = ppu.cpu_read_register(2, None);
+        ppu.tick(1);
+        assert_eq!(ppu.status & 0x80, 0);
+        assert!(!ppu.take_nmi_request());
+
+        // Model the following frame's VBlank entry.
+        ppu.scanline = 241;
+        ppu.dot = 0;
+        ppu.tick(1);
+        assert_ne!(ppu.status & 0x80, 0);
+        assert!(ppu.take_nmi_request(), "the suppression latch must not leak into a later frame");
+        assert!(!ppu.take_nmi_request(), "one VBlank entry must generate only one NMI edge");
+    }
+}
