@@ -2200,6 +2200,30 @@ mod sprite_pixel_regression_tests {
 
 
     #[test]
+    fn sprite_zero_hit_requires_an_opaque_background_pixel() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x1E;
+        ppu.oam[0] = 0;
+        ppu.oam[1] = 0;
+        ppu.oam[3] = 16;
+        ppu.background_opaque[16] = false;
+        assert!(!ppu.sprite_zero_hit_at(16, 0, None));
+    }
+
+    #[test]
+    fn sprite_zero_hit_obeys_both_left_edge_enable_bits() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18; // Both layers enabled, but leftmost pixels are masked.
+        ppu.oam[0] = 0;
+        ppu.oam[1] = 0;
+        ppu.oam[3] = 0;
+        ppu.background_opaque[0] = true;
+        assert!(!ppu.sprite_zero_hit_at(0, 0, None));
+        ppu.mask |= 0x06;
+        assert!(!ppu.sprite_zero_hit_at(0, 0, None), "an empty sprite pattern must not hit");
+    }
+
+    #[test]
     fn sprite_zero_hit_is_suppressed_at_x_255() {
         let mut ppu = Ppu::new();
         ppu.mask = 0x1E;
