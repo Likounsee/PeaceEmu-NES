@@ -1175,17 +1175,17 @@ mod tests {
         cartridge.ppu_write(17, 0xFF);
         cartridge.ppu_write(32, 0xFF); // Sprite tile 2.
         let mut ppu = Ppu::new();
-        ppu.scanline = 0;
+        ppu.scanline = 1;
         ppu.dot = 0;
         ppu.mask = 0x1E; // Background/sprites and both left-edge enables.
-        ppu.oam[0..8].copy_from_slice(&[0, 1, 0x20, 0, 255, 2, 0, 0]);
+        ppu.oam[0..8].copy_from_slice(&[0, 1, 0x20, 0, 0, 2, 0, 0]);
         ppu.palette[1] = 0x09; // Visible background color.
         ppu.palette[0x11] = 0x21;
         ppu.palette[0x12] = 0x22;
 
         ppu.tick_with_cartridge(1, Some(&cartridge));
 
-        assert_eq!(ppu.framebuffer()[0], 0x09, "sprite 1 must not show through the higher-priority sprite 0");
+        assert_eq!(ppu.framebuffer()[256], 0x09, "sprite 1 must not show through the higher-priority sprite 0");
     }
 
     #[test]
