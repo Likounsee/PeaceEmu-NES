@@ -132,8 +132,8 @@ impl NesMachine {
 
     /// Configures audio output sampling rate (8,000..=192,000 samples/second).
     ///
-    /// Returns false for unsupported rates. A successful change clears queued samples
-    /// and resets the fractional resampling phase.
+    /// Returns false for unsupported rates. Changing to a different valid rate clears
+    /// queued samples and resets resampling state; applying the current rate is a no-op.
     pub fn set_audio_sample_rate(&mut self, sample_rate: u32) -> bool {
         self.bus.set_audio_sample_rate(sample_rate)
     }
