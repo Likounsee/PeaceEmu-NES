@@ -892,3 +892,36 @@ mod battery_ram_persistence_regressions {
             "invalid save payload must not modify cartridge RAM");
     }
 }
+
+
+#[cfg(test)]
+mod dmc_clock_integration_regressions {
+    use super::*;
+
+    #[test]
+    fn dmc_dma_stalls_advance_the_shared_cpu_ppu_timeline() {
+        let mut image = nrom_with_program(&[0xEA]);
+        image[16..16 + 16_384].fill(0xA5);
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFC] = 0x00;
+        image[16 + 0x3FFD] = 0x80;
+
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        machine.bus.write(0x4010, 0x00);
+        machine.bus.write(0x4012, 0x00); // Sample starts at $C000.
+        machine.bus.write(0x4013, 0x01); // 17 bytes.
+        machine.bus.write(0x4015, 0x10);
+
+        let before_cycles = machine.total_cycles();
+        let before_ppu = machine.ppu_position();
+        machine.clock_devices_for_cpu_cycles(1);
+
+        assert_eq!(machine.total_cycles() - before_cycles, 5,
+            "one elapsed CPU cycle plus one four-cycle DMC DMA stall");
+        assert_ne!(machine.ppu_position(), before_ppu,
+            "the DMC stall must advance the same PPU timeline as ordinary CPU cycles");
+        assert_eq!(machine.bus.apu.dmc_sample_buffer, Some(0xA5),
+            "the sample byte must come from the cartridge CPU bus");
+    }
+}
