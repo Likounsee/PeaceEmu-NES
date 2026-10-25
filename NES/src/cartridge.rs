@@ -660,12 +660,16 @@ impl Mapper87 {
         true
     }
 
+    /// Returns the cartridge's fixed nametable mirroring mode.
     pub fn mirroring(&self) -> Mirroring { self.mirroring }
+    /// Mapper 87 stores character data in read-only ROM.
     pub fn chr_is_ram(&self) -> bool { false }
+    /// Reads from the currently selected 8 KiB CHR-ROM bank.
     pub fn ppu_read(&self, address: u16) -> Option<u8> {
         if address >= 0x2000 { return None; }
         Some(self.chr_rom[self.selected_chr_bank * CHR_BANK_LEN + address as usize])
     }
+    /// CHR-ROM is read-only, so writes are ignored.
     pub fn ppu_write(&mut self, _address: u16, _value: u8) -> bool { false }
 }
 
