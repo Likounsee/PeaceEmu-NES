@@ -70,3 +70,6 @@ Les régressions mapper 15 couvrent désormais les quatre modes de banking PRG (
 
 
 Les dernières régressions couvrent aussi les limites de carte MMC1 (mirroring quatre écrans câblé, désactivation/réactivation de PRG-RAM et sélection CHR hors plage) ainsi que les alias des palettes PPU `$3F10/$14/$18/$1C`, le miroir de 32 octets et le masquage des couleurs sur six bits.
+
+
+Les tests UNROM-512 (mapper 30) vérifient le wrap des banques PRG installées, la banque haute fixe, l'isolation des quatre banques de CHR-RAM, les bornes PPU, le mirroring one-screen commutable et le verrouillage du quatre-écrans. Le parseur est également testé contre les tailles PRG non prises en charge et les déclarations de CHR-ROM incompatibles avec cette implémentation CHR-RAM.
