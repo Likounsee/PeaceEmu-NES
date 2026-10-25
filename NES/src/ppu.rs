@@ -2957,3 +2957,27 @@ mod vblank_suppression_recovery_regressions {
         assert!(!ppu.take_nmi_request(), "one VBlank entry must generate only one NMI edge");
     }
 }
+
+
+#[cfg(test)]
+mod coarse_y_rollover_regressions {
+    use super::*;
+
+    #[test]
+    fn coarse_y_29_wraps_and_toggles_vertical_nametable() {
+        assert_eq!(Ppu::scroll_coarse_y(29, 0, 1), (0, 1));
+        assert_eq!(Ppu::scroll_coarse_y(29, 1, 1), (0, 0));
+    }
+
+    #[test]
+    fn coarse_y_31_wraps_without_toggling_vertical_nametable() {
+        assert_eq!(Ppu::scroll_coarse_y(31, 0, 1), (0, 0));
+        assert_eq!(Ppu::scroll_coarse_y(31, 1, 1), (0, 1));
+    }
+
+    #[test]
+    fn coarse_y_rollover_applies_each_row_in_a_multi_row_advance() {
+        assert_eq!(Ppu::scroll_coarse_y(28, 0, 3), (1, 1));
+        assert_eq!(Ppu::scroll_coarse_y(30, 1, 2), (1, 0));
+    }
+}
