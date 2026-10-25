@@ -64,3 +64,6 @@ Si l'une des commandes échoue, corriger la cause et conserver le test de régre
 
 
 Régressions récentes : buffering et incrément de `$2007`, lecture palette immédiate, conservation des bits hauts de l’open bus, incrément VRAM de 32 et reset du latch par `$2002`. Les tests de session vérifient les limites de fréquence PCM, deux frames successives et les dimensions de sortie. Les nouveaux tests PPU couvrent aussi les fronts montants NMI quand `$2000` est activé pendant VBlank, la désactivation/réactivation de la sortie NMI et le saut de dot des images impaires uniquement lorsque le rendu est actif. L’APU vérifie aussi que changer de fréquence vide la file PCM précédente et qu’une fréquence invalide ne modifie rien. Les nouveaux tests couvrent l’inhibition immédiate de l’IRQ de frame, l’IRQ DMC à la fin du dernier octet, l’effacement de cette IRQ et les adresses CHR des sprites 8×16 avec inversion verticale. Le bus teste également plusieurs remplissages du tampon DMC au cours d'une même tranche de cycles et vérifie que chaque transfert compte quatre cycles de stall dans le modèle actuel.
+
+
+Les régressions mapper 15 couvrent désormais les quatre modes de banking PRG (NROM-256, UNROM, NROM-64 et NROM-128), les limites de banque, le mirroring piloté par le bit 6 et les bornes de la CHR-RAM.
