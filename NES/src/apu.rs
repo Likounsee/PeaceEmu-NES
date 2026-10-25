@@ -214,6 +214,9 @@ impl Apu {
     /// Advances oscillator timers and the frame sequencer in CPU-cycle-sized steps.
     /// The $4017 reset delay is modelled; individual oscillator and regional timings remain approximate.
     pub fn tick_cpu_cycles(&mut self, cycles: u32) {
+        // A zero-length tick must be a true no-op: even power-on initialization
+        // belongs to the first elapsed CPU cycle, not to an empty call.
+        if cycles == 0 { return; }
         const FOUR_STEP_PERIOD: u32 = 14_915;
         const FIVE_STEP_PERIOD: u32 = 18_641;
         const HALF_FRAME_PERIOD: u32 = 7_457;
@@ -516,6 +519,19 @@ mod tests {
             apu.tick_cpu_cycles(2_000);
             assert!(!apu.drain_audio_samples().is_empty(), "default construction must produce PCM");
         }
+    }
+
+    #[test]
+    fn zero_cpu_cycles_do_not_mutate_apu_state_or_emit_audio() {
+        let mut apu = Apu::new();
+        assert_eq!(apu.noise_shift, 0);
+        let initial = apu.clone();
+        apu.tick_cpu_cycles(0);
+        assert_eq!(apu.noise_shift, 0, "the noise LFSR must not initialize without a clock");
+        assert_eq!(apu.audio_samples.len(), 0);
+        assert_eq!(apu.frame_cycles, initial.frame_cycles);
+        assert_eq!(apu.sample_phase, initial.sample_phase);
+        assert_eq!(apu.pulse_timer_counter, initial.pulse_timer_counter);
     }
 
     #[test]
