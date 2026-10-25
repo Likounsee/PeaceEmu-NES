@@ -4809,3 +4809,40 @@ mod mmc3_filtered_reload_regressions {
         assert!(cart.irq_pending(), "only the next qualified edge decrements one to zero");
     }
 }
+
+
+#[cfg(test)]
+mod mmc3_repeated_a12_level_regressions {
+    use super::*;
+
+    fn image() -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 2;
+        image[6] = 0x40; // Mapper 4, CHR-RAM.
+        image
+    }
+
+    #[test]
+    fn sustained_a12_high_level_does_not_clock_irq_more_than_once() {
+        let mut cart = Cartridge::parse(&image()).unwrap();
+        cart.cpu_write(0xC000, 0); // IRQ latch = 0.
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+
+        cart.observe_ppu_address(0x0000, 0);
+        cart.observe_ppu_address(0x1000, 8);
+        assert!(cart.irq_pending());
+
+        cart.cpu_write(0xE000, 0); // Acknowledge.
+        cart.cpu_write(0xE001, 0); // Re-enable while A12 is still high.
+        for cycle in 9..40 {
+            cart.observe_ppu_address(0x1000, cycle);
+        }
+        assert!(!cart.irq_pending(), "a sustained high level is not another rising edge");
+
+        cart.observe_ppu_address(0x0000, 40);
+        cart.observe_ppu_address(0x1000, 48);
+        assert!(cart.irq_pending(), "a later qualified low-to-high edge can assert IRQ again");
+    }
+}
