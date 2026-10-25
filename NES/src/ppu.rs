@@ -1990,11 +1990,11 @@ mod sprite_pixel_regression_tests {
         ppu.oam[2] = 0;
         ppu.oam[3] = 16;
         ppu.palette[0x11] = 0x2A;
-        ppu.background_opaque[1 * 256 + 16] = true;
+        ppu.background_opaque[272] = true;
 
         assert!(ppu.sprite_zero_hit_at(16, 1, Some(&cart)));
         ppu.render_sprite_pixel(16, 1, Some(&cart));
-        assert_eq!(ppu.framebuffer[1 * 256 + 16], ppu.output_color(0x2A));
+        assert_eq!(ppu.framebuffer[272], ppu.output_color(0x2A));
     }
 
     #[test]
