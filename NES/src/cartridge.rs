@@ -3110,6 +3110,21 @@ mod camerica_tests {
     }
 
     #[test]
+    fn mapper_71_nes2_trainer_is_loaded_when_ram_window_is_needed() {
+        let mut image = camerica_image(4);
+        image[6] |= 0x04; // Trainer present.
+        image[7] = 0x48;
+        image[8] = 0;
+        image[9] = 0;
+        image[10] = 0; // No RAM explicitly declared, trainer still needs backing storage.
+        image.splice(16..16, vec![0x5A; TRAINER_LEN]);
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.cpu_read(0x7000), Some(0x5A));
+        assert!(cart.cpu_write(0x7000, 0xA5));
+        assert_eq!(cart.cpu_read(0x7000), Some(0xA5));
+    }
+
+    #[test]
     fn mapper_71_nes2_rejects_unsupported_submappers() {
         let mut image = camerica_image(4);
         image[7] = 0x48;
