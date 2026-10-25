@@ -4918,3 +4918,37 @@ mod mmc3_chr_inversion_regressions {
         assert_eq!(cart.ppu_read(0x1C00), Some(0x43));
     }
 }
+
+
+#[cfg(test)]
+mod mapper_4_chr_window_regressions {
+    use super::*;
+
+    #[test]
+    fn chr_inversion_reorders_all_eight_one_kib_windows_without_aliasing() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 4)).unwrap();
+        for (register, value) in [(0, 3), (1, 7), (2, 8), (3, 9), (4, 10), (5, 11)] {
+            cart.cpu_write(0x8000, register);
+            cart.cpu_write(0x8001, value);
+        }
+
+        let normal = [0x42, 0x43, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B];
+        for (slot, expected) in normal.into_iter().enumerate() {
+            assert_eq!(
+                cart.ppu_read((slot * 0x400) as u16),
+                Some(expected),
+                "normal CHR mode maps the wrong 1 KiB bank in slot {slot}"
+            );
+        }
+
+        cart.cpu_write(0x8000, 0x80); // Inversion changes placement, not register contents.
+        let inverted = [0x48, 0x49, 0x4A, 0x4B, 0x42, 0x43, 0x46, 0x47];
+        for (slot, expected) in inverted.into_iter().enumerate() {
+            assert_eq!(
+                cart.ppu_read((slot * 0x400) as u16),
+                Some(expected),
+                "inverted CHR mode maps the wrong 1 KiB bank in slot {slot}"
+            );
+        }
+    }
+}
