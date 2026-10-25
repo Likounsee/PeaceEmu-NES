@@ -3070,7 +3070,7 @@ mod sprite_zero_boundary_regressions {
 
     fn opaque_sprite_cartridge() -> Cartridge {
         let mut rom = vec![0; 16 + 16_384 + 8_192];
-        rom[0..4].copy_from_slice(b"NES\\x1A");
+        rom[0..4].copy_from_slice(b"NES\x1A");
         rom[4] = 1;
         rom[5] = 1;
         let chr = 16 + 16_384;
