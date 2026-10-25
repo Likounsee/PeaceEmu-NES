@@ -1978,7 +1978,7 @@ mod sprite_pixel_regression_tests {
     #[test]
     fn sprite_pixel_sampler_applies_horizontal_flip_consistently() {
         let mut image = vec![0; 16 + 16_384 + 8_192];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[5] = 1;
         let chr = 16 + 16_384;
@@ -1995,12 +1995,12 @@ mod sprite_pixel_regression_tests {
     #[test]
     fn sprite_pixel_sampler_flips_entire_8x16_sprite_before_selecting_tile() {
         let mut image = vec![0; 16 + 16_384 + 8_192];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[5] = 1;
         let chr = 16 + 16_384;
-        image[chr + 16] = 0b1000_0000; // Tile 1, first row.
-        image[chr + 15 * 16] = 0b0000_0001; // Tile 0, final row.
+        image[chr + 0x1000] = 0b1000_0000; // Odd tile selects pattern table $1000.
+        image[chr + 0x17] = 0b0000_0001; // Tile 0 pair's final row (tile 1, row 7).
         let cart = Cartridge::parse(&image).unwrap();
         let mut ppu = Ppu::new();
         ppu.ctrl = 0x20; // 8x16 sprites.
@@ -2009,8 +2009,6 @@ mod sprite_pixel_regression_tests {
         assert_eq!(ppu.sprite_pixel(1, 0, 0, 0, Some(&cart)), 1);
     }
 
-
-    use super::*;
 
     #[test]
     fn sprite_zero_hit_is_suppressed_at_x_255() {
