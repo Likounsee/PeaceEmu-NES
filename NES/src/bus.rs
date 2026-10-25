@@ -654,3 +654,44 @@ mod io_regression_matrix {
         assert_eq!(bus.read(0x4016) & 1, 1);
     }
 }
+
+#[cfg(test)]
+mod mmc3_ppu_irq_integration_regressions {
+    use super::*;
+
+    fn mmc3_bus() -> CpuBus {
+        let mut image = vec![0; 16 + 2 * 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 2;
+        image[5] = 1;
+        image[6] = 0x40; // Mapper 4.
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0xC000, 0); // IRQ latch = 0.
+        bus.write(0xC001, 0); // Reload on the next qualified A12 edge.
+        bus.write(0xE001, 0); // Enable mapper IRQ.
+        bus
+    }
+
+    #[test]
+    fn ppu_generated_a12_edge_clocks_mmc3_irq_without_diagnostic_hook() {
+        let mut bus = mmc3_bus();
+        bus.write(0x2000, 0x08); // Sprite pattern table at $1000; background table at $0000.
+        bus.write(0x2001, 0x18); // Enable both rendering layers.
+        assert!(!bus.irq_pending());
+
+        // On the pre-render scanline, sprite pattern fetches drive A12 high after
+        // a long low interval. The real PPU bus event must clock the mapper IRQ.
+        bus.tick_ppu(261);
+        assert!(bus.irq_pending(), "the PPU-generated qualified A12 edge should assert MMC3 IRQ");
+    }
+
+    #[test]
+    fn disabling_ppu_rendering_prevents_mmc3_irq_edges() {
+        let mut bus = mmc3_bus();
+        bus.write(0x2000, 0x08);
+        bus.write(0x2001, 0x00);
+        bus.tick_ppu(341 * 2);
+        assert!(!bus.irq_pending(), "idle PPU dots must not synthesize MMC3 scanline IRQs");
+    }
+}
