@@ -882,3 +882,27 @@ mod controller_serial_tail_regressions {
         }
     }
 }
+
+
+#[cfg(test)]
+mod oam_dma_wrap_regressions {
+    use super::*;
+
+    #[test]
+    fn oam_dma_respects_start_address_and_wraps_after_256_bytes() {
+        let mut bus = CpuBus::new();
+        for offset in 0..=255u16 {
+            bus.write(0x0200 + offset, offset as u8 ^ 0xA5);
+        }
+        bus.write(0x2003, 0xFE);
+
+        bus.transfer_oam_dma(0x02);
+
+        // DMA begins at OAMADDR, wraps through $FF to $00, and ends at $FE.
+        for (address, expected) in [(0xFEu8, 0xA5u8), (0xFF, 0xA4), (0x00, 0xA7), (0x01, 0xA6)] {
+            bus.write(0x2003, address);
+            assert_eq!(bus.read(0x2004), expected,
+                "OAM DMA must preserve the starting address and wrap around OAM");
+        }
+    }
+}
