@@ -1644,7 +1644,11 @@ mod brk_stack_regression_tests {
 
     #[test]
     fn brk_pushes_pc_after_padding_and_break_marked_status() {
-        let (mut cpu, mut bus) = setup(&[0x00, 0xEA]);
+        let mut bus = CpuBus::new();
+        bus.write(0x0600, 0x00);
+        bus.write(0x0601, 0xEA);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
         bus.write(0xFFFE, 0x34);
         bus.write(0xFFFF, 0x12);
 

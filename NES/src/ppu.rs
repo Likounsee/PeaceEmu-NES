@@ -1949,7 +1949,7 @@ mod sprite_priority_regression_tests {
 
     #[test]
     fn first_opaque_sprite_claims_pixel_even_when_hidden_behind_background() {
-        let mut image = vec![0; INES_HEADER_LEN + PRG_BANK_LEN];
+        let mut image = vec![0; 16 + 16 * 1024];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap();
