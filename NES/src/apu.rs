@@ -1816,3 +1816,26 @@ mod independent_irq_status_regressions {
         assert!(apu.irq_pending());
     }
 }
+
+
+#[cfg(test)]
+mod frame_irq_dmc_irq_independence_regressions {
+    use super::*;
+
+    #[test]
+    fn frame_irq_inhibit_does_not_acknowledge_a_pending_dmc_irq() {
+        let mut apu = Apu::new();
+        apu.frame_irq = true;
+        apu.dmc_irq = true;
+
+        apu.write(0x4017, 0x40); // Inhibit frame IRQ and schedule sequencer reset.
+        assert!(!apu.frame_irq, "frame IRQ inhibition clears only the frame IRQ");
+        assert!(apu.dmc_irq, "the independent DMC IRQ remains asserted");
+        assert!(apu.irq_pending(), "the combined APU IRQ line stays high while DMC IRQ is pending");
+
+        let status = apu.read(0x4015);
+        assert_ne!(status & 0x80, 0);
+        assert_eq!(status & 0x40, 0);
+        assert!(apu.irq_pending());
+    }
+}
