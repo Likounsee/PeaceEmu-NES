@@ -23,7 +23,7 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 
 - **CPU :** interpréteur 2A03 avec de nombreuses instructions officielles, plusieurs opcodes non officiels stables et composites, flags, pile et interruptions. Les opcodes inconnus produisent une erreur explicite. Le modèle n'est pas cycle-exact.
 - **Bus :** RAM interne de 2 Kio et miroirs, espace cartouche, registres PPU/APU, ports série des manettes, DMA OAM à blocage nominal de 513/514 cycles et accès DMC initial.
-- **Cartouches :** parseur iNES legacy, trainers, PRG-RAM/CHR-RAM, mirroring et dispatch statique pour NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4), AxROM (7), MMC2 (9), MMC4 (10), Color Dreams (11), CPROM (13), Mapper 15, BNROM (34), GxROM (66), Camerica (71) et UNROM-512 (30).
+- **Cartouches :** parseur iNES legacy, trainers, PRG-RAM/CHR-RAM, mirroring et dispatch statique pour NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4), AxROM (7), Front Fareast F3xxx (8), MMC2 (9), MMC4 (10), Color Dreams (11), CPROM (13), Mapper 15, BNROM (34), GxROM (66), Camerica (71), UNROM-512 (30) et Jaleco JF-16 (87). UxROM/CNROM gèrent aussi les bus conflicts quand le sous-mapper NES 2.0 indique explicitement cette variante.
 - **PPU :** registres CPU, VRAM, nametables, palettes, OAM, sprites, scroll, VBlank/NMI et progression du balayage. La production de l'image reste partiellement basée sur des lignes/snapshots, pas une simulation complète de chaque dot.
 - **APU :** pulse, triangle, bruit, séquenceur de frame, sortie PCM mono et premier DMC avec buffer, unité delta, bouclage et IRQ. Le timing du DMC et le resampling hôte sont à améliorer.
 - **Machine et session :** chargement/reset de ROM, exécution de frames, framebuffer, audio PCM, entrées manette et accès à la RAM batterie.
@@ -34,8 +34,8 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 1. CPU, PPU, APU et bus ne reproduisent pas tous les accès à l'échelle du cycle matériel.
 2. Le pipeline PPU par dot, les fetchs et les événements MMC3 basés sur les transitions A12 filtrées restent à finaliser.
 3. L'arbitrage DMA DMC, les filtres audio, le resampling à la fréquence hôte et certains détails de séquenceur APU sont approximatifs.
-4. Les mappers implémentés ne couvrent pas toutes les révisions de cartes, bus conflicts, sous-mappers ou dispositions de RAM.
-5. NES 2.0 n'est pas pris en charge de façon générale ; la prise en charge partielle de NROM ne doit pas être extrapolée aux autres mappers.
+4. Les mappers implémentés ne couvrent pas toutes les révisions de cartes ni tous les sous-mappers. Les bus conflicts ne sont modélisés que pour les sous-mappers NES 2.0 explicitement pris en charge de UxROM/CNROM ; les variantes iNES historiques restent indéterminées.
+5. NES 2.0 est pris en charge partiellement pour NROM, UxROM et CNROM, notamment le décodage de tailles ROM et de certaines tailles RAM. Les autres mappers ne bénéficient pas d'une prise en charge générale NES 2.0.
 6. La suite synthétique doit être complétée par des ROM de diagnostic/homebrew redistribuables légalement.
 7. Le contrat `EmulationCore`, l'adaptateur et le lancement depuis la bibliothèque PeaceEmu doivent être compilés et testés ensemble dans le dépôt hôte.
 8. Les deux manifestes `Cargo.toml` déclarent désormais Rust 1.78 comme MSRV ; il reste à vérifier cette promesse avec une toolchain 1.78 en CI.
