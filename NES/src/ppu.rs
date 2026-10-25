@@ -56,6 +56,13 @@ impl Default for Ppu {
     }
 }
 
+/// Converts the OAM Y byte to the first visible scanline. The NES treats
+/// $FF as scanline 0 because sprite Y is offset by one with 8-bit wraparound.
+#[inline]
+fn sprite_top(oam_y: u8) -> usize {
+    oam_y.wrapping_add(1) as usize
+}
+
 impl Ppu {
     /// Creates a PPU in its pre-render scanline.
     pub fn new() -> Self { Self::default() }
@@ -259,7 +266,7 @@ impl Ppu {
             if (4..=7).contains(&phase) {
                 let sprite = ((dot - 257) / 8) as usize;
                 let base = sprite * 4;
-                let top = self.oam[base] as usize + 1;
+                let top = sprite_top(self.oam[base]);
                 let target_y = if self.scanline == 261 { 0 } else { self.scanline as usize + 1 };
                 let row = target_y.checked_sub(top).unwrap_or(usize::MAX);
                 let height = if self.ctrl & 0x20 != 0 { 16 } else { 8 };
@@ -342,7 +349,7 @@ impl Ppu {
             return false;
         }
 
-        let sprite_top = self.oam[0] as usize + 1;
+        let sprite_top = sprite_top(self.oam[0]);
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         if y < sprite_top || y >= sprite_top + height {
             return false;
@@ -432,7 +439,7 @@ impl Ppu {
         let mut in_range = 0usize;
         for sprite in 0..64usize {
             let base = sprite * 4;
-            let top = self.oam[base] as usize + 1;
+            let top = sprite_top(self.oam[base]);
             if y < top || y >= top + height { continue; }
             in_range += 1;
             if in_range > 8 { break; }
@@ -580,7 +587,7 @@ impl Ppu {
         let mut sprite_claimed = vec![false; 256 * 240];
         for sprite in 0..64usize {
             let base = sprite * 4;
-            let top = self.oam[base] as usize + 1;
+            let top = sprite_top(self.oam[base]);
             let tile = self.oam[base + 1] as usize;
             let attributes = self.oam[base + 2];
             let left = self.oam[base + 3] as usize;
@@ -2382,5 +2389,53 @@ mod palette_address_regressions {
         ppu.mem_write(0x3F41, 0x12, None);
         assert_eq!(ppu.mem_read(0x3F01, None), 0x12);
         assert_eq!(ppu.mem_read(0x3F21, None), 0x12);
+    }
+}
+
+
+#[cfg(test)]
+mod sprite_y_wrap_regression_tests {
+    use super::*;
+
+    fn nrom_with_sprite_pixel() -> Cartridge {
+        let mut image = vec![0; 16 + 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        // Tile 0, row 0: leftmost pixel is opaque.
+        image[16 + 16_384] = 0x80;
+        Cartridge::parse(&image).unwrap()
+    }
+
+    #[test]
+    fn oam_y_ff_places_sprite_on_scanline_zero_for_rendering() {
+        let cart = nrom_with_sprite_pixel();
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x14; // Sprites enabled, including the leftmost eight pixels.
+        ppu.oam[0] = 0xFF;
+        ppu.oam[1] = 0;
+        ppu.oam[2] = 0;
+        ppu.oam[3] = 0;
+        ppu.palette[0x11] = 0x21;
+
+        ppu.render_sprite_pixel(0, 0, Some(&cart));
+
+        assert_eq!(ppu.framebuffer[0], 0x21,
+            "OAM Y=$FF must wrap to the top scanline instead of placing the sprite off-screen");
+    }
+
+    #[test]
+    fn oam_y_ff_sprite_zero_hit_uses_the_same_wrapped_top_row() {
+        let cart = nrom_with_sprite_pixel();
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x1E; // Background/sprites and both left-edge enables.
+        ppu.oam[0] = 0xFF;
+        ppu.oam[1] = 0;
+        ppu.oam[2] = 0;
+        ppu.oam[3] = 0;
+        ppu.background_opaque[0] = true;
+
+        assert!(ppu.sprite_zero_hit_at(0, 0, Some(&cart)),
+            "sprite-zero hit testing must use the same wrapped Y coordinate as rendering");
     }
 }
