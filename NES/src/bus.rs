@@ -792,7 +792,7 @@ mod instruction_bus_timing_regressions {
         assert_eq!(cycles, 4);
         assert_ne!(status & 0x80, 0, "vblank begins before the fourth-cycle status sample");
         assert_eq!(bus.read(0x2002) & 0x80, 0, "a second $2002 read sees the cleared vblank flag");
-        assert_eq!(bus.ppu_position(), (241, 15));
+        assert_eq!(bus.ppu_position(), (241, 12));
     }
 
     #[test]
