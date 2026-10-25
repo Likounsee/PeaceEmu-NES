@@ -2460,3 +2460,55 @@ mod sprite_y_wrap_regression_tests {
             "sprite-zero hit testing must use the same wrapped Y coordinate as rendering");
     }
 }
+
+
+#[cfg(test)]
+mod sprite_composition_regressions {
+    use super::*;
+
+    fn cart_with_opaque_tile_zero() -> Cartridge {
+        let mut image = vec![0; 16 + 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        image[16 + 16_384] = 0x80;
+        Cartridge::parse(&image).unwrap()
+    }
+
+    #[test]
+    fn behind_background_sprite_zero_blocks_lower_priority_sprite() {
+        let cart = cart_with_opaque_tile_zero();
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x14;
+        ppu.background_opaque[0] = true;
+        ppu.framebuffer[0] = 0x05;
+        ppu.palette[0x11] = 0x21;
+        // Sprite 0 is opaque but behind the background; sprite 1 is in front.
+        ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0x20, 0]);
+        ppu.oam[4..8].copy_from_slice(&[0xFF, 0, 0, 0]);
+
+        ppu.render_sprite_pixel(0, 0, Some(&cart));
+
+        assert_eq!(ppu.framebuffer[0], 0x05,
+            "a hidden opaque sprite still claims the pixel and blocks lower-priority sprites");
+    }
+
+    #[test]
+    fn ninth_in_range_sprite_is_not_rendered_even_if_first_eight_are_transparent() {
+        let cart = cart_with_opaque_tile_zero();
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x14;
+        ppu.framebuffer[0] = 0x06;
+        // Eight transparent sprites occupy the scanline before the opaque ninth.
+        for sprite in 0..8 {
+            ppu.oam[sprite * 4..sprite * 4 + 4].copy_from_slice(&[0xFF, 1, 0, 0]);
+        }
+        ppu.oam[32..36].copy_from_slice(&[0xFF, 0, 0, 0]);
+        ppu.palette[0x11] = 0x21;
+
+        ppu.render_sprite_pixel(0, 0, Some(&cart));
+
+        assert_eq!(ppu.framebuffer[0], 0x06,
+            "the scanline sprite limit counts transparent sprites too");
+    }
+}
