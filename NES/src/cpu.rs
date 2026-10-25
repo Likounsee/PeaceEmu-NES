@@ -126,6 +126,10 @@ impl Cpu {
             return Ok(StepResult { pc, opcode: self.jam_opcode, cycles: 1 });
         }
         if bus.take_nmi_request() {
+            // Interrupt entry spends two cycles reading the next opcode address
+            // before the stack writes. These reads matter for memory-mapped I/O.
+            let _ = bus.read(self.state.pc);
+            let _ = bus.read(self.state.pc);
             self.push(bus, (self.state.pc >> 8) as u8);
             self.push(bus, self.state.pc as u8);
             self.push(bus, (self.state.status | flags::UNUSED) & !flags::BREAK);
@@ -138,6 +142,9 @@ impl Cpu {
         let defer_irq_poll = self.irq_poll_delay;
         self.irq_poll_delay = false;
         if bus.irq_pending() && !self.flag(flags::INTERRUPT_DISABLE) && !defer_irq_poll {
+            // IRQ/NMI entry has two discarded reads before pushing the return state.
+            let _ = bus.read(self.state.pc);
+            let _ = bus.read(self.state.pc);
             self.push(bus, (self.state.pc >> 8) as u8);
             self.push(bus, self.state.pc as u8);
             self.push(bus, (self.state.status | flags::UNUSED) & !flags::BREAK);
@@ -1599,4 +1606,33 @@ mod tests {
         assert_ne!(cpu.state().status & flags::UNUSED, 0);
     }
 
+}
+
+
+#[cfg(test)]
+mod interrupt_bus_cycle_regression_tests {
+    use super::*;
+
+    #[test]
+    fn nmi_entry_performs_two_dummy_reads_before_pushing_state() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFA] = 0x00;
+        image[16 + 0x3FFB] = 0x90;
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
+        bus.set_controller_state(0, 0b0000_0011);
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x4016); // Reads here shift the controller serial port.
+        bus.tick_ppu(243 * 341 + 1);
+        bus.write(0x2000, 0x80);
+
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 7);
+        assert_eq!(cpu.state().pc, 0x9000);
+        assert_eq!(bus.read(0x4016) & 1, 0, "two discarded reads must consume the first two controller bits");
+    }
 }
