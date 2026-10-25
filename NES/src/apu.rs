@@ -232,14 +232,17 @@ impl Apu {
                         self.pulse_sequence[channel] = (self.pulse_sequence[channel] + 1) & 7;
                     } else { self.pulse_timer_counter[channel] -= 1; }
                 }
-                let noise_period = NOISE_PERIODS[(self.registers[0x0E] & 0x0F) as usize];
-                if self.noise_timer_counter == 0 {
-                    self.noise_timer_counter = noise_period.saturating_sub(1);
-                    let tap = if self.registers[0x0E] & 0x80 != 0 { 6 } else { 1 };
-                    let feedback = (self.noise_shift ^ (self.noise_shift >> tap)) & 1;
-                    self.noise_shift = (self.noise_shift >> 1) | (feedback << 14);
-                } else { self.noise_timer_counter -= 1; }
             }
+            // Unlike the pulse timers, the noise timer is clocked every CPU cycle.
+            // Its period table is already expressed in CPU cycles, so keeping this
+            // inside the alternating-cycle pulse block would halve the noise pitch.
+            let noise_period = NOISE_PERIODS[(self.registers[0x0E] & 0x0F) as usize];
+            if self.noise_timer_counter == 0 {
+                self.noise_timer_counter = noise_period.saturating_sub(1);
+                let tap = if self.registers[0x0E] & 0x80 != 0 { 6 } else { 1 };
+                let feedback = (self.noise_shift ^ (self.noise_shift >> tap)) & 1;
+                self.noise_shift = (self.noise_shift >> 1) | (feedback << 14);
+            } else { self.noise_timer_counter -= 1; }
             let triangle_period = u16::from(self.registers[0x0A])
                 | (u16::from(self.registers[0x0B] & 7) << 8);
             if self.triangle_timer_counter == 0 {
@@ -513,6 +516,24 @@ mod tests {
             apu.tick_cpu_cycles(2_000);
             assert!(!apu.drain_audio_samples().is_empty(), "default construction must produce PCM");
         }
+    }
+
+    #[test]
+    fn noise_timer_clocks_each_cpu_cycle_instead_of_alternating_cycles() {
+        let mut apu = Apu::new();
+        apu.registers[0x0E] = 0; // Noise period table entry = 4 CPU cycles.
+        apu.noise_shift = 1;
+        apu.noise_timer_counter = 0;
+
+        apu.tick_cpu_cycles(1);
+        let first_shift = apu.noise_shift;
+        assert_ne!(first_shift, 1, "the initial timer expiration advances the LFSR");
+
+        apu.tick_cpu_cycles(3);
+        assert_eq!(apu.noise_shift, first_shift, "the timer waits three cycles after reload");
+
+        apu.tick_cpu_cycles(1);
+        assert_ne!(apu.noise_shift, first_shift, "the next LFSR step occurs after four CPU cycles");
     }
 
     #[test]
