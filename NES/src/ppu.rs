@@ -3027,3 +3027,38 @@ mod increment_y_register_regressions {
         assert_eq!(ppu.v & 0x001F, 9);
     }
 }
+
+
+#[cfg(test)]
+mod nmi_enable_during_vblank_regressions {
+    use super::*;
+
+    #[test]
+    fn enabling_nmi_during_vblank_generates_only_one_rising_edge() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 241;
+        ppu.dot = 20;
+        ppu.status |= 0x80; // VBlank is already active.
+        ppu.ctrl = 0;
+        ppu.update_nmi_line();
+
+        ppu.cpu_write_register(0, 0x80, None);
+        assert!(ppu.take_nmi_request(), "raising PPUCTRL.NMI during VBlank must assert NMI");
+        ppu.cpu_write_register(0, 0x80, None);
+        assert!(!ppu.take_nmi_request(), "keeping the NMI line high must not create a second edge");
+    }
+
+    #[test]
+    fn fine_y_rollover_from_coarse_y_30_advances_to_row_31_without_toggling_nametable() {
+        let mut ppu = Ppu::new();
+        ppu.v = 0x7000 | (30 << 5) | (1 << 10) | 5;
+
+        ppu.increment_y();
+
+        assert_eq!(ppu.v & 0x7000, 0);
+        assert_eq!((ppu.v & 0x03E0) >> 5, 31);
+        assert_ne!(ppu.v & 0x0400, 0, "horizontal nametable bit is preserved");
+        assert_eq!(ppu.v & 0x0800, 0, "coarse Y 30 does not toggle vertical nametable");
+        assert_eq!(ppu.v & 0x001F, 5, "coarse X is preserved");
+    }
+}
