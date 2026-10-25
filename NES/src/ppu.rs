@@ -2200,6 +2200,32 @@ mod sprite_pixel_regression_tests {
 
 
     #[test]
+    fn sprite_overflow_is_clear_with_exactly_eight_sprites_on_target_scanline() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.oam.fill(0x80); // Out-of-range Y and data bytes for the remaining sprites.
+        for sprite in 0..8 {
+            ppu.oam[sprite * 4] = 0; // Y=0 covers target scanline 1.
+        }
+
+        ppu.update_sprite_overflow(0);
+        assert_eq!(ppu.status & 0x20, 0);
+    }
+
+    #[test]
+    fn sprite_overflow_sets_when_ninth_sprite_is_in_range() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.oam.fill(0x80);
+        for sprite in 0..9 {
+            ppu.oam[sprite * 4] = 0;
+        }
+
+        ppu.update_sprite_overflow(0);
+        assert_ne!(ppu.status & 0x20, 0);
+    }
+
+    #[test]
     fn sprite_zero_hit_requires_an_opaque_background_pixel() {
         let mut ppu = Ppu::new();
         ppu.mask = 0x1E;
