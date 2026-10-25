@@ -475,7 +475,7 @@ impl Ppu {
         let target_y = y + 1;
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         let in_range = |oam_y: u8| {
-            let top = oam_y as usize + 1;
+            let top = sprite_top(oam_y);
             target_y >= top && target_y < top + height
         };
 
@@ -1238,6 +1238,21 @@ mod tests {
         ppu.update_sprite_overflow(9);
         assert_ne!(ppu.status & 0x20, 0,
             "the 2C02 diagonal scan can raise overflow from a non-Y OAM byte");
+    }
+
+    #[test]
+    fn sprite_y_ff_counts_for_overflow_on_the_first_visible_scanline() {
+        let mut ppu = Ppu::new();
+        for sprite in 0..8usize {
+            ppu.oam[sprite * 4] = 0;
+        }
+        ppu.oam[8 * 4] = 0xFF;
+        ppu.update_sprite_overflow(0);
+        assert_ne!(
+            ppu.status & 0x20,
+            0,
+            "wrapped OAM Y=$FF must be evaluated on scanline zero/one like sprite rendering"
+        );
     }
 
     #[test]
