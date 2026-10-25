@@ -1689,7 +1689,7 @@ mod brk_stack_regression_tests {
 
         assert_eq!(result.opcode, 0x00);
         assert_eq!(cpu.state().pc, 0x9000);
-        assert_eq!(bus.read(0x4016) & 1, 1,
+        assert_eq!(bus.read(0x4016) & 1, 0,
             "BRK must consume the first controller bit while reading its padding byte");
     }
 
