@@ -913,12 +913,11 @@ mod dmc_clock_integration_regressions {
         machine.bus.write(0x4013, 0x01); // 17 bytes.
         machine.bus.write(0x4015, 0x10);
 
-        let before_cycles = machine.total_cycles();
         let before_ppu = machine.ppu_position();
         machine.clock_devices_for_cpu_cycles(1);
 
-        assert_eq!(machine.total_cycles() - before_cycles, 5,
-            "one elapsed CPU cycle plus one four-cycle DMC DMA stall");
+        assert_eq!(machine.ppu_position(), (0, 15),
+            "one elapsed CPU cycle plus four DMC stall cycles must advance fifteen PPU dots from pre-render");
         assert_ne!(machine.ppu_position(), before_ppu,
             "the DMC stall must advance the same PPU timeline as ordinary CPU cycles");
         assert_eq!(machine.bus.apu.dmc_sample_buffer, Some(0xA5),
