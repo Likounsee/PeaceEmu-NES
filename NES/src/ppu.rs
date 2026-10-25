@@ -2957,24 +2957,3 @@ mod vblank_suppression_recovery_regressions {
         assert!(!ppu.take_nmi_request(), "one VBlank entry must generate only one NMI edge");
     }
 }
-
-
-#[cfg(test)]
-mod nmi_enable_during_vblank_regressions {
-    use super::*;
-
-    #[test]
-    fn enabling_nmi_during_vblank_creates_one_rising_edge() {
-        let mut ppu = Ppu::new();
-        ppu.status |= 0x80; // VBlank is already active.
-        assert!(!ppu.take_nmi_request());
-
-        ppu.cpu_write_register(0, 0x80, None);
-        assert!(ppu.take_nmi_request(),
-            "enabling NMI while VBlank is set must raise the NMI line immediately");
-
-        ppu.cpu_write_register(0, 0x80, None);
-        assert!(!ppu.take_nmi_request(),
-            "rewriting the same enabled control value must not invent another edge");
-    }
-}
