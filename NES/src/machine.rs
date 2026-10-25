@@ -821,9 +821,20 @@ mod pcm_frontend_tests {
 mod battery_ram_persistence_regressions {
     use super::*;
 
+    fn battery_test_rom() -> Vec<u8> {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[6] = 0x02;
+        image[16] = 0xEA;
+        image[16 + 0x3FFC] = 0x00;
+        image[16 + 0x3FFD] = 0x80;
+        image
+    }
+
     #[test]
     fn battery_ram_round_trips_and_survives_console_reset() {
-        let mut image = nrom_with_program(&[0xEA]);
+        let mut image = battery_test_rom();
         image[6] |= 0x02; // Battery-backed PRG-RAM.
         let mut machine = NesMachine::from_ines(&image).unwrap();
 
@@ -846,8 +857,7 @@ mod battery_ram_persistence_regressions {
 
     #[test]
     fn battery_ram_rejects_wrong_payload_length_without_partial_restore() {
-        let mut image = nrom_with_program(&[0xEA]);
-        image[6] |= 0x02;
+        let image = battery_test_rom();
         let mut machine = NesMachine::from_ines(&image).unwrap();
         machine.write_cpu(0x6000, 0xCC);
 
