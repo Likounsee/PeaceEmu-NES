@@ -307,4 +307,27 @@ mod tests {
         session.set_controller_state(1, 0b0000_0010);
         assert_eq!(session.total_cycles(), 7);
     }
+    #[test]
+    fn audio_rate_accepts_both_documented_limits_and_rejects_above_maximum() {
+        let mut session = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
+        assert!(session.set_audio_sample_rate(8_000));
+        assert_eq!(session.config().audio_sample_rate, 8_000);
+        assert!(session.set_audio_sample_rate(192_000));
+        assert_eq!(session.config().audio_sample_rate, 192_000);
+        assert!(!session.set_audio_sample_rate(192_001));
+        assert_eq!(session.config().audio_sample_rate, 192_000, "invalid rate must leave the last valid configuration unchanged");
+    }
+
+    #[test]
+    fn consecutive_frames_have_fixed_video_shape_and_positive_cpu_work() {
+        let mut session = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
+        let first = session.advance_frame().unwrap();
+        let second = session.advance_frame().unwrap();
+        assert_eq!(first.palette_indices.len(), NES_FRAME_PIXELS);
+        assert_eq!(second.palette_indices.len(), NES_FRAME_PIXELS);
+        assert!(first.cpu_cycles > 0 && second.cpu_cycles > 0);
+        assert!(session.total_cycles() > u64::from(first.cpu_cycles));
+        assert!(first.palette_indices.iter().chain(&second.palette_indices).all(|pixel| *pixel < 64));
+    }
+
 }
