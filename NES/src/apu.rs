@@ -1403,6 +1403,23 @@ mod triangle_dac_hold_regressions {
     }
 
     #[test]
+    fn disabling_triangle_through_status_register_preserves_held_dac_level() {
+        let mut apu = Apu::new();
+        apu.registers[0x0A] = 2;
+        apu.triangle_sequence = 0; // Held DAC level 15.
+        apu.triangle_has_clocked = true;
+        apu.length_counters[2] = 10;
+        apu.enabled_channels = 0x04;
+        let before = apu.sample();
+
+        apu.write(0x4015, 0x00);
+
+        assert_eq!(apu.length_counter(2), Some(0));
+        assert_eq!(apu.sample(), before,
+            "disabling the triangle clears its length counter but does not reset its DAC latch");
+    }
+
+    #[test]
     fn triangle_dac_still_outputs_zero_when_sequence_is_at_zero_level() {
         let mut apu = Apu::new();
         apu.registers[0x0A] = 2;
