@@ -1752,3 +1752,47 @@ mod dmc_irq_status_regressions {
         assert!(!apu.irq_pending());
     }
 }
+
+
+#[cfg(test)]
+mod frame_counter_delay_regressions {
+    use super::*;
+
+    #[test]
+    fn frame_counter_reset_uses_three_cycles_on_odd_phase_and_four_on_even_phase() {
+        let mut odd = Apu::new();
+        odd.cpu_cycle_odd = true;
+        odd.frame_cycles = 10;
+        odd.write(0x4017, 0x80);
+        odd.tick_cpu_cycles(2);
+        assert!(odd.frame_reset_pending, "odd-phase reset must still be pending after two cycles");
+        odd.tick_cpu_cycles(1);
+        assert!(!odd.frame_reset_pending);
+        assert!(odd.five_step_mode);
+        assert_eq!(odd.frame_cycles, 1, "the reset cycle begins the new sequence");
+
+        let mut even = Apu::new();
+        even.cpu_cycle_odd = false;
+        even.frame_cycles = 10;
+        even.write(0x4017, 0x80);
+        even.tick_cpu_cycles(3);
+        assert!(even.frame_reset_pending, "even-phase reset must still be pending after three cycles");
+        even.tick_cpu_cycles(1);
+        assert!(!even.frame_reset_pending);
+        assert!(even.five_step_mode);
+        assert_eq!(even.frame_cycles, 1, "the reset cycle begins the new sequence");
+    }
+
+    #[test]
+    fn frame_irq_inhibit_takes_effect_immediately_before_delayed_reset() {
+        let mut apu = Apu::new();
+        apu.frame_irq = true;
+        apu.cpu_cycle_odd = false;
+        apu.write(0x4017, 0x40);
+        assert!(!apu.frame_irq_pending(), "writing IRQ inhibit clears an already-pending frame IRQ immediately");
+        assert!(apu.frame_reset_pending, "sequencer reset itself remains delayed");
+        apu.tick_cpu_cycles(3);
+        assert!(apu.frame_reset_pending);
+        assert!(!apu.frame_irq_pending());
+    }
+}
