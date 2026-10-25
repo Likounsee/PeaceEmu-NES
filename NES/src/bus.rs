@@ -687,6 +687,15 @@ mod mmc3_ppu_irq_integration_regressions {
     }
 
     #[test]
+    fn short_a12_pulse_does_not_clock_mmc3_irq() {
+        let mut bus = mmc3_bus();
+        bus.write(0x2000, 0x10); // Background pattern table at $1000.
+        bus.write(0x2001, 0x08); // Background rendering only.
+        bus.tick_ppu(9); // First high pulse lasts five dots before A12 falls again.
+        assert!(!bus.irq_pending(), "an A12 high edge after fewer than eight low dots must be filtered");
+    }
+
+    #[test]
     fn disabling_ppu_rendering_prevents_mmc3_irq_edges() {
         let mut bus = mmc3_bus();
         bus.write(0x2000, 0x08);
