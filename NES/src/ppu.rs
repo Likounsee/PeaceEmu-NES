@@ -29,6 +29,8 @@ pub struct Ppu {
     frame_fine_x: u8,
     frame_scroll_valid: bool,
     line_scroll_v: u16,
+    /// Screen X at which the current line's latched scroll address became active.
+    line_scroll_start_x: usize,
     nmi_pending: bool,
     nmi_line: bool,
     suppress_vblank: bool,
@@ -48,7 +50,7 @@ impl Default for Ppu {
             nametables: [0; 4096], palette: [0; 32], v: 0, t: 0,
             fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
             scanline: 261, dot: 0, odd_frame: false, frame_scroll_v: 0, frame_fine_x: 0,
-            frame_scroll_valid: false, line_scroll_v: 0,
+            frame_scroll_valid: false, line_scroll_v: 0, line_scroll_start_x: 0,
             nmi_pending: false, nmi_line: false, suppress_vblank: false,
             framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
             ppu_cycle: 0, mapper_a12_high: false, mapper_bus_initialized: false, mapper_bus_events: Vec::new(),
@@ -128,7 +130,18 @@ impl Ppu {
             }
             6 => {
                 if !self.write_latch { self.t = (self.t & 0x00FF) | (((value as u16) & 0x3F) << 8); }
-                else { self.t = (self.t & 0x7F00) | value as u16; self.v = self.t; }
+                else {
+                    self.t = (self.t & 0x7F00) | value as u16;
+                    self.v = self.t;
+                    // A mid-scanline $2006 write changes the address used by
+                    // subsequent background pixels. Keep the current scanline's
+                    // sampling origin in step with the beam instead of applying
+                    // the new address retroactively to pixels already emitted.
+                    if self.scanline < 240 && (1..=256).contains(&self.dot) && self.mask & 0x18 != 0 {
+                        self.line_scroll_v = self.v;
+                        self.line_scroll_start_x = self.dot.saturating_sub(1) as usize;
+                    }
+                }
                 self.write_latch = !self.write_latch;
             }
             7 => { self.mem_write(self.v & 0x3FFF, value, cartridge); self.increment_vram_address(); }
@@ -162,6 +175,7 @@ impl Ppu {
             // so using it at the end of the line would shift the row being rendered.
             if self.dot == 1 && self.scanline < 240 {
                 self.line_scroll_v = self.v;
+                self.line_scroll_start_x = 0;
             }
 
             // Emit the background pixel before testing sprite zero, so hit detection
@@ -400,7 +414,7 @@ impl Ppu {
         let coarse_y = ((scroll_v >> 5) & 0x1F) as usize;
         let fine_y = ((scroll_v >> 12) & 7) as usize;
         let pattern_base = if self.ctrl & 0x10 != 0 { 0x1000u16 } else { 0 };
-        let scroll_x = base_coarse_x * 8 + fine_x + x;
+        let scroll_x = base_coarse_x * 8 + fine_x + x.saturating_sub(self.line_scroll_start_x);
         let tile_x = scroll_x / 8;
         let nt_x = base_nt_x ^ ((tile_x / 32) & 1);
         let nametable = 0x2000u16 + ((nt_y * 2 + nt_x) as u16) * 0x400;
@@ -751,6 +765,48 @@ impl Ppu {
         let mut index = (address as usize - 0x3F00) & 0x1F;
         if index == 0x10 || index == 0x14 || index == 0x18 || index == 0x1C { index -= 0x10; }
         index
+    }
+}
+
+#[cfg(test)]
+mod mid_scanline_scroll_regressions {
+    use super::*;
+
+    #[test]
+    fn second_ppu_address_write_rebases_only_the_unrendered_scanline() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 40;
+        ppu.dot = 80;
+        ppu.mask = 0x08;
+
+        // Set VRAM address to $2100 with the two-write $2006 protocol.
+        ppu.cpu_write_register(6, 0x21, None);
+        ppu.cpu_write_register(6, 0x00, None);
+
+        assert_eq!(ppu.v, 0x2100);
+        assert_eq!(ppu.line_scroll_v, 0x2100,
+            "the next background pixel must use the newly written VRAM address");
+        assert_eq!(ppu.line_scroll_start_x, 79,
+            "the new address must start at the current beam, not pixel zero");
+    }
+
+    #[test]
+    fn new_scanline_resets_the_scroll_sampling_origin() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 40;
+        ppu.dot = 80;
+        ppu.mask = 0x08;
+        ppu.line_scroll_start_x = 79;
+        ppu.tick(1);
+
+        assert_eq!(ppu.position(), (40, 81));
+        assert_eq!(ppu.line_scroll_start_x, 79,
+            "the origin stays fixed until the next scanline starts");
+        ppu.tick(261);
+
+        assert_eq!(ppu.position(), (41, 1));
+        assert_eq!(ppu.line_scroll_start_x, 0,
+            "each visible scanline begins with a fresh scroll origin");
     }
 }
 
