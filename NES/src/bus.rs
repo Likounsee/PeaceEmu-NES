@@ -1004,3 +1004,38 @@ mod dma_and_irq_interaction_regressions {
         assert!(!bus.irq_pending(), "the line falls only after both sources are inactive");
     }
 }
+
+
+#[cfg(test)]
+mod dmc_mapper_bank_integration_regressions {
+    use super::*;
+
+    #[test]
+    fn dmc_dma_reads_the_current_mmc3_prg_bank_mapping() {
+        let mut image = vec![0; 16 + 4 * 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 4;
+        image[6] = 0x40; // Mapper 4.
+        let prg_start = 16;
+        for bank in 0..8 {
+            let start = prg_start + bank * 0x2000;
+            image[start..start + 0x2000].fill(if bank == 3 { 0xFF } else { 0x00 });
+        }
+
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0x8000, 0x46); // PRG mode 1, select R6.
+        bus.write(0x8001, 3);    // Put 8 KiB bank 3 at $C000.
+        bus.write(0x4011, 64);   // Midpoint DAC.
+        bus.write(0x4010, 0x0F); // Fast DMC timer, IRQ disabled.
+        bus.write(0x4012, 0);    // Sample starts at $C000.
+        bus.write(0x4013, 0);    // One-byte sample.
+        bus.write(0x4015, 0x10);
+
+        assert_eq!(bus.tick_apu(1), 4);
+        bus.tick_apu(16 * 54);
+
+        assert!(bus.apu_sample() > 0.0,
+            "the selected $C000 bank's all-one sample should raise the DMC DAC");
+    }
+}
