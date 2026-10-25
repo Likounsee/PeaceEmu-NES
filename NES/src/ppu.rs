@@ -581,8 +581,25 @@ impl Ppu {
         // Sprite 0 hit and overflow are derived from this snapshot, not persistent events.
         // Recompute both so changing OAM or masks cannot leave stale status behind.
         self.status &= !0x60;
-        if self.mask & 0x10 == 0 { return; }
+        if self.mask & 0x18 == 0 { return; }
         let sprite_height: usize = if self.ctrl & 0x20 != 0 { 16 } else { 8 };
+
+        // Sprite evaluation still runs when background rendering is enabled but
+        // sprite pixels are masked off. Preserve overflow status in snapshot mode too.
+        if self.mask & 0x10 == 0 {
+            let mut rows_per_scanline = [0u8; 240];
+            for sprite in 0..64usize {
+                let top = sprite_top(self.oam[sprite * 4]);
+                for sy in 0..sprite_height {
+                    let y = top + sy;
+                    if y >= 240 { continue; }
+                    rows_per_scanline[y] = rows_per_scanline[y].saturating_add(1);
+                    if rows_per_scanline[y] > 8 { self.status |= 0x20; }
+                }
+            }
+            return;
+        }
+
         let mut rows_per_scanline = [0u8; 240];
         // The first opaque sprite in OAM owns each pixel, even if hidden behind BG.
         let mut sprite_claimed = vec![false; 256 * 240];
