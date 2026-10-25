@@ -4846,3 +4846,32 @@ mod mmc3_repeated_a12_level_regressions {
         assert!(cart.irq_pending(), "a later qualified low-to-high edge can assert IRQ again");
     }
 }
+
+
+#[cfg(test)]
+mod mmc3_irq_disable_edge_regressions {
+    use super::*;
+
+    fn image() -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 2;
+        image[6] = 0x40;
+        image
+    }
+
+    #[test]
+    fn disabled_irq_counter_keeps_counting_without_latching_irq_until_enabled_edge() {
+        let mut cart = Cartridge::parse(&image()).unwrap();
+        cart.cpu_write(0xC000, 1); // Latch = 1.
+        cart.cpu_write(0xC001, 0);
+        cart.observe_ppu_address(0x0000, 0);
+        cart.observe_ppu_address(0x1000, 8); // Counter loads 1 while IRQ is disabled.
+        assert!(!cart.irq_pending());
+
+        cart.cpu_write(0xE001, 0);
+        cart.observe_ppu_address(0x0000, 9);
+        cart.observe_ppu_address(0x1000, 17); // Qualified edge decrements 1 -> 0.
+        assert!(cart.irq_pending(), "enabling IRQ must expose the next real counter-zero event");
+    }
+}
