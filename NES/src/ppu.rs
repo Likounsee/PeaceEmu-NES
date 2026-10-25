@@ -3209,3 +3209,26 @@ mod sprite_8x16_render_regressions {
         assert_ne!(ppu.framebuffer[10 * 256 + 16], sprite_color, "the opposite rows in each tile stay transparent");
     }
 }
+
+
+#[cfg(test)]
+mod ppudata_palette_buffer_regressions {
+    use super::*;
+
+    #[test]
+    fn palette_read_is_immediate_preserves_open_bus_high_bits_and_refills_buffer() {
+        let mut ppu = Ppu::new();
+        ppu.open_bus = 0xC0;
+        ppu.palette[5] = 0x2A;
+        // $2F05 mirrors nametable 1 in horizontal mirroring.
+        ppu.nametables[0x705] = 0x5A;
+        ppu.v = 0x3F05;
+
+        let palette_value = ppu.cpu_read_register(7, None);
+        assert_eq!(palette_value, 0xEA, "palette drives bits 0-5 while bits 6-7 retain the I/O latch");
+        assert_eq!(ppu.read_buffer, 0x5A, "palette reads refill the delayed buffer from address - $1000");
+
+        ppu.v = 0x2000;
+        assert_eq!(ppu.cpu_read_register(7, None), 0x5A, "the next non-palette read returns the refilled buffer");
+    }
+}
