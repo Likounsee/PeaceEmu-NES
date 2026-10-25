@@ -2060,7 +2060,7 @@ impl Cartridge {
     #[test]
     fn mmc1_prg_ram_disable_bit_blocks_reads_and_writes_until_reenabled() {
         let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\x1A");
+        image[0..4].copy_from_slice(&[0x4E, 0x45, 0x53, 0x1A]);
         image[4] = 2;
         image[6] = 0x10; // Mapper 1, CHR-RAM.
         let mut cart = Cartridge::parse(&image).unwrap();
