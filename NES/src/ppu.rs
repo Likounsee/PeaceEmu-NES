@@ -411,7 +411,7 @@ impl Ppu {
         let mut in_range = 0usize;
         for sprite in 0..64usize {
             let base = sprite * 4;
-            let top = Self::sprite_top(self.oam[base]);
+            let top = (self.oam[base] as usize + 1) & 0xFF;
             if y < top || y >= top + height { continue; }
             in_range += 1;
             if in_range > 8 { break; }
@@ -536,7 +536,7 @@ impl Ppu {
         let mut sprite_claimed = vec![false; 256 * 240];
         for sprite in 0..64usize {
             let base = sprite * 4;
-            let top = Self::sprite_top(self.oam[base]);
+            let top = (self.oam[base] as usize + 1) & 0xFF;
             let tile = self.oam[base + 1] as usize;
             let attributes = self.oam[base + 2];
             let left = self.oam[base + 3] as usize;
