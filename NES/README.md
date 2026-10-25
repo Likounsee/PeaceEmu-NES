@@ -21,17 +21,12 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 
 ## Dernière itération
 
-- **APU/DMC** : tests de propriété du sample buffer, de livraison DMA sans double consommation et de séparation des IRQ frame/DMC, y compris lors de l'inhibition immédiate via `$4017`.
-- **MMC3** : test complémentaire garantissant qu'un niveau A12 maintenu à 1 ne redéclenche pas l'IRQ ; un nouveau déclenchement exige un retour bas suffisamment long puis un vrai front montant qualifié.
-- **Séquenceur APU** : tests du délai de reset de `$4017` selon la parité CPU (3/4 cycles), de l'inhibition immédiate de l'IRQ frame et du comportement de lecture de statut.
-- **Bus/machine** : tests du fetch DMC depuis la ROM, du blocage sans double DMA lorsque le sample buffer est plein et de l'indépendance des IRQ MMC3/DMC sur la ligne IRQ CPU.
-- **PPU/NMI/scroll** : régressions pour la suppression de VBlank par `$2002`, l'activation de NMI pendant VBlank et les retours de coarse-Y (ligne 29 : changement de nametable ; ligne 31 : pas de changement).
-- **Derniers tests en parallèle** : le bus CPU vérifie désormais la propagation de l'IRQ terminal DMC et son acquittement via `$4015` ; le PPU teste directement les trois branches de l'incrément de Y (fine-Y, coarse-Y 29 et coarse-Y 31), y compris la conservation des bits de scroll indépendants.
-- **MMC3** : tests du filtre A12 à sept/huit dots, du rebasage après reset PPU, de l'acquittement/réactivation IRQ, du latch non nul, de `$C001` et du maintien du rechargement lorsqu'un front est filtré.
-- Une fixture MMC3 utilise des octets de signature iNES explicites pour éviter toute ambiguïté d'échappement dans le test.
-- Les résultats finaux des workflows doivent être vérifiés après les derniers commits ; ces tests synthétiques ne remplacent pas une validation avec des ROM de diagnostic et des essais de jeu réels.
+- **APU/DMC** : les tests couvrent le buffer d'échantillon, les stalls DMA et l'indépendance entre IRQ frame, DMC et mapper.
+- **PPU/NMI/scroll** : ajout de régressions pour l'activation de NMI en plein VBlank (un seul front montant) et le passage de coarse-Y 30 à 31 sans bascule de nametable.
+- **MMC3** : ajout d'un test confirmant que le compteur continue d'évoluer alors que la sortie IRQ est désactivée, et que le prochain événement zéro peut déclencher l'IRQ après réactivation.
+- **Validation** : la dernière série de changements doit être jugée sur les workflows CI des commits correspondants ; les tests synthétiques ne remplacent pas les essais de ROM réelles, notamment pour l'alignement sprite/hitbox de *Super Mario Bros.*
 
-- **CPU** : matrice de régression supplémentaire pour RLA, SRE, RRA, DCP et ISC sur les sept modes d'adressage, avec vérification des cycles, de l'adresse écrite et des effets sur les registres/flags. Les accès par page croisée sont couverts ; le timing bus complet reste à faire.
+
 ## Ce qui est implémenté
 
 - **CPU :** interpréteur 2A03 avec de nombreuses instructions officielles, plusieurs opcodes non officiels stables et composites, flags, pile et interruptions. Les opcodes inconnus produisent une erreur explicite. Le modèle n'est pas cycle-exact.
