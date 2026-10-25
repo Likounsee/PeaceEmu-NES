@@ -3268,17 +3268,6 @@ mod nametable_address_bus_regressions {
         assert_eq!(cart.mirroring(), Mirroring::FourScreen);
 
         let mut ppu = Ppu::new();
-        for (address, value) in [
-            (0x2000, 0x11),
-            (0x2400, 0x22),
-            (0x2800, 0x33),
-            (0x2C00, 0x44),
-        ] {
-            ppu.mem_write(address, value, None);
-        }
-        // This unit-level PPU has no cartridge attached during the writes above,
-        // so exercise the mapper-aware path below with the same four-screen cart.
-        let mut ppu = Ppu::new();
         let mut cart = cart;
         for (address, value) in [
             (0x2000, 0x11),
@@ -3313,7 +3302,8 @@ mod nametable_address_bus_regressions {
         vertical_image[6] = 0x41; // Mapper 4, vertical mirroring.
         let vertical_cart = Cartridge::parse(&vertical_image).unwrap();
         let mut vertical = Ppu::new();
-        vertical.mem_write(0x2000, 0x3C, Some(&mut vertical_cart.clone()));
+        let mut vertical_cart = vertical_cart;
+        vertical.mem_write(0x2000, 0x3C, Some(&mut vertical_cart));
         assert_eq!(vertical.mem_read(0x2800, Some(&vertical_cart)), 0x3C);
     }
 }
