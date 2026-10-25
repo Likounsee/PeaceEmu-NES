@@ -4744,7 +4744,7 @@ mod mmc3_irq_reload_command_regressions {
 
     fn image() -> Vec<u8> {
         let mut data = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
-        data[0..4].copy_from_slice(b"NES\\x1A");
+        data[0..4].copy_from_slice(&[0x4E, 0x45, 0x53, 0x1A]);
         data[4] = 2;
         data[6] = 0x40;
         data
