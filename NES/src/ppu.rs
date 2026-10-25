@@ -2622,3 +2622,24 @@ mod prerender_sprite_overflow_regressions {
             "more than eight sprites on scanline zero must overflow during pre-render evaluation");
     }
 }
+
+
+#[cfg(test)]
+mod background_only_sprite_evaluation_regressions {
+    use super::*;
+
+    #[test]
+    fn background_only_snapshot_still_reports_sprite_overflow() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x08; // Background on, sprite pixels off.
+        for sprite in 0..9usize {
+            ppu.oam[sprite * 4..sprite * 4 + 4]
+                .copy_from_slice(&[0, 0, 0, (sprite * 8) as u8]);
+        }
+
+        ppu.render_frame(None);
+
+        assert_ne!(ppu.status & 0x20, 0,
+            "sprite evaluation continues while background rendering alone is enabled");
+    }
+}
