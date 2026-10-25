@@ -179,7 +179,8 @@ impl Ppu {
                 // can then affect only pixels the PPU has not emitted yet.
                 self.render_sprite_pixel(x, y, cartridge);
             }
-            if self.dot == 256 && self.scanline < 240 && self.mask & 0x18 != 0 {
+            if self.dot == 256 && (self.scanline < 240 || self.scanline == 261) && self.mask & 0x18 != 0 {
+                // The pre-render scanline evaluates sprites for visible scanline zero.
                 // Sprite evaluation is disabled when both rendering layers are off.
                 self.update_sprite_overflow(self.scanline as usize);
             }
@@ -472,7 +473,7 @@ impl Ppu {
     /// false positives and false negatives instead of using a simple sprite count.
     fn update_sprite_overflow(&mut self, y: usize) {
         // Sprite evaluation at dot 256 selects sprites for the following scanline.
-        let target_y = y + 1;
+        let target_y = if y == 261 { 0 } else { y + 1 };
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         let in_range = |oam_y: u8| {
             let top = sprite_top(oam_y);
@@ -2579,5 +2580,28 @@ mod beam_timed_sprite_zero_regressions {
         ppu.tick_with_cartridge(1, Some(&cartridge));
         assert_eq!(ppu.status & 0x40, 0,
             "the 2C02 suppresses sprite-zero hit at screen X=255");
+    }
+}
+
+
+#[cfg(test)]
+mod prerender_sprite_overflow_regressions {
+    use super::*;
+
+    #[test]
+    fn prerender_scanline_evaluates_sprite_overflow_for_visible_line_zero() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 261;
+        ppu.dot = 255;
+        ppu.mask = 0x18;
+        for sprite in 0..9usize {
+            ppu.oam[sprite * 4..sprite * 4 + 4]
+                .copy_from_slice(&[0xFF, 0, 0, (sprite * 8) as u8]);
+        }
+
+        ppu.tick(1);
+
+        assert_ne!(ppu.status & 0x20, 0,
+            "more than eight sprites on scanline zero must overflow during pre-render evaluation");
     }
 }
