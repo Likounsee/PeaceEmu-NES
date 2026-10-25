@@ -4120,7 +4120,7 @@ mod mapper_header_error_regressions {
         let mut rom = vec![0; INES_HEADER_LEN];
         rom[0..4].copy_from_slice(b"NES\x1A");
         rom[4] = 1;
-        rom[6] = 0x20; // Mapper 2 (UxROM), not implemented by this core.
+        rom[6] = 0x50; // Mapper 5 (MMC5), not implemented by this core.
         assert!(matches!(Cartridge::parse(&rom), Err(CartridgeError::UnsupportedMapper(5))));
     }
 
