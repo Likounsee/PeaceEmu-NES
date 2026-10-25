@@ -1697,3 +1697,30 @@ mod zero_cycle_tick_regressions {
         assert!(!apu.cpu_cycle_odd);
     }
 }
+
+
+#[cfg(test)]
+mod dmc_buffer_ownership_regressions {
+    use super::*;
+
+    #[test]
+    fn duplicate_dma_supply_cannot_overwrite_a_byte_waiting_in_the_sample_buffer() {
+        let mut apu = Apu::new();
+        apu.write(0x4013, 1);
+        apu.write(0x4015, 0x10);
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xC000));
+
+        apu.supply_dmc_byte(0xA5);
+        let remaining = apu.dmc_bytes_remaining;
+        let address = apu.dmc_current_address;
+
+        // The DMA bus must not consume or replace a second byte while the
+        // one-byte sample buffer is occupied.
+        apu.supply_dmc_byte(0x5A);
+
+        assert_eq!(apu.dmc_sample_buffer, Some(0xA5));
+        assert_eq!(apu.dmc_bytes_remaining, remaining);
+        assert_eq!(apu.dmc_current_address, address);
+        assert_eq!(apu.take_dmc_dma_request(), None);
+    }
+}
