@@ -984,10 +984,12 @@ impl Gxrom {
         })
     }
 
-    /// Reads cartridge PRG-RAM or the selected 32 KiB PRG-ROM bank.
+    /// Reads cartridge PRG-RAM (when present) or the selected 32 KiB PRG-ROM bank.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
         match address {
-            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+            0x6000..=0x7FFF if !self.prg_ram.is_empty() =>
+                Some(self.prg_ram[(address as usize - 0x6000) % self.prg_ram.len()]),
+            0x6000..=0x7FFF => None,
             0x8000..=0xFFFF => {
                 let index = self.selected_prg_bank * 2 * PRG_BANK_LEN + address as usize - 0x8000;
                 Some(self.prg_rom[index])
@@ -996,10 +998,15 @@ impl Gxrom {
         }
     }
 
-    /// Writes PRG-RAM or selects PRG (bits 4-5) and CHR (bits 0-1) banks.
+    /// Writes PRG-RAM when present or selects PRG (bits 4-5) and CHR (bits 0-1) banks.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
-            0x6000..=0x7FFF => { self.prg_ram[address as usize - 0x6000] = value; true }
+            0x6000..=0x7FFF if !self.prg_ram.is_empty() => {
+                let index = (address as usize - 0x6000) % self.prg_ram.len();
+                self.prg_ram[index] = value;
+                true
+            }
+            0x6000..=0x7FFF => false,
             0x8000..=0xFFFF => {
                 let prg_count = self.prg_rom.len() / (2 * PRG_BANK_LEN);
                 let chr_count = self.chr_rom.len() / CHR_BANK_LEN;
