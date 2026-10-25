@@ -2857,3 +2857,29 @@ mod background_only_sprite_evaluation_regressions {
             "sprite evaluation continues while background rendering alone is enabled");
     }
 }
+
+
+#[cfg(test)]
+mod vblank_nmi_race_regressions {
+    use super::*;
+
+    #[test]
+    fn status_read_on_dot_zero_suppresses_vblank_and_its_nmi_edge() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x80; // Enable NMI on vblank.
+        ppu.scanline = 241;
+        ppu.dot = 0;
+        ppu.status = 0x20; // Keep sprite overflow to check unrelated status bits.
+        ppu.suppress_vblank = false;
+
+        let status = ppu.cpu_read_register(2, None);
+        assert_eq!(status & 0x80, 0);
+        assert_eq!(ppu.status & 0x20, 0x20);
+        assert!(ppu.suppress_vblank);
+
+        ppu.tick(1); // Advance to the vblank-set dot.
+        assert_eq!(ppu.status & 0x80, 0);
+        assert!(!ppu.take_nmi_request());
+        assert!(!ppu.suppress_vblank, "the suppression latch is consumed at dot 1");
+    }
+}
