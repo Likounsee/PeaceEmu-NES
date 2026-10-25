@@ -1389,6 +1389,7 @@ mod triangle_dac_hold_regressions {
         let mut low = Apu::new();
         low.registers[0x0A] = 2; // Valid timer period; no timer sequence advance required.
         low.triangle_sequence = 0; // DAC level 15.
+        low.triangle_has_clocked = true; // Sequencer previously drove this DAC level.
         low.length_counters[2] = 0;
         low.triangle_linear_counter = 0;
 
