@@ -34,7 +34,7 @@ La liste est descriptive et non exhaustive. Vérifier le code des tests avant de
 - CPU : tous les opcodes supportés, flags, cycles, interruptions, accès factices et cas limites d'adressage.
 - PPU : fetchs par dot, événements de scroll, hit/overflow sprite, accès concurrents et interactions NMI/PPUSTATUS.
 - APU/bus : timing IRQ, séquenceur, DMC, alignement et arbitrage DMA.
-- Mappers : tailles, banques extrêmes, mirroring, RAM, bus conflicts et variantes explicitement ciblées. MMC2/MMC4 couvrent désormais les latches CHR, les fenêtres PRG distinctes, les déclencheurs sur plages complètes, le verrouillage du mirroring quatre écrans et les ROM invalides. MMC3 vérifie aussi les limites exactes du filtre A12 à huit dots, les observations répétées de niveau bas et les horodatages non monotones.
+- Mappers : tailles, banques extrêmes, mirroring, RAM, bus conflicts et variantes explicitement ciblées. MMC2/MMC4 couvrent désormais les latches CHR, les fenêtres PRG distinctes, les déclencheurs sur plages complètes, le verrouillage du mirroring quatre écrans et les ROM invalides. MMC3 vérifie aussi les limites exactes du filtre A12 à huit dots, les observations répétées de niveau bas et les horodatages non monotones. Des tests PPU vérifient les transitions A12 horodatées aux slots de fetch et la mise à l'état bas à l'arrêt du rendu ; des tests de bus vérifient qu'une vraie transition PPU qualifiée déclenche l'IRQ MMC3 sans hook de diagnostic, et que le PPU inactif ne génère pas d'IRQ.
 
 ### P2 — ROM de diagnostic
 Ajouter uniquement des ROM dont la licence autorise l'intégration ou le téléchargement automatisé. Pour chaque ROM, documenter :
