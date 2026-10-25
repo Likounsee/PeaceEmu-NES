@@ -1818,6 +1818,16 @@ mod indexed_indirect_cycle_regressions {
 mod unofficial_rmw_addressing_matrix_regressions {
     use super::*;
 
+    fn setup(program: &[u8]) -> (Cpu, CpuBus) {
+        let mut bus = CpuBus::new();
+        for (i, value) in program.iter().copied().enumerate() {
+            bus.write(0x0600 + i as u16, value);
+        }
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        (cpu, bus)
+    }
+
     const CYCLES: [u8; 7] = [8, 5, 6, 8, 6, 7, 7];
     const OPERANDS: [[u8; 2]; 7] = [
         [0x20, 0x00], // (indirect,X)
