@@ -219,16 +219,32 @@ impl NesMachine {
 
     /// Executes one CPU instruction and services any OAM DMA it requests.
     pub fn step(&mut self) -> Result<StepResult, MachineError> {
-        let result = self.cpu.step(&mut self.bus)?;
-        let mut elapsed_cycles = u16::from(result.cycles);
+        // Let memory accesses advance the PPU in instruction order. This is especially
+        // important for $2002 polling (e.g. SMB's sprite-zero split): the status read
+        // must observe PPU events reached by the opcode/operand fetches before it.
+        self.bus.begin_cpu_instruction();
+        let step_result = self.cpu.step(&mut self.bus);
+        let bus_cycles = u32::from(self.bus.end_cpu_instruction());
+        let result = step_result?;
+        let instruction_cycles = u32::from(result.cycles);
+        debug_assert!(bus_cycles <= instruction_cycles, "CPU performed more bus accesses than instruction cycles");
+
+        // Bus accesses already advanced PPU time. Advance the APU for those cycles,
+        // then clock only the remaining instruction cycles on both devices.
+        let dmc_stalls = self.bus.tick_apu(bus_cycles.min(instruction_cycles));
+        if dmc_stalls != 0 {
+            self.cpu.add_stall_cycles(dmc_stalls.min(u32::from(u16::MAX)) as u16);
+            self.clock_devices_for_cpu_cycles(dmc_stalls);
+        }
+        self.clock_devices_for_cpu_cycles(instruction_cycles.saturating_sub(bus_cycles));
+
         if let Some(page) = self.bus.take_oam_dma_request() {
             // DMA occupies 513 CPU cycles, plus one alignment cycle on odd parity.
             let dma_cycles = if self.cpu.total_cycles() & 1 == 0 { 513 } else { 514 };
             self.bus.transfer_oam_dma(page);
             self.cpu.add_stall_cycles(dma_cycles);
-            elapsed_cycles = elapsed_cycles.saturating_add(dma_cycles);
+            self.clock_devices_for_cpu_cycles(dma_cycles);
         }
-        self.clock_devices_for_cpu_cycles(u32::from(elapsed_cycles));
         Ok(result)
     }
 
@@ -284,6 +300,23 @@ mod tests {
         machine.clock_devices_for_cpu_cycles(1);
         assert_eq!(machine.audio_sample_rate(), 48_000);
         assert_eq!(machine.ppu_position(), (261, 3));
+    }
+
+    #[test]
+    fn absolute_status_read_observes_vblank_reached_during_operand_fetches() {
+        // BIT $2002 is four cycles: its status read happens after opcode and
+        // address fetches. Vblank starts at scanline 241, dot 1, so the read
+        // must see it even though the PPU was not in vblank at instruction start.
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[0x2C, 0x02, 0x20, 0xEA])).unwrap();
+        machine.bus.ppu.scanline = 241;
+        machine.bus.ppu.dot = 0;
+
+        machine.step().unwrap();
+
+        assert_ne!(machine.cpu.state().status & crate::cpu::flags::NEGATIVE, 0,
+            "BIT must observe the vblank flag raised before its $2002 data read");
+        assert_eq!(machine.bus.ppu.status & 0x80, 0,
+            "reading $2002 must clear the vblank flag after observing it");
     }
 
     #[test]
