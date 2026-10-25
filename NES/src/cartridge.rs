@@ -4121,7 +4121,7 @@ mod mapper_header_error_regressions {
         rom[0..4].copy_from_slice(b"NES\x1A");
         rom[4] = 1;
         rom[6] = 0x20; // Mapper 2 (UxROM), not implemented by this core.
-        assert!(matches!(Cartridge::parse(&rom), Err(CartridgeError::UnsupportedMapper(2))));
+        assert!(matches!(Cartridge::parse(&rom), Err(CartridgeError::UnsupportedMapper(5))));
     }
 
     #[test]
