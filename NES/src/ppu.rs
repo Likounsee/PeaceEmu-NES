@@ -3109,3 +3109,37 @@ mod sprite_zero_boundary_regressions {
             "sprite-zero hit depends on opaque overlap, not visual priority");
     }
 }
+
+
+#[cfg(test)]
+mod sprite_zero_flip_regressions {
+    use super::*;
+
+    fn sprite_with_only_leftmost_pattern_bit() -> Cartridge {
+        let mut rom = vec![0; 16 + 16_384 + 8_192];
+        rom[0..4].copy_from_slice(b"NES\\x1A");
+        rom[4] = 1;
+        rom[5] = 1;
+        // Tile zero, row zero: only bit 0 is opaque. Horizontal flip moves
+        // this pixel from the rightmost sprite column to the leftmost column.
+        rom[16 + 16_384] = 0x01;
+        Cartridge::parse(&rom).unwrap()
+    }
+
+    #[test]
+    fn sprite_zero_hit_uses_the_same_horizontal_flip_as_sprite_rendering() {
+        let cart = sprite_with_only_leftmost_pattern_bit();
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x1E;
+        ppu.oam[0] = 0xFF;
+        ppu.oam[1] = 0;
+        ppu.oam[3] = 16;
+        ppu.background_opaque[16] = true;
+
+        assert!(!ppu.sprite_zero_hit_at(16, 0, Some(&cart)),
+            "without flipping, the sprite's first screen pixel reads pattern bit 7");
+        ppu.oam[2] = 0x40; // Horizontal flip.
+        assert!(ppu.sprite_zero_hit_at(16, 0, Some(&cart)),
+            "horizontal flip must move pattern bit 0 onto screen X=16");
+    }
+}
