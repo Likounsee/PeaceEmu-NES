@@ -38,7 +38,7 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 5. NES 2.0 n'est pas pris en charge de façon générale ; la prise en charge partielle de NROM ne doit pas être extrapolée aux autres mappers.
 6. La suite synthétique doit être complétée par des ROM de diagnostic/homebrew redistribuables légalement.
 7. Le contrat `EmulationCore`, l'adaptateur et le lancement depuis la bibliothèque PeaceEmu doivent être compilés et testés ensemble dans le dépôt hôte.
-8. Les manifestes `Cargo.toml` racine et `NES/Cargo.toml` déclarent des MSRV différents ; harmoniser cette décision.
+8. Les deux manifestes `Cargo.toml` déclarent désormais Rust 1.78 comme MSRV ; il reste à vérifier cette promesse avec une toolchain 1.78 en CI.
 
 ## Intégration PeaceEmu
 
