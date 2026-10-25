@@ -388,8 +388,7 @@ impl Mmc1 {
 }
 
 /// UxROM (mapper 2): switchable lower PRG bank and fixed final PRG bank.
-///
-/// Bus-conflict variants are not modelled yet; writes select the bank directly.
+/// NES 2.0 submapper 1 models boards whose ROM drives the data bus during writes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Uxrom {
     prg_rom: Vec<u8>,
@@ -398,6 +397,7 @@ pub struct Uxrom {
     chr_is_ram: bool,
     mirroring: Mirroring,
     selected_bank: usize,
+    bus_conflicts: bool,
 }
 
 impl Uxrom {
@@ -451,7 +451,8 @@ impl Uxrom {
         let mirroring = if image[6] & 0x08 != 0 { Mirroring::FourScreen }
             else if image[6] & 0x01 != 0 { Mirroring::Vertical }
             else { Mirroring::Horizontal };
-        Ok(Self { prg_rom: image[prg_start..chr_start].to_vec(), prg_ram, chr, chr_is_ram, mirroring, selected_bank: 0 })
+        let bus_conflicts = nes2 && image[8] >> 4 == 1;
+        Ok(Self { prg_rom: image[prg_start..chr_start].to_vec(), prg_ram, chr, chr_is_ram, mirroring, selected_bank: 0, bus_conflicts })
     }
 
     /// Reads PRG-RAM or the currently selected/fixed PRG-ROM bank.
@@ -487,7 +488,10 @@ impl Uxrom {
                 // The upper window remains hard-wired to the final bank, but the
                 // lower window may also select that same bank on UxROM boards.
                 let bank_count = self.prg_rom.len() / PRG_BANK_LEN;
-                self.selected_bank = value as usize % bank_count;
+                let effective_value = if self.bus_conflicts {
+                    value & self.cpu_read(address).unwrap_or(0xFF)
+                } else { value };
+                self.selected_bank = effective_value as usize % bank_count;
                 true
             }
             _ => false,
@@ -514,8 +518,7 @@ impl Uxrom {
 
 
 /// CNROM (mapper 3): fixed NROM-style PRG mapping and switchable 8 KiB CHR-ROM bank.
-///
-/// Bus-conflict variants are not modelled yet; writes select the CHR bank directly.
+/// NES 2.0 submapper 1 models boards whose ROM drives the data bus during writes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Cnrom {
     prg_rom: Vec<u8>,
@@ -523,6 +526,7 @@ pub struct Cnrom {
     chr_rom: Vec<u8>,
     mirroring: Mirroring,
     selected_chr_bank: usize,
+    bus_conflicts: bool,
 }
 
 impl Cnrom {
@@ -575,6 +579,7 @@ impl Cnrom {
             chr_rom: image[chr_start..chr_start + chr_len].to_vec(),
             mirroring,
             selected_chr_bank: 0,
+            bus_conflicts: nes2 && image[8] >> 4 == 1,
         })
     }
 
@@ -599,7 +604,10 @@ impl Cnrom {
             }
             0x6000..=0x7FFF => false,
             0x8000..=0xFFFF => {
-                self.selected_chr_bank = value as usize % (self.chr_rom.len() / CHR_BANK_LEN);
+                let effective_value = if self.bus_conflicts {
+                    value & self.cpu_read(address).unwrap_or(0xFF)
+                } else { value };
+                self.selected_chr_bank = effective_value as usize % (self.chr_rom.len() / CHR_BANK_LEN);
                 true
             }
             _ => false,
@@ -4298,5 +4306,70 @@ mod mapper8_regressions {
         let mut short = image(2, 1, 0);
         short.pop();
         assert!(matches!(Cartridge::parse(&short), Err(CartridgeError::TruncatedImage { .. })));
+    }
+}
+
+
+#[cfg(test)]
+mod bus_conflict_regression_tests {
+    use super::*;
+
+    fn nes2_uxrom(submapper: u8) -> Vec<u8> {
+        let prg_banks = 4usize;
+        let chr_banks = 1usize;
+        let mut image = vec![0; INES_HEADER_LEN + prg_banks * PRG_BANK_LEN + chr_banks * CHR_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = prg_banks as u8;
+        image[5] = chr_banks as u8;
+        image[6] = 0x20;
+        image[7] = 0x08;
+        image[8] = submapper << 4;
+        let start = INES_HEADER_LEN;
+        for bank in 0..prg_banks {
+            image[start + bank * PRG_BANK_LEN..start + (bank + 1) * PRG_BANK_LEN].fill((bank as u8) * 0x10);
+        }
+        image[start..start + PRG_BANK_LEN].fill(0x02);
+        image
+    }
+
+    fn nes2_cnrom(submapper: u8) -> Vec<u8> {
+        let prg_len = 2 * PRG_BANK_LEN;
+        let chr_banks = 4usize;
+        let mut image = vec![0; INES_HEADER_LEN + prg_len + chr_banks * CHR_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 2;
+        image[5] = chr_banks as u8;
+        image[6] = 0x30;
+        image[7] = 0x08;
+        image[8] = submapper << 4;
+        let prg_start = INES_HEADER_LEN;
+        image[prg_start..prg_start + prg_len].fill(0x02);
+        let chr_start = prg_start + prg_len;
+        for bank in 0..chr_banks {
+            image[chr_start + bank * CHR_BANK_LEN..chr_start + (bank + 1) * CHR_BANK_LEN].fill(0x40 + bank as u8);
+        }
+        image
+    }
+
+    #[test]
+    fn nes2_uxrom_submapper_selects_bus_conflict_behavior() {
+        let mut conflict = Cartridge::parse(&nes2_uxrom(1)).unwrap();
+        conflict.cpu_write(0x8000, 0x03);
+        assert_eq!(conflict.cpu_read(0x8000), Some(0x20), "ROM value 0x02 masks write value 0x03");
+
+        let mut no_conflict = Cartridge::parse(&nes2_uxrom(2)).unwrap();
+        no_conflict.cpu_write(0x8000, 0x03);
+        assert_eq!(no_conflict.cpu_read(0x8000), Some(0x30));
+    }
+
+    #[test]
+    fn nes2_cnrom_submapper_selects_bus_conflict_behavior() {
+        let mut conflict = Cartridge::parse(&nes2_cnrom(1)).unwrap();
+        conflict.cpu_write(0x8000, 0x03);
+        assert_eq!(conflict.ppu_read(0), Some(0x42), "ROM value 0x02 masks CHR bank write");
+
+        let mut no_conflict = Cartridge::parse(&nes2_cnrom(2)).unwrap();
+        no_conflict.cpu_write(0x8000, 0x03);
+        assert_eq!(no_conflict.ppu_read(0), Some(0x43));
     }
 }
