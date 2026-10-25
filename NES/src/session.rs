@@ -188,6 +188,43 @@ mod tests {
         rom
     }
 
+    fn battery_rom() -> Vec<u8> {
+        let mut rom = looping_rom();
+        rom[6] |= 0x02; // Battery-backed PRG-RAM.
+        rom
+    }
+
+    #[test]
+    fn battery_ram_round_trips_and_rejects_wrong_lengths_atomically() {
+        let mut session = NesSession::load(&battery_rom(), NesConfig::default()).unwrap();
+        assert!(session.has_battery_backed_ram());
+        let initial = session.save_battery_ram().unwrap();
+        assert!(!initial.is_empty());
+
+        let replacement = vec![0xA5; initial.len()];
+        session.load_battery_ram(&replacement).unwrap();
+        assert_eq!(session.save_battery_ram().unwrap(), replacement);
+
+        assert!(matches!(
+            session.load_battery_ram(&replacement[..replacement.len() - 1]),
+            Err(NesSessionError::Machine(MachineError::InvalidSaveRamLength { .. }))
+        ));
+        assert_eq!(session.save_battery_ram().unwrap(), replacement, "invalid data must not partially overwrite RAM");
+    }
+
+    #[test]
+    fn battery_ram_requires_battery_flag_and_survives_console_reset() {
+        let mut ordinary = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
+        assert!(!ordinary.has_battery_backed_ram());
+        assert!(matches!(ordinary.save_battery_ram(), Err(NesSessionError::Machine(MachineError::NoBatteryRam))));
+
+        let mut session = NesSession::load(&battery_rom(), NesConfig::default()).unwrap();
+        let payload = vec![0x3C; session.save_battery_ram().unwrap().len()];
+        session.load_battery_ram(&payload).unwrap();
+        session.reset();
+        assert_eq!(session.save_battery_ram().unwrap(), payload);
+    }
+
     #[test]
     fn host_session_returns_frame_and_audio_without_frontend_dependencies() {
         let mut session = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
@@ -225,14 +262,15 @@ mod tests {
     fn reset_restores_cpu_and_ppu_startup_state_without_unloading_rom() {
         let mut session = NesSession::load(&looping_rom(), NesConfig { audio_sample_rate: 48_000 }).unwrap();
         session.advance_frame().unwrap();
-        assert!(session.total_cycles() > 7);
+        let cycles_before_reset = session.total_cycles();
+        assert!(cycles_before_reset > 7);
 
         session.reset();
 
         assert_eq!(session.cpu_state().pc, 0x8000);
         assert_eq!(session.ppu_position(), (261, 0));
         assert_eq!(session.config().audio_sample_rate, 48_000);
-        assert_eq!(session.total_cycles(), 7);
+        assert_eq!(session.total_cycles(), cycles_before_reset + 7);
         assert_eq!(session.advance_frame().unwrap().palette_indices.len(), NES_FRAME_PIXELS);
     }
 
