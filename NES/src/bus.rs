@@ -834,3 +834,30 @@ mod added_controller_regression_tests {
         assert_eq!(bus.read(0x4017) & 1, 0);
     }
 }
+
+
+#[cfg(test)]
+mod controller_strobe_regressions {
+    use super::*;
+
+    #[test]
+    fn high_strobe_keeps_reading_live_a_button_without_shifting() {
+        let mut bus = CpuBus::new();
+        bus.set_controller_state(0, 0b0000_0001);
+        bus.write(0x4016, 1);
+        assert_eq!(bus.read(0x4016) & 1, 1);
+        assert_eq!(bus.read(0x4016) & 1, 1,
+            "while strobe is high, reads must repeatedly expose the live A button");
+
+        bus.set_controller_state(0, 0);
+        assert_eq!(bus.read(0x4016) & 1, 0,
+            "the A button is sampled live until the strobe is lowered");
+
+        bus.set_controller_state(0, 0b0000_0010);
+        bus.write(0x4016, 0);
+        assert_eq!(bus.read(0x4016) & 1, 0,
+            "after the falling edge, the latched A bit is read first");
+        assert_eq!(bus.read(0x4016) & 1, 1,
+            "the next serial read advances to the latched B bit");
+    }
+}
