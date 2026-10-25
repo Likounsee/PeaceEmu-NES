@@ -1279,19 +1279,28 @@ pub struct Camerica {
 }
 
 impl Camerica {
-    /// Parses a legacy iNES mapper-71 image using CHR-RAM and 2-16 PRG banks.
+    /// Parses an iNES or NES 2.0 mapper-71 image using CHR-RAM and 2-16 PRG banks.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
         if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
-        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
-        let mapper = ((image[6] >> 4) as u16)
-            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        let nes2 = image[7] & 0x0C == 0x08;
+        let mapper = if nes2 {
+            ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
+                | (((image[8] & 0x0F) as u16) << 8)
+        } else {
+            ((image[6] >> 4) as u16)
+                | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
+        };
         if mapper != 71 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
-        let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if !(2..=16).contains(&image[4]) {
+        if nes2 && image[8] >> 4 != 0 { return Err(CartridgeError::Nes2NotSupported); }
+        let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
+            else { image[4] as usize * PRG_BANK_LEN };
+        if !(2 * PRG_BANK_LEN..=16 * PRG_BANK_LEN).contains(&prg_len)
+            || prg_len % PRG_BANK_LEN != 0 {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
-        let chr_len = image[5] as usize * CHR_BANK_LEN;
+        let chr_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) }
+            else { image[5] as usize * CHR_BANK_LEN };
         if chr_len != 0 { return Err(CartridgeError::InvalidChrSize(chr_len)); }
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
         let expected = INES_HEADER_LEN + trainer_len + prg_len;
@@ -1299,7 +1308,11 @@ impl Camerica {
             return Err(CartridgeError::TruncatedImage { expected, actual: image.len() });
         }
         let prg_start = INES_HEADER_LEN + trainer_len;
-        let mut prg_ram = vec![0; PRG_RAM_LEN];
+        let ram_len = if nes2 {
+            nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4))
+        } else { PRG_RAM_LEN };
+        if ram_len > PRG_RAM_LEN { return Err(CartridgeError::Nes2NotSupported); }
+        let mut prg_ram = vec![0; if trainer_len != 0 { ram_len.max(PRG_RAM_LEN) } else { ram_len }];
         if trainer_len != 0 {
             prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
         }
@@ -1317,7 +1330,7 @@ impl Camerica {
     /// Reads PRG-RAM or the selected lower bank / fixed final PRG bank.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
         match address {
-            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+            0x6000..=0x7FFF => self.prg_ram.get(address as usize - 0x6000).copied(),
             0x8000..=0xBFFF => Some(self.prg_rom[self.selected_prg_bank * PRG_BANK_LEN + address as usize - 0x8000]),
             0xC000..=0xFFFF => {
                 let last = self.prg_rom.len() - PRG_BANK_LEN;
@@ -1331,8 +1344,10 @@ impl Camerica {
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
             0x6000..=0x7FFF => {
-                self.prg_ram[address as usize - 0x6000] = value;
-                true
+                if let Some(byte) = self.prg_ram.get_mut(address as usize - 0x6000) {
+                    *byte = value;
+                    true
+                } else { false }
             }
             0x9000..=0x9FFF => {
                 self.selected_prg_bank = (value & 0x0F) as usize % (self.prg_rom.len() / PRG_BANK_LEN - 1);
@@ -1929,7 +1944,7 @@ impl Cartridge {
             let mapper = ((image[6] >> 4) as u16)
                 | (image[7] & 0xF0) as u16
                 | (((image[8] & 0x0F) as u16) << 8);
-            if !matches!(mapper, 0 | 2 | 3 | 8 | 66) { return Err(CartridgeError::Nes2NotSupported); }
+            if !matches!(mapper, 0 | 2 | 3 | 8 | 66 | 71) { return Err(CartridgeError::Nes2NotSupported); }
         }
         let mapper = if nes2 {
             ((image[6] >> 4) as u16)
@@ -3063,6 +3078,35 @@ mod camerica_tests {
         assert!(cart.ppu_write(0x1FFF, 0xA5));
         assert_eq!(cart.ppu_read(0x1FFF), Some(0xA5));
         assert!(cart.chr_is_ram());
+    }
+
+    #[test]
+    fn mapper_71_nes2_parses_extended_header_and_maps_banks() {
+        let mut image = camerica_image(4);
+        image[7] = 0x48; // NES 2.0 marker and mapper 71 high nibble.
+        image[8] = 0;
+        image[9] = 0;
+        image[10] = 7; // 8 KiB volatile PRG-RAM.
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.cpu_read(0x8000), Some(0));
+        assert_eq!(cart.cpu_read(0xC000), Some(3));
+        assert!(cart.cpu_write(0x6000, 0xA6));
+        assert_eq!(cart.cpu_read(0x6000), Some(0xA6));
+        assert!(cart.cpu_write(0x8000, 2));
+        assert_eq!(cart.cpu_read(0x8000), Some(2));
+        assert_eq!(cart.cpu_read(0xC000), Some(3));
+    }
+
+    #[test]
+    fn mapper_71_nes2_without_ram_does_not_expose_ram_window() {
+        let mut image = camerica_image(4);
+        image[7] = 0x48;
+        image[8] = 0;
+        image[9] = 0;
+        image[10] = 0;
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.cpu_read(0x6000), None);
+        assert!(!cart.cpu_write(0x6000, 0xA6));
     }
 
     #[test]
