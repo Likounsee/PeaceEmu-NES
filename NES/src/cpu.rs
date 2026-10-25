@@ -456,7 +456,9 @@ impl Cpu {
             0x9A => { self.state.sp = self.state.x; 2 }
             0xBA => { self.state.x = self.state.sp; self.set_nz(self.state.x); 2 }
             0x00 => {
-                self.state.pc = self.state.pc.wrapping_add(1);
+                // BRK consumes its padding byte as a real bus read before stacking PC.
+                // This matters when the next address is mapped to side-effecting I/O.
+                let _ = self.fetch(bus);
                 self.push(bus, (self.state.pc >> 8) as u8); self.push(bus, self.state.pc as u8);
                 self.push(bus, self.state.status | flags::BREAK | flags::UNUSED);
                 self.set_flag(flags::INTERRUPT_DISABLE, true);
@@ -1644,13 +1646,18 @@ mod brk_stack_regression_tests {
 
     #[test]
     fn brk_pushes_pc_after_padding_and_break_marked_status() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        // Interrupt vectors are read from cartridge PRG-ROM, not writable CPU RAM.
+        image[16 + 0x3FFE] = 0x34;
+        image[16 + 0x3FFF] = 0x12;
         let mut bus = CpuBus::new();
+        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
         bus.write(0x0600, 0x00);
         bus.write(0x0601, 0xEA);
         let mut cpu = Cpu::new();
         cpu.set_pc(0x0600);
-        bus.write(0xFFFE, 0x34);
-        bus.write(0xFFFF, 0x12);
 
         let result = cpu.step(&mut bus).unwrap();
 
