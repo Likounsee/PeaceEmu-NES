@@ -3203,7 +3203,7 @@ mod sprite_8x16_render_regressions {
 
         let sprite_color = ppu.output_color(0x2B);
         // OAM Y=0 places the sprite's first visible row on scanline 1.
-        assert_eq!(ppu.framebuffer[1 * 256 + 16], sprite_color, "flipped output row 0 must use tile 1 row 7");
+        assert_eq!(ppu.framebuffer[256 + 16], sprite_color, "flipped output row 0 must use tile 1 row 7");
         assert_eq!(ppu.framebuffer[9 * 256 + 16], sprite_color, "flipped output row 8 must use tile 0 row 7");
         assert_ne!(ppu.framebuffer[2 * 256 + 16], sprite_color, "other source rows stay transparent");
         assert_ne!(ppu.framebuffer[10 * 256 + 16], sprite_color, "the opposite rows in each tile stay transparent");
