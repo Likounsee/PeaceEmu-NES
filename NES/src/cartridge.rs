@@ -4470,7 +4470,7 @@ mod gxrom_nes2_tests {
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 4;
         image[5] = 2;
-        image[6] = 0x60;
+        image[6] = 0x20;
         image[7] = 0x48;
         image[8] = 0;
         image[9] = 0;
@@ -4499,6 +4499,16 @@ mod gxrom_nes2_tests {
         assert_eq!(cart.ppu_read(0), Some(0x61));
         cart.cpu_write(0x6000, 0xA7);
         assert_eq!(cart.cpu_read(0x6000), Some(0xA7));
+    }
+
+    #[test]
+    fn gxrom_nes2_without_prg_ram_returns_unmapped_reads() {
+        let mut image = nes2_gxrom();
+        image[10] = 0;
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.cpu_read(0x6000), None);
+        assert!(!cart.cpu_write(0x6000, 0xA7));
+        assert_eq!(cart.cpu_read(0x8000), Some(0x40));
     }
 
     #[test]
