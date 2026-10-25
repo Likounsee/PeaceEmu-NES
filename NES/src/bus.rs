@@ -932,7 +932,7 @@ mod dmc_irq_bus_integration_regressions {
     #[test]
     fn terminal_dmc_fetch_asserts_cpu_irq_and_status_write_acknowledges_it() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16 + 0x0000] = 0xA5;
 
