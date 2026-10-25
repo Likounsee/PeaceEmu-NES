@@ -3958,7 +3958,7 @@ mod mapper87_tests {
     use super::*;
 
     fn image() -> Vec<u8> {
-        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN + 2 * CHR_BANK_LEN];
+        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN + 4 * CHR_BANK_LEN];
         image[0..4].copy_from_slice(b"NES\\x1A");
         image[4] = 2;
         image[5] = 4;
