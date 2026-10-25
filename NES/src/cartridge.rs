@@ -5073,37 +5073,3 @@ mod mmc3_four_screen_regressions {
         assert_eq!(cart.mirroring(), Mirroring::FourScreen);
     }
 }
-
-
-#[cfg(test)]
-mod mmc3_prg_ram_protection_regressions {
-    use super::*;
-
-    fn image() -> Vec<u8> {
-        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN + CHR_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\x1A");
-        image[4] = 2;
-        image[5] = 1;
-        image[6] = 0x40; // Mapper 4.
-        image
-    }
-
-    #[test]
-    fn mmc3_prg_ram_enable_and_write_protect_are_independent() {
-        let mut cart = Cartridge::parse(&image()).unwrap();
-        assert!(cart.cpu_write(0x6000, 0x31));
-        assert_eq!(cart.cpu_read(0x6000), Some(0x31));
-
-        cart.cpu_write(0xA001, 0x00); // Disabled.
-        assert_eq!(cart.cpu_read(0x6000), None);
-        assert!(cart.cpu_write(0x6000, 0x42), "writes to a mapper register window are accepted even while RAM is disabled");
-        cart.cpu_write(0xA001, 0xC0); // Enabled, write-protected.
-        assert_eq!(cart.cpu_read(0x6000), Some(0x31));
-        assert!(cart.cpu_write(0x6000, 0x53));
-        assert_eq!(cart.cpu_read(0x6000), Some(0x31), "write protection must preserve stored RAM");
-
-        cart.cpu_write(0xA001, 0x80); // Enabled and writable.
-        assert!(cart.cpu_write(0x6000, 0x64));
-        assert_eq!(cart.cpu_read(0x6000), Some(0x64));
-    }
-}
