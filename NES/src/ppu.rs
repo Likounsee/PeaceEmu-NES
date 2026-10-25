@@ -1968,12 +1968,12 @@ mod sprite_priority_regression_tests {
             0, 0, 0x20, 0, // Sprite 0: behind opaque background.
             0, 1, 0x00, 0, // Sprite 1: foreground, lower priority.
         ]);
-        ppu.background_opaque[0] = true;
-        ppu.framebuffer[0] = ppu.output_color(0x01);
+        ppu.background_opaque[256] = true;
+        ppu.framebuffer[256] = ppu.output_color(0x01);
 
-        ppu.render_sprite_pixel(0, 0, Some(&cartridge));
+        ppu.render_sprite_pixel(0, 1, Some(&cartridge));
 
-        assert_eq!(ppu.framebuffer[0], ppu.output_color(0x01),
+        assert_eq!(ppu.framebuffer[256], ppu.output_color(0x01),
             "the lower-priority foreground sprite must not leak through sprite 0");
     }
 }
