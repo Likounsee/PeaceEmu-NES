@@ -4774,3 +4774,29 @@ mod mmc3_irq_reload_command_regressions {
         assert!(cart.irq_pending(), "IRQ asserts only when the counter reaches zero");
     }
 }
+
+
+#[cfg(test)]
+mod mmc3_filtered_reload_regressions {
+    use super::*;
+
+    #[test]
+    fn seven_dot_edge_does_not_consume_pending_irq_reload() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        cart.cpu_write(0xC000, 1);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+
+        cart.observe_ppu_address(0x0000, 0);
+        cart.observe_ppu_address(0x1000, 7);
+        assert!(!cart.irq_pending(), "a seven-dot low interval is filtered");
+
+        cart.observe_ppu_address(0x0000, 8);
+        cart.observe_ppu_address(0x1000, 16);
+        assert!(!cart.irq_pending(), "the first qualified edge reloads the latch to one");
+
+        cart.observe_ppu_address(0x0000, 17);
+        cart.observe_ppu_address(0x1000, 25);
+        assert!(cart.irq_pending(), "only the next qualified edge decrements one to zero");
+    }
+}
