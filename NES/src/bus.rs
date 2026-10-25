@@ -952,3 +952,55 @@ mod dmc_irq_bus_integration_regressions {
         assert!(!bus.irq_pending(), "writing $4015 acknowledges the DMC IRQ");
     }
 }
+
+
+#[cfg(test)]
+mod dma_and_irq_interaction_regressions {
+    use super::*;
+
+    fn mapper_irq_bus() -> CpuBus {
+        let mut image = vec![0; 16 + 2 * 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 2;
+        image[5] = 1;
+        image[6] = 0x40; // MMC3.
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0xC000, 0);
+        bus.write(0xC001, 0);
+        bus.write(0xE001, 0);
+        bus.write(0x2000, 0x08);
+        bus.write(0x2001, 0x18);
+        bus.tick_ppu(261);
+        assert!(bus.irq_pending(), "fixture must raise a real PPU-driven MMC3 IRQ");
+        bus
+    }
+
+    #[test]
+    fn full_dmc_buffer_does_not_charge_a_second_dma_stall() {
+        let mut bus = CpuBus::new();
+        bus.write(0x4013, 1); // 17-byte sample.
+        bus.write(0x4015, 0x10);
+
+        assert_eq!(bus.tick_apu(1), 4, "the first buffer refill incurs a DMA stall");
+        assert_eq!(bus.tick_apu(1), 0,
+            "a full sample buffer must not request another byte or incur another stall");
+    }
+
+    #[test]
+    fn acknowledging_dmc_irq_does_not_clear_a_pending_mmc3_irq() {
+        let mut bus = mapper_irq_bus();
+        bus.write(0x4010, 0x80); // Terminal DMC IRQ enabled.
+        bus.write(0x4012, 0);
+        bus.write(0x4013, 0); // One-byte sample.
+        bus.write(0x4015, 0x10);
+        assert_eq!(bus.tick_apu(1), 4);
+        assert!(bus.irq_pending(), "both mapper and DMC sources should assert the shared line");
+
+        bus.write(0x4015, 0x00); // Acknowledge DMC only.
+        assert!(bus.irq_pending(), "MMC3 must keep the shared IRQ line asserted");
+
+        bus.write(0xE000, 0); // Acknowledge/disable MMC3.
+        assert!(!bus.irq_pending(), "the line falls only after both sources are inactive");
+    }
+}
