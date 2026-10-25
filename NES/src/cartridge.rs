@@ -5075,3 +5075,29 @@ mod mmc3_four_screen_regressions {
         assert_eq!(cart.mirroring(), Mirroring::FourScreen);
     }
 }
+
+
+#[cfg(test)]
+mod mmc3_trainer_ram_regressions {
+    use super::*;
+
+    #[test]
+    fn mapper4_trainer_is_visible_at_7000_and_survives_ram_disable() {
+        let mut image = vec![0; INES_HEADER_LEN + TRAINER_LEN + 2 * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 2;
+        image[6] = 0x44; // Mapper 4 with a 512-byte trainer.
+        for offset in 0..TRAINER_LEN {
+            image[INES_HEADER_LEN + offset] = (offset as u8) ^ 0x5A;
+        }
+
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.cpu_read(0x7000), Some(0x5A));
+        assert_eq!(cart.cpu_read(0x71FF), Some(0xA5));
+
+        assert!(cart.cpu_write(0xA001, 0x00)); // Disable PRG-RAM.
+        assert_eq!(cart.cpu_read(0x7000), None);
+        assert!(cart.cpu_write(0xA001, 0x80)); // Re-enable, writable.
+        assert_eq!(cart.cpu_read(0x7000), Some(0x5A), "disabling RAM must hide, not erase, trainer data");
+    }
+}
