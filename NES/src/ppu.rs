@@ -1862,7 +1862,7 @@ mod sprite_overflow_regression_tests {
     #[test]
     fn oam_y_255_cannot_draw_or_trigger_sprite_zero_hit_at_top_edge() {
         let mut image = vec![0; INES_HEADER_LEN + PRG_BANK_LEN + CHR_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[5] = 1;
         let chr_start = INES_HEADER_LEN + PRG_BANK_LEN;
