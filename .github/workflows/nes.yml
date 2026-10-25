@@ -22,7 +22,10 @@ permissions:
 
 jobs:
   rust:
-    name: Rust formatting, tests and Clippy
+    name: Rust formatting, tests and Clippy (${{ matrix.rust }})
+    strategy:
+      matrix:
+        rust: [1.78, stable]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,9 +33,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust ${{ matrix.rust }}
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
