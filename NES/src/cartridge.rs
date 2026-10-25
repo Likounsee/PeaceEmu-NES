@@ -3507,8 +3507,7 @@ mod mapper_register_boundary_regressions {
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = prg_banks as u8;
         image[5] = chr_banks as u8;
-        image[6] = 0x60; // Mapper 6 high nibble = 6, low nibble = 0 => mapper 6, not GxROM.
-        // Use mapper 66 (high mapper nibble 4 in flags 7 + low nibble 2 in flags 6).
+        // Mapper 66: mapper low nibble 2 in flags 6, high nibble 4 in flags 7.
         image[6] = 0x20;
         image[7] = 0x40;
         for bank in 0..(prg_banks / 2) {
