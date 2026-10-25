@@ -1136,8 +1136,12 @@ impl Mmc3 {
         // inserted. Rebase the A12 filter instead of treating a backwards timestamp
         // as an enormous low interval or waiting for the old counter to catch up.
         if self.last_ppu_cycle.is_some_and(|last| ppu_cycle < last) {
-            self.a12_high = false;
-            self.a12_low_since = Some(ppu_cycle);
+            // Rebase to the bus level actually observed after reset. Treating a
+            // high A12 address as low starts the filter too early and can admit
+            // a rising edge after only seven real low dots.
+            let a12 = address & 0x1000 != 0;
+            self.a12_high = a12;
+            self.a12_low_since = if a12 { None } else { Some(ppu_cycle) };
             self.last_ppu_cycle = Some(ppu_cycle);
             return;
         }
@@ -3044,6 +3048,24 @@ mod mmc3_tests {
         cart.observe_ppu_address(0x0000, 17);
         cart.observe_ppu_address(0x1000, 25);
         assert!(cart.irq_pending(), "second qualified edge decrements counter to zero");
+    }
+
+    #[test]
+    fn mapper_4_irq_filter_does_not_count_reset_high_as_a_low_interval() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        cart.cpu_write(0xC000, 0);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+
+        cart.observe_ppu_address(0x0000, 100);
+        cart.observe_ppu_address(0x1000, 0); // Counter reset while A12 is high.
+        cart.observe_ppu_address(0x0000, 1);
+        cart.observe_ppu_address(0x1000, 8); // Seven low dots, not eight.
+        assert!(!cart.irq_pending(), "A12-high reset sample must not start a low interval");
+
+        cart.observe_ppu_address(0x0000, 9);
+        cart.observe_ppu_address(0x1000, 17); // Now eight full low dots.
+        assert!(cart.irq_pending());
     }
 
     #[test]
