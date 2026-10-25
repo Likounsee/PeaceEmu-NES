@@ -3172,7 +3172,7 @@ mod nes2_nrom_tests {
     fn nes2_uxrom_supports_banked_prg_and_declared_ram() {
         let mut image = nes2_nrom(3, 0);
         image[6] = 0x20; // Mapper 2.
-        image[7] = 0x28; // NES 2.0, mapper low bits.
+        image[7] = 0x08; // NES 2.0 marker; mapper 2 is encoded in byte 6.
         image[10] = 7; // 8 KiB PRG-RAM.
         image[11] = 7; // 8 KiB CHR-RAM.
         for bank in 0..3usize {
@@ -3194,7 +3194,7 @@ mod nes2_nrom_tests {
     fn nes2_uxrom_with_no_declared_ram_exposes_no_memory_window() {
         let mut image = nes2_nrom(2, 0);
         image[6] = 0x20; // Mapper 2.
-        image[7] = 0x28;
+        image[7] = 0x08;
         let mut cart = Cartridge::parse(&image).unwrap();
         assert_eq!(cart.cpu_read(0x6000), None);
         assert!(!cart.cpu_write(0x6000, 0xA5));
