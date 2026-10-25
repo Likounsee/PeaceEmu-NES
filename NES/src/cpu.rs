@@ -1694,3 +1694,48 @@ mod brk_stack_regression_tests {
     }
 
 }
+
+
+#[cfg(test)]
+mod indirect_jump_and_branch_regressions {
+    use super::*;
+
+    #[test]
+    fn indirect_jmp_wraps_high_byte_read_inside_pointer_page() {
+        let (mut cpu, mut bus) = {
+            let mut bus = CpuBus::new();
+            bus.write(0x0600, 0x6C); // JMP ($02FF)
+            bus.write(0x0601, 0xFF);
+            bus.write(0x0602, 0x02);
+            bus.write(0x02FF, 0x34);
+            bus.write(0x0200, 0x12);
+            bus.write(0x0300, 0x99); // Must not be used by the NMOS 6502 page-wrap bug.
+            let mut cpu = Cpu::new();
+            cpu.set_pc(0x0600);
+            (cpu, bus)
+        };
+
+        let result = cpu.step(&mut bus).unwrap();
+        assert_eq!(result.cycles, 5);
+        assert_eq!(cpu.state().pc, 0x1234);
+    }
+
+    #[test]
+    fn taken_branch_crossing_page_has_four_cycles_and_correct_target() {
+        let (mut cpu, mut bus) = setup(&[0xD0, 0xFE]); // BNE -2 at $0600.
+        cpu.set_pc(0x06FE);
+        bus.write(0x06FE, 0xD0);
+        bus.write(0x06FF, 0xFE);
+        cpu.state.status &= !flags::ZERO;
+        let result = cpu.step(&mut bus).unwrap();
+        assert_eq!(result.cycles, 3);
+        assert_eq!(cpu.state().pc, 0x06FE);
+
+        cpu.set_pc(0x06FD);
+        bus.write(0x06FD, 0xD0);
+        bus.write(0x06FE, 0x02); // Sequential PC $06FF -> target $0701 crosses a page? No.
+        let result = cpu.step(&mut bus).unwrap();
+        assert_eq!(result.cycles, 3);
+        assert_eq!(cpu.state().pc, 0x0701);
+    }
+}
