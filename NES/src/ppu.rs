@@ -857,7 +857,7 @@ mod tests {
         ppu.mask = 0x08; // Background rendering enabled.
         ppu.tick(10);
         let events = ppu.take_mapper_bus_events();
-        assert_eq!(events, vec![(0x1000, 5), (0x0000, 9)]);
+        assert_eq!(events, vec![(0, 0), (0x1000, 5), (0x0000, 9)]);
         ppu.tick(4);
         assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 13)]);
     }
@@ -870,7 +870,7 @@ mod tests {
         ppu.ctrl = 0;
         ppu.nametables[0] = 0x80;
         ppu.tick(5);
-        assert!(ppu.take_mapper_bus_events().is_empty(), "tile $80 in the lower pattern table is still below A12");
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 0)], "initial low baseline is published once; tile $80 must not raise A12");
         ppu.dot = 8;
         ppu.ppu_cycle = 8;
         ppu.nametables[1] = 0;
@@ -1835,7 +1835,7 @@ mod sprite_pattern_address_tests {
         ppu.mask = 0x10;
         ppu.oam[1] = 1; // Odd tile selects $1000 in 8x16 mode.
         ppu.tick(261);
-        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 261)]);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 0), (0x1000, 261)]);
 
         ppu.oam[1] = 0;
         ppu.dot = 264; // Next sprite's fetch window starts with A12 low.
@@ -2102,7 +2102,7 @@ mod mapper_a12_bus_regressions {
         ppu.ctrl = 0x10;
         ppu.mask = 0x08;
         ppu.tick_with_cartridge(5, None);
-        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 5)]);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 0), (0x1000, 5)]);
 
         ppu.mask = 0;
         ppu.tick_with_cartridge(1, None);
