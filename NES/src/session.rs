@@ -331,3 +331,28 @@ mod tests {
     }
 
 }
+
+
+#[cfg(test)]
+mod audio_rate_noop_regressions {
+    use super::*;
+
+    #[test]
+    fn applying_current_rate_is_successful_and_keeps_host_config_unchanged() {
+        let config = NesConfig { audio_sample_rate: 48_000 };
+        let mut session = NesSession::load(&looping_rom_for_audio_rate_test(), config).unwrap();
+        assert!(session.set_audio_sample_rate(48_000));
+        assert_eq!(session.config(), config);
+        assert_eq!(session.machine.audio_sample_rate(), 48_000);
+    }
+
+    fn looping_rom_for_audio_rate_test() -> Vec<u8> {
+        let mut rom = vec![0; 16 + 16 * 1024];
+        rom[..4].copy_from_slice(b"NES\\x1A");
+        rom[4] = 1;
+        rom[16..19].copy_from_slice(&[0x4C, 0x00, 0x80]);
+        rom[16 + 0x3FFC] = 0x00;
+        rom[16 + 0x3FFD] = 0x80;
+        rom
+    }
+}
