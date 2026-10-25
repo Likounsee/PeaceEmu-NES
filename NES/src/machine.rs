@@ -815,3 +815,48 @@ mod pcm_frontend_tests {
 
 
 }
+
+
+#[cfg(test)]
+mod battery_ram_persistence_regressions {
+    use super::*;
+
+    #[test]
+    fn battery_ram_round_trips_and_survives_console_reset() {
+        let mut image = nrom_with_program(&[0xEA]);
+        image[6] |= 0x02; // Battery-backed PRG-RAM.
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+
+        machine.write_cpu(0x6000, 0xA5);
+        machine.write_cpu(0x7FFF, 0x5A);
+        let saved = machine.save_battery_ram().unwrap();
+        assert_eq!(saved.len(), 8 * 1024);
+        assert_eq!(saved[0], 0xA5);
+        assert_eq!(saved[0x1FFF], 0x5A);
+
+        machine.write_cpu(0x6000, 0x00);
+        machine.load_battery_ram(&saved).unwrap();
+        assert_eq!(machine.read_cpu(0x6000), 0xA5);
+
+        machine.reset();
+        assert_eq!(machine.read_cpu(0x6000), 0xA5,
+            "console reset must preserve battery-backed cartridge RAM");
+        assert_eq!(machine.read_cpu(0x7FFF), 0x5A);
+    }
+
+    #[test]
+    fn battery_ram_rejects_wrong_payload_length_without_partial_restore() {
+        let mut image = nrom_with_program(&[0xEA]);
+        image[6] |= 0x02;
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        machine.write_cpu(0x6000, 0xCC);
+
+        let error = machine.load_battery_ram(&[0x11, 0x22]).unwrap_err();
+        assert_eq!(error, MachineError::InvalidSaveRamLength {
+            expected: 8 * 1024,
+            actual: 2,
+        });
+        assert_eq!(machine.read_cpu(0x6000), 0xCC,
+            "invalid save payload must not modify cartridge RAM");
+    }
+}
