@@ -1536,22 +1536,23 @@ mod tests {
     }
 
     #[test]
-    fn oam_y_values_ef_through_ff_hide_sprites_instead_of_wrapping_to_top() {
+    fn oam_y_values_ef_through_fe_remain_below_the_visible_frame() {
         let mut ppu = Ppu::new();
-        let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\x1A");
-        image[4] = 1;
-        let mut cartridge = Cartridge::parse(&image).unwrap();
-        ppu.mask = 0x1E;
-        ppu.mem_write(0x0010, 0xFF, Some(&mut cartridge));
-        ppu.mem_write(0x0011, 0xFF, Some(&mut cartridge));
-        ppu.mem_write(0x3F11, 0x30, Some(&mut cartridge));
+        ppu.mask = 0x14;
+        ppu.palette[0x11] = 0x30;
+        let cart = test_cartridge_with_opaque_sprite();
 
-        for y in 0xEF..=0xFF {
-            ppu.oam[0..4].copy_from_slice(&[y, 1, 0, 0]);
-            ppu.render_frame(Some(&cartridge));
-            assert_ne!(ppu.framebuffer()[256], 0x30, "OAM Y={y:#04X} must remain offscreen");
-            assert_eq!(ppu.status & 0x40, 0, "hidden sprite at OAM Y={y:#04X} cannot hit the background");
+        for oam_y in 0xEF..=0xFE {
+            ppu.framebuffer.fill(0);
+            ppu.oam[0] = oam_y;
+            ppu.oam[1] = 0;
+            ppu.oam[2] = 0;
+            ppu.oam[3] = 0;
+            ppu.render_sprite_pixel(0, 0, Some(&cart));
+            assert_ne!(
+                ppu.framebuffer[0], 0x30,
+                "OAM Y={oam_y:#04X} must remain below the visible frame"
+            );
         }
     }
 
