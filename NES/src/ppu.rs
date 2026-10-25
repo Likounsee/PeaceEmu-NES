@@ -3260,7 +3260,7 @@ mod nametable_address_bus_regressions {
 
     #[test]
     fn four_screen_cartridge_keeps_all_four_physical_nametables_distinct() {
-        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        let mut image = vec![0; 16 + 2 * 16 * 1024];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 2;
         image[6] = 0x48; // Mapper 4 with hardwired four-screen mirroring.
@@ -3296,7 +3296,7 @@ mod nametable_address_bus_regressions {
         horizontal.mem_write(0x2800, 0xA5, None);
         assert_eq!(horizontal.mem_read(0x2C00, None), 0xA5);
 
-        let mut vertical_image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        let mut vertical_image = vec![0; 16 + 2 * 16 * 1024];
         vertical_image[0..4].copy_from_slice(b"NES\x1A");
         vertical_image[4] = 2;
         vertical_image[6] = 0x41; // Mapper 4, vertical mirroring.
