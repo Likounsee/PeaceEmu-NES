@@ -2140,4 +2140,61 @@ mod sprite_pattern_address_regressions {
         assert_eq!(normal_bottom, 0x1037);
         assert_eq!(ppu.sprite_pattern_address(0x03, 0x80, 15), normal_top);
     }
+    #[test]
+    fn enabling_nmi_during_vblank_generates_an_nmi_edge() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 241;
+        ppu.dot = 2;
+        ppu.status |= 0x80; // Vblank already active before NMI output is enabled.
+        ppu.ctrl = 0;
+        ppu.update_nmi_line();
+        assert!(!ppu.nmi_pending);
+
+        ppu.cpu_write_register(0, 0x80, None);
+        assert!(ppu.nmi_pending, "raising PPUCTRL bit 7 during vblank must create an NMI edge");
+        assert!(ppu.take_nmi());
+        assert!(!ppu.nmi_pending);
+
+        // Rewriting the same enabled value must not retrigger while the line stays high.
+        ppu.cpu_write_register(0, 0x80, None);
+        assert!(!ppu.nmi_pending);
+    }
+
+    #[test]
+    fn disabling_nmi_output_during_vblank_drops_the_line_without_a_new_edge() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 241;
+        ppu.dot = 2;
+        ppu.status |= 0x80;
+        ppu.cpu_write_register(0, 0x80, None);
+        assert!(ppu.take_nmi());
+
+        ppu.cpu_write_register(0, 0x00, None);
+        assert!(!ppu.nmi_line);
+        assert!(!ppu.nmi_pending);
+        ppu.cpu_write_register(0, 0x80, None);
+        assert!(ppu.nmi_pending, "re-enabling output while vblank remains set creates a fresh rising edge");
+    }
+
+    #[test]
+    fn odd_frame_skip_only_occurs_when_rendering_is_enabled() {
+        let mut rendered = Ppu::new();
+        rendered.scanline = 261;
+        rendered.dot = 339;
+        rendered.odd_frame = true;
+        rendered.mask = 0x08;
+        rendered.tick(1);
+        assert_eq!(rendered.position(), (0, 0));
+        assert!(!rendered.odd_frame);
+
+        let mut blanked = Ppu::new();
+        blanked.scanline = 261;
+        blanked.dot = 339;
+        blanked.odd_frame = true;
+        blanked.mask = 0;
+        blanked.tick(1);
+        assert_eq!(blanked.position(), (261, 340));
+        assert!(blanked.odd_frame);
+    }
+
 }
