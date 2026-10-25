@@ -4979,7 +4979,7 @@ mod mapper_4_prg_window_regressions {
 
     fn mmc3_prg_image() -> Vec<u8> {
         let mut image = vec![0; INES_HEADER_LEN + 4 * PRG_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 4; // Eight 8 KiB PRG banks.
         image[6] = 0x40; // Mapper 4.
         let start = INES_HEADER_LEN;
