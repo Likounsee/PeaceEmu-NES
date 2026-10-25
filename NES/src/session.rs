@@ -1,5 +1,6 @@
 //! Host-facing session API for embedding the NES core inside PeaceEmu.
 
+use crate::cpu::CpuState;
 use crate::machine::{MachineError, NesMachine};
 
 /// Native NES output dimensions.
@@ -96,6 +97,37 @@ impl NesSession {
         self.config
     }
 
+    /// Applies a new PCM output rate, keeping the public configuration in sync.
+    ///
+    /// Supported rates are 8,000 through 192,000 samples per second. On success,
+    /// queued samples are cleared by the APU; an invalid rate leaves both rate and
+    /// configuration unchanged.
+    pub fn set_audio_sample_rate(&mut self, sample_rate: u32) -> bool {
+        if !self.machine.set_audio_sample_rate(sample_rate) {
+            return false;
+        }
+        self.config.audio_sample_rate = sample_rate;
+        true
+    }
+
+    /// Resets CPU and volatile devices while retaining the loaded cartridge and audio rate.
+    ///
+    /// Cartridge RAM is preserved like a console reset. The next frame advances from the reset
+    /// vector and returns a fresh frame/audio batch.
+    pub fn reset(&mut self) {
+        self.machine.reset();
+    }
+
+    /// Returns the current CPU register snapshot for frontend diagnostics.
+    pub fn cpu_state(&self) -> CpuState {
+        self.machine.cpu_state()
+    }
+
+    /// Returns the current PPU scanline and dot for frontend diagnostics.
+    pub fn ppu_position(&self) -> (u16, u16) {
+        self.machine.ppu_position()
+    }
+
     /// Applies the eight NES controller buttons to player port 1 or 2.
     ///
     /// Bits from least to most significant are A, B, Select, Start, Up, Down, Left, Right.
@@ -178,6 +210,30 @@ mod tests {
             NesSession::load(&looping_rom(), NesConfig { audio_sample_rate: 7_999 }),
             Err(NesSessionError::UnsupportedAudioSampleRate(7_999))
         ));
+    }
+
+    #[test]
+    fn runtime_audio_rate_updates_config_only_after_validation() {
+        let mut session = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
+        assert!(!session.set_audio_sample_rate(7_999));
+        assert_eq!(session.config().audio_sample_rate, DEFAULT_AUDIO_SAMPLE_RATE);
+        assert!(session.set_audio_sample_rate(48_000));
+        assert_eq!(session.config().audio_sample_rate, 48_000);
+    }
+
+    #[test]
+    fn reset_restores_cpu_and_ppu_startup_state_without_unloading_rom() {
+        let mut session = NesSession::load(&looping_rom(), NesConfig { audio_sample_rate: 48_000 }).unwrap();
+        session.advance_frame().unwrap();
+        assert!(session.total_cycles() > 7);
+
+        session.reset();
+
+        assert_eq!(session.cpu_state().pc, 0x8000);
+        assert_eq!(session.ppu_position(), (261, 0));
+        assert_eq!(session.config().audio_sample_rate, 48_000);
+        assert_eq!(session.total_cycles(), 7);
+        assert_eq!(session.advance_frame().unwrap().palette_indices.len(), NES_FRAME_PIXELS);
     }
 
     #[test]
