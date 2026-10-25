@@ -3543,7 +3543,7 @@ mod mapper15_bank_mode_regressions {
     fn tagged_image() -> Vec<u8> {
         let prg_banks = 8usize;
         let mut image = vec![0; INES_HEADER_LEN + prg_banks * PRG_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = prg_banks as u8;
         image[6] = 0xF0; // Mapper 15.
         let start = INES_HEADER_LEN;
