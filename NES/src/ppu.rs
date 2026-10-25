@@ -99,6 +99,7 @@ impl Ppu {
                     (fetched & 0x3F) | (self.open_bus & 0xC0)
                 };
                 self.increment_vram_address();
+                self.sync_visible_scroll_after_vram_access();
                 value
             }
             _ => self.open_bus,
@@ -144,7 +145,11 @@ impl Ppu {
                 }
                 self.write_latch = !self.write_latch;
             }
-            7 => { self.mem_write(self.v & 0x3FFF, value, cartridge); self.increment_vram_address(); }
+            7 => {
+                self.mem_write(self.v & 0x3FFF, value, cartridge);
+                self.increment_vram_address();
+                self.sync_visible_scroll_after_vram_access();
+            }
             _ => {}
         }
     }
@@ -653,6 +658,15 @@ impl Ppu {
         }
     }
 
+    /// Keeps the approximate pixel sampler aligned when CPU PPUDATA accesses
+    /// advance the live VRAM address during a visible scanline.
+    fn sync_visible_scroll_after_vram_access(&mut self) {
+        if self.scanline < 240 && (1..=256).contains(&self.dot) && self.mask & 0x18 != 0 {
+            self.line_scroll_v = self.v;
+            self.line_scroll_start_x = self.dot as usize;
+        }
+    }
+
     /// Advances the coarse X scroll field, wrapping into the horizontal nametable bit.
     fn increment_coarse_x(&mut self) {
         if self.v & 0x001F == 31 {
@@ -788,6 +802,23 @@ mod mid_scanline_scroll_regressions {
             "the next background pixel must use the newly written VRAM address");
         assert_eq!(ppu.line_scroll_start_x, 80,
             "the new address must start at the next unrendered pixel, not pixel zero");
+    }
+
+    #[test]
+    fn ppudata_increment_rebases_visible_scroll_for_future_pixels() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 12;
+        ppu.dot = 100;
+        ppu.mask = 0x08;
+        ppu.v = 0x2000;
+
+        ppu.cpu_write_register(7, 0x55, None);
+
+        assert_eq!(ppu.v, 0x2001);
+        assert_eq!(ppu.line_scroll_v, 0x2001,
+            "PPUDATA increments must affect the subsequent visible fetch address");
+        assert_eq!(ppu.line_scroll_start_x, 100,
+            "the updated address applies from the next unrendered pixel");
     }
 
     #[test]
