@@ -18,7 +18,7 @@ Le dépôt contient un cœur Rust fonctionnel en cours de développement : CPU R
 
 - CPU 2A03 avec un ensemble étendu d'instructions officielles et non officielles courantes ; les opcodes inconnus sont rejetés explicitement.
 - Bus avec RAM miroir, registres matériels, deux manettes série, DMA OAM et accès DMC initial.
-- Parseur iNES legacy et implémentations locales de NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4), AxROM (7), MMC2 (9), Color Dreams (11), CPROM (13), Mapper 15, BNROM (34), GxROM (66), Camerica (71) et UNROM-512 (30). Les variantes de chaque carte ne sont pas toutes prises en charge.
+- Parseur iNES legacy et implémentations locales de NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4), AxROM (7), MMC2 (9), MMC4 (10), Color Dreams (11), CPROM (13), Mapper 15, BNROM (34), GxROM (66), Camerica (71) et UNROM-512 (30). Les variantes de chaque carte ne sont pas toutes prises en charge.
 - PPU avec registres, mémoire vidéo, timing de balayage et rendu 256×240 par ligne/snapshot ; ce n'est pas une pipeline pixel-par-pixel complète.
 - APU avec génération audio approximative, séquenceur de frame et premier DMC.
 - Machine/session exposant frames, PCM, entrées et accès à la RAM batterie.
