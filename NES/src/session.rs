@@ -275,6 +275,32 @@ mod tests {
     }
 
     #[test]
+    fn frame_audio_samples_are_finite_and_normalized() {
+        let mut session = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
+        let frame = session.advance_frame().unwrap();
+
+        assert!(
+            frame.audio_samples.iter().all(|sample| sample.is_finite()),
+            "the host PCM buffer must never contain NaN or infinity"
+        );
+        assert!(
+            frame.audio_samples.iter().all(|sample| (-1.0..=1.0).contains(sample)),
+            "the host PCM buffer must remain normalized"
+        );
+    }
+
+    #[test]
+    fn supported_audio_rate_boundaries_are_inclusive() {
+        for sample_rate in [8_000, 192_000] {
+            let config = NesConfig { audio_sample_rate: sample_rate };
+            let mut session = NesSession::load(&looping_rom(), config).unwrap();
+            assert_eq!(session.config().audio_sample_rate, sample_rate);
+            assert!(session.set_audio_sample_rate(sample_rate));
+            assert_eq!(session.config().audio_sample_rate, sample_rate);
+        }
+    }
+
+    #[test]
     fn host_session_exposes_controller_input() {
         let mut session = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
         session.set_controller_state(0, 0b1000_0001);
