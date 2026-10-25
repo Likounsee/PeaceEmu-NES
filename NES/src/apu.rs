@@ -1536,3 +1536,60 @@ mod triangle_dac_period_regressions {
         }
     }
 }
+
+#[cfg(test)]
+mod added_apu_regression_tests {
+    use super::*;
+
+    #[test]
+    fn zero_cycle_tick_preserves_all_clocked_apu_state() {
+        let mut apu = Apu::new();
+        apu.tick_cpu_cycles(19);
+        let before = (
+            apu.frame_cycles,
+            apu.half_frame_cycles,
+            apu.cpu_cycle_odd,
+            apu.noise_shift,
+            apu.sample_phase,
+            apu.audio_samples.len(),
+        );
+        apu.tick_cpu_cycles(0);
+        assert_eq!(
+            (
+                apu.frame_cycles,
+                apu.half_frame_cycles,
+                apu.cpu_cycle_odd,
+                apu.noise_shift,
+                apu.sample_phase,
+                apu.audio_samples.len(),
+            ),
+            before,
+            "a zero-cycle tick must not clock oscillators, sequencers, or PCM",
+        );
+    }
+
+    #[test]
+    fn sample_rate_bounds_are_inclusive_and_invalid_rates_are_non_mutating() {
+        let mut apu = Apu::new();
+        assert!(!apu.set_sample_rate(7_999));
+        assert_eq!(apu.sample_rate(), 44_100);
+        assert!(apu.set_sample_rate(8_000));
+        assert_eq!(apu.sample_rate(), 8_000);
+        assert!(apu.set_sample_rate(192_000));
+        assert_eq!(apu.sample_rate(), 192_000);
+        assert!(!apu.set_sample_rate(192_001));
+        assert_eq!(apu.sample_rate(), 192_000);
+    }
+
+    #[test]
+    fn disabling_dmc_clears_remaining_bytes_and_irq() {
+        let mut apu = Apu::new();
+        apu.write(0x4010, 0x80);
+        apu.write(0x4013, 0x01);
+        apu.write(0x4015, 0x10);
+        assert!(apu.needs_dmc_bus_service());
+        apu.write(0x4015, 0x00);
+        assert!(!apu.needs_dmc_bus_service());
+        assert!(!apu.irq_pending());
+    }
+}
