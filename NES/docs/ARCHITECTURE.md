@@ -35,7 +35,7 @@ Achemine les accès CPU vers la RAM interne et ses miroirs, les registres PPU/AP
 
 ### Cartouches — `src/cartridge.rs`
 
-Parse les en-têtes iNES legacy, valide les tailles de données, saute les trainers et expose PRG/CHR, RAM et mirroring. L'enum `Cartridge` route vers plusieurs implémentations de mappers. Le support porte sur des configurations documentées dans le README, pas sur toutes les variantes physiques de ces cartes. NES 2.0 est rejeté par la plupart des implémentations ; NROM possède un chemin partiel distinct, ce qui ne constitue pas un support NES 2.0 global.
+Parse les en-têtes iNES legacy, valide les tailles de données, saute les trainers et expose PRG/CHR, RAM et mirroring. L'enum `Cartridge` route vers plusieurs implémentations de mappers, dont MMC2 (mapper 9) et MMC4 (mapper 10), qui partagent les latches CHR mais ont des fenêtres PRG différentes. Le support porte sur des configurations documentées dans le README, pas sur toutes les variantes physiques de ces cartes. NES 2.0 est rejeté par la plupart des implémentations ; NROM possède un chemin partiel distinct, ce qui ne constitue pas un support NES 2.0 global.
 
 ### PPU — `src/ppu.rs`
 
