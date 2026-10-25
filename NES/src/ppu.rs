@@ -2536,3 +2536,48 @@ mod sprite_8x16_top_wrap_regressions {
         assert_eq!(ppu.framebuffer[0], ppu.output_color(0x2A));
     }
 }
+
+
+#[cfg(test)]
+mod beam_timed_sprite_zero_regressions {
+    use super::*;
+
+    fn opaque_test_cartridge() -> Cartridge {
+        let mut rom = vec![0; 16 + 16_384 + 8_192];
+        rom[0..4].copy_from_slice(b"NES\x1A");
+        rom[4] = 1;
+        rom[5] = 1;
+        // Tile zero has opaque pixels across its first row for both background and sprite.
+        rom[16 + 16_384] = 0xFF;
+        Cartridge::parse(&rom).unwrap()
+    }
+
+    #[test]
+    fn sprite_zero_hit_is_visible_at_the_overlap_dot_not_after_the_scanline() {
+        let cartridge = opaque_test_cartridge();
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x1E; // Background, sprites, and both left-edge enables.
+        ppu.oam[0..4].copy_from_slice(&[0, 0, 0, 0]);
+
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+        assert_ne!(ppu.status & 0x40, 0,
+            "sprite-zero hit must become visible as soon as the first overlapping pixel is emitted");
+        assert_eq!(ppu.position(), (0, 1));
+    }
+
+    #[test]
+    fn sprite_zero_hit_is_never_set_on_the_last_screen_pixel() {
+        let cartridge = opaque_test_cartridge();
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 255;
+        ppu.mask = 0x1E;
+        ppu.oam[0..4].copy_from_slice(&[0, 0, 0, 255]);
+
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+        assert_eq!(ppu.status & 0x40, 0,
+            "the 2C02 suppresses sprite-zero hit at screen X=255");
+    }
+}
