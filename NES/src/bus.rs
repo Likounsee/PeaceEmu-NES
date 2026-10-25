@@ -687,6 +687,28 @@ mod mmc3_ppu_irq_integration_regressions {
     }
 
     #[test]
+    fn ppu_reset_rebases_mapper_a12_filter_without_false_irq() {
+        let mut bus = mmc3_bus();
+        bus.write(0x2000, 0x08);
+        bus.write(0x2001, 0x18);
+        bus.tick_ppu(261);
+        assert!(bus.irq_pending(), "fixture must first clock a real mapper IRQ");
+
+        bus.write(0xE000, 0); // Acknowledge and disable IRQ before resetting the PPU.
+        bus.reset(); // Cartridge remains inserted while the PPU dot counter restarts.
+        bus.write(0xC001, 0);
+        bus.write(0xE001, 0);
+        bus.write(0x2000, 0x10);
+        bus.write(0x2001, 0x08);
+        bus.tick_ppu(9);
+
+        assert!(
+            !bus.irq_pending(),
+            "a backwards PPU timestamp after reset must rebase the filter, not synthesize a long low interval"
+        );
+    }
+
+    #[test]
     fn short_a12_pulse_does_not_clock_mmc3_irq() {
         let mut bus = mmc3_bus();
         bus.write(0x2000, 0x10); // Background pattern table at $1000.
