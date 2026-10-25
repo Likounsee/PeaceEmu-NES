@@ -35,7 +35,7 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 2. Le pipeline PPU par dot, les fetchs et les événements MMC3 basés sur les transitions A12 filtrées restent à finaliser.
 3. L'arbitrage DMA DMC, les filtres audio, le resampling à la fréquence hôte et certains détails de séquenceur APU sont approximatifs.
 4. Les mappers implémentés ne couvrent pas toutes les révisions de cartes ni tous les sous-mappers. Les bus conflicts ne sont modélisés que pour les sous-mappers NES 2.0 explicitement pris en charge de UxROM/CNROM ; les variantes iNES historiques restent indéterminées.
-5. NES 2.0 est pris en charge partiellement pour NROM, UxROM, CNROM et Mapper 8, notamment le décodage de tailles ROM et de certaines tailles RAM. Les autres mappers et sous-mappers non explicitement gérés restent refusés ou non validés.
+5. NES 2.0 est pris en charge partiellement pour NROM, UxROM, CNROM, Mapper 8 et GxROM (66), notamment le décodage de tailles ROM et de certaines tailles RAM. Les autres mappers et sous-mappers non explicitement gérés restent refusés ou non validés.
 6. La suite synthétique doit être complétée par des ROM de diagnostic/homebrew redistribuables légalement.
 7. Le contrat `EmulationCore`, l'adaptateur et le lancement depuis la bibliothèque PeaceEmu doivent être compilés et testés ensemble dans le dépôt hôte.
 8. Les deux manifestes `Cargo.toml` déclarent désormais Rust 1.78 comme MSRV ; il reste à vérifier cette promesse avec une toolchain 1.78 en CI.
