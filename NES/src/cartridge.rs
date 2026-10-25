@@ -3351,6 +3351,7 @@ mod mmc4_tests {
 #[cfg(test)]
 mod mmc4_extended_tests {
     use super::*;
+    use super::mmc4_tests::mmc4_image;
 
     #[test]
     fn mapper10_switches_the_upper_chr_latch_on_the_full_trigger_range() {
