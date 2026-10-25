@@ -3030,7 +3030,7 @@ mod increment_y_register_regressions {
 
 
 #[cfg(test)]
-mod nmi_enable_during_vblank_regressions {
+mod nmi_enable_and_coarse_y_regressions {
     use super::*;
 
     #[test]
