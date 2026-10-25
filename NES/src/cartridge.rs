@@ -3534,3 +3534,69 @@ mod mapper_register_boundary_regressions {
         assert_eq!(cart.ppu_read(0x1FFF), Some(0x73));
     }
 }
+
+
+#[cfg(test)]
+mod mapper15_bank_mode_regressions {
+    use super::*;
+
+    fn tagged_image() -> Vec<u8> {
+        let prg_banks = 8usize;
+        let mut image = vec![0; INES_HEADER_LEN + prg_banks * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = prg_banks as u8;
+        image[6] = 0xF0; // Mapper 15.
+        let start = INES_HEADER_LEN;
+        for bank in 0..prg_banks * 2 {
+            image[start + bank * 0x2000..start + (bank + 1) * 0x2000]
+                .fill(bank as u8);
+        }
+        image
+    }
+
+    fn assert_slots(cart: &Cartridge, expected: [u8; 4]) {
+        for (slot, bank) in expected.into_iter().enumerate() {
+            let address = 0x8000 + (slot as u16) * 0x2000;
+            assert_eq!(cart.cpu_read(address), Some(bank), "unexpected PRG bank in slot {slot}");
+        }
+    }
+
+    #[test]
+    fn mapper15_all_four_modes_map_the_expected_8k_banks() {
+        let mut cart = Cartridge::parse(&tagged_image()).unwrap();
+
+        // X=2 selects 16-KiB bank 2 (8-KiB banks 4/5); bit 7 selects
+        // the odd 8-KiB half in NROM-64 mode.
+        cart.cpu_write(0x8000, 0x42);
+        assert_slots(&cart, [4, 5, 6, 7]); // NROM-256, consecutive 32 KiB.
+
+        cart.cpu_write(0x8001, 0x42);
+        assert_slots(&cart, [4, 5, 14, 15]); // UNROM, fixed final 16 KiB.
+
+        cart.cpu_write(0x8002, 0xC2);
+        assert_slots(&cart, [5, 5, 5, 5]); // NROM-64, selected 8-KiB bank mirrored.
+
+        cart.cpu_write(0x8003, 0x42);
+        assert_slots(&cart, [4, 5, 4, 5]); // NROM-128, selected 16 KiB mirrored.
+    }
+
+    #[test]
+    fn mapper15_bank_register_wraps_and_mirroring_tracks_bit_six() {
+        let mut cart = Cartridge::parse(&tagged_image()).unwrap();
+        cart.cpu_write(0x8000, 0xFF);
+        assert_eq!(cart.cpu_read(0x8000), Some(14), "bank indices wrap to installed ROM");
+        assert_eq!(cart.mirroring(), Mirroring::Horizontal);
+        cart.cpu_write(0x8000, 0x00);
+        assert_eq!(cart.mirroring(), Mirroring::Vertical);
+    }
+
+    #[test]
+    fn mapper15_chr_ram_is_writable_and_rejects_out_of_range_addresses() {
+        let mut cart = Cartridge::parse(&tagged_image()).unwrap();
+        assert!(cart.chr_is_ram());
+        assert!(cart.ppu_write(0x1FFF, 0xA5));
+        assert_eq!(cart.ppu_read(0x1FFF), Some(0xA5));
+        assert!(!cart.ppu_write(0x2000, 0xFF));
+        assert_eq!(cart.ppu_read(0x2000), None);
+    }
+}
