@@ -1013,7 +1013,7 @@ mod dmc_mapper_bank_integration_regressions {
     #[test]
     fn dmc_dma_reads_the_current_mmc3_prg_bank_mapping() {
         let mut image = vec![0; 16 + 4 * 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(&[0x4E, 0x45, 0x53, 0x1A]);
         image[4] = 4;
         image[6] = 0x40; // Mapper 4.
         let prg_start = 16;
