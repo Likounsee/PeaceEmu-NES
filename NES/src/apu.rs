@@ -445,7 +445,6 @@ impl Apu {
             }
         }
         let pulse_out = if pulse == 0.0 { 0.0 } else { 95.88 / (8128.0 / pulse + 100.0) };
-        let triangle_period = u16::from(self.registers[0x0A]) | (u16::from(self.registers[0x0B] & 7) << 8);
         let triangle_value = if self.triangle_sequence < 16 { 15 - self.triangle_sequence } else { self.triangle_sequence - 16 };
         // The triangle channel has no volume envelope: when its length or linear
         // counter expires, the sequencer stops but the DAC holds its last level.
