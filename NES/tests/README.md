@@ -73,3 +73,6 @@ Les dernières régressions couvrent aussi les limites de carte MMC1 (mirroring 
 
 
 Les tests UNROM-512 (mapper 30) vérifient le wrap des banques PRG installées, la banque haute fixe, l'isolation des quatre banques de CHR-RAM, les bornes PPU, le mirroring one-screen commutable et le verrouillage du quatre-écrans. Le parseur est également testé contre les tailles PRG non prises en charge et les déclarations de CHR-ROM incompatibles avec cette implémentation CHR-RAM.
+
+
+Les régressions CPU couvrent aussi le bug matériel du `JMP ($xxFF)` du 6502 (lecture de l’octet haut dans la même page) et la différence de cycles d’une branche prise selon qu’elle franchit ou non une page.
