@@ -3227,3 +3227,31 @@ mod mmc1_prg_ram_protection_regression_tests {
         assert_eq!(cartridge.cpu_read(0x6000), Some(0xA5));
     }
 }
+
+
+#[cfg(test)]
+mod image_boundary_regressions {
+    use super::*;
+
+    #[test]
+    fn parser_reports_truncated_trainer_before_prg_data() {
+        let mut image = vec![0; INES_HEADER_LEN];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 1;
+        image[6] = 0x04; // Trainer is declared, but no trainer bytes follow.
+        assert_eq!(Cartridge::parse(&image), Err(CartridgeError::TruncatedImage {
+            expected: INES_HEADER_LEN + TRAINER_LEN + PRG_BANK_LEN,
+            actual: INES_HEADER_LEN,
+        }));
+    }
+
+    #[test]
+    fn parser_rejects_an_invalid_magic_without_panicking_on_short_inputs() {
+        for length in 0..INES_HEADER_LEN {
+            assert_eq!(Cartridge::parse(&vec![0; length]), Err(CartridgeError::TruncatedHeader));
+        }
+        let mut image = vec![0; INES_HEADER_LEN];
+        image[0..4].copy_from_slice(b"NOPE");
+        assert_eq!(Cartridge::parse(&image), Err(CartridgeError::InvalidMagic));
+    }
+}

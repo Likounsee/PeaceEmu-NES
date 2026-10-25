@@ -1250,3 +1250,35 @@ mod pulse_output_regression_tests {
         assert_eq!(apu.pcm_low_pass, 0.0);
     }
 }
+
+
+#[cfg(test)]
+mod pcm_queue_regressions {
+    use super::*;
+
+    #[test]
+    fn pcm_queue_drops_oldest_sample_when_capacity_is_reached() {
+        let mut apu = Apu::new();
+        apu.audio_samples.extend((0..AUDIO_QUEUE_LIMIT).map(|n| n as f32 / AUDIO_QUEUE_LIMIT as f32));
+        let first = apu.audio_samples[1];
+        apu.sample_phase = CPU_CLOCK_HZ - u64::from(apu.sample_rate);
+        apu.tick_cpu_cycles(1);
+        assert_eq!(apu.audio_samples.len(), AUDIO_QUEUE_LIMIT);
+        assert_eq!(apu.audio_samples.front().copied(), Some(first),
+            "overrun should discard the oldest sample, not block or grow the queue");
+    }
+
+    #[test]
+    fn pcm_sample_phase_is_stable_across_single_cycle_boundaries() {
+        let mut apu = Apu::new();
+        assert!(apu.set_sample_rate(48_000));
+        apu.tick_cpu_cycles(37_311);
+        let phase_after_batch = apu.sample_phase;
+        let batch_samples = apu.drain_audio_samples();
+        let mut split = Apu::new();
+        assert!(split.set_sample_rate(48_000));
+        for _ in 0..37_311 { split.tick_cpu_cycles(1); }
+        assert_eq!(split.sample_phase, phase_after_batch);
+        assert_eq!(split.drain_audio_samples(), batch_samples);
+    }
+}

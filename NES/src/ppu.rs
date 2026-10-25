@@ -1977,3 +1977,38 @@ mod sprite_priority_regression_tests {
             "the lower-priority foreground sprite must not leak through sprite 0");
     }
 }
+
+
+#[cfg(test)]
+mod scroll_boundary_regressions {
+    use super::*;
+
+    #[test]
+    fn coarse_x_wrap_toggles_horizontal_nametable_and_clears_fine_coarse_x() {
+        let mut ppu = Ppu::new();
+        ppu.v = 0x041F;
+        ppu.increment_coarse_x();
+        assert_eq!(ppu.v & 0x001F, 0);
+        assert_eq!(ppu.v & 0x0400, 0, "horizontal nametable bit toggles from one to zero");
+        assert_eq!(ppu.v & !0x041F, 0, "coarse-X increment must preserve unrelated scroll fields");
+        ppu.increment_coarse_x();
+        assert_eq!(ppu.v & 0x001F, 1);
+        assert_eq!(ppu.v & 0x0400, 0);
+    }
+
+    #[test]
+    fn coarse_y_rollover_distinguishes_row_29_and_attribute_row_31() {
+        let mut ppu = Ppu::new();
+        ppu.v = (7 << 12) | (29 << 5) | 0x0800;
+        ppu.increment_y();
+        assert_eq!(ppu.v & 0x7000, 0);
+        assert_eq!(ppu.v & 0x03E0, 0);
+        assert_eq!(ppu.v & 0x0800, 0, "row 29 wraps and toggles vertical nametable");
+
+        ppu.v = (7 << 12) | (31 << 5);
+        ppu.increment_y();
+        assert_eq!(ppu.v & 0x7000, 0);
+        assert_eq!(ppu.v & 0x03E0, 0, "coarse row 31 wraps without toggling nametable");
+        assert_eq!(ppu.v & 0x0800, 0);
+    }
+}

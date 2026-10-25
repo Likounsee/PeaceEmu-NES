@@ -616,3 +616,41 @@ mod open_bus_regression_tests {
     }
 
 }
+
+
+#[cfg(test)]
+mod io_regression_matrix {
+    use super::*;
+
+    #[test]
+    fn controller_ports_keep_independent_latches_after_repeated_strobes() {
+        let mut bus = CpuBus::new();
+        bus.set_controller_state(0, 0b1010_0101);
+        bus.set_controller_state(1, 0b0101_1010);
+        for _ in 0..2 {
+            bus.write(0x4016, 1);
+            bus.write(0x4016, 0);
+        }
+        let first: Vec<u8> = (0..8).map(|_| bus.read(0x4016) & 1).collect();
+        let second: Vec<u8> = (0..8).map(|_| bus.read(0x4017) & 1).collect();
+        assert_eq!(first, [1, 0, 1, 0, 0, 1, 0, 1]);
+        assert_eq!(second, [0, 1, 0, 1, 1, 0, 1, 0]);
+        assert_eq!(bus.read(0x4016) & 1, 1);
+        assert_eq!(bus.read(0x4017) & 1, 1);
+    }
+
+    #[test]
+    fn reset_keeps_live_controller_buttons_but_restarts_serial_latches() {
+        let mut bus = CpuBus::new();
+        bus.set_controller_state(0, 0b0000_0101);
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+        assert_eq!(bus.read(0x4016) & 1, 1);
+        bus.reset();
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+        assert_eq!(bus.read(0x4016) & 1, 1);
+        assert_eq!(bus.read(0x4016) & 1, 0);
+        assert_eq!(bus.read(0x4016) & 1, 1);
+    }
+}
