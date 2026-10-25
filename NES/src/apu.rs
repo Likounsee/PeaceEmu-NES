@@ -1796,3 +1796,23 @@ mod frame_counter_delay_regressions {
         assert!(!apu.frame_irq_pending());
     }
 }
+
+
+#[cfg(test)]
+mod independent_irq_status_regressions {
+    use super::*;
+
+    #[test]
+    fn reading_status_acknowledges_frame_irq_but_preserves_dmc_irq() {
+        let mut apu = Apu::new();
+        apu.frame_irq = true;
+        apu.dmc_irq = true;
+
+        let status = apu.read(0x4015);
+        assert_ne!(status & 0x40, 0, "the read reports the frame IRQ before acknowledging it");
+        assert_ne!(status & 0x80, 0, "the read reports the DMC IRQ");
+        assert!(!apu.frame_irq, "reading $4015 acknowledges only the frame IRQ");
+        assert!(apu.dmc_irq, "the DMC IRQ remains asserted until its own acknowledge condition");
+        assert!(apu.irq_pending());
+    }
+}
