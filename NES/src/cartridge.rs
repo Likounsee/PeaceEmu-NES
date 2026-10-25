@@ -3033,7 +3033,7 @@ mod mmc3_tests {
 
     #[test]
     fn mapper_4_irq_a12_filter_requires_eight_low_dots() {
-        let mut cart = Cartridge::parse(&test_image()).unwrap();
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
         cart.cpu_write(0xC000, 1);
         cart.cpu_write(0xC001, 0);
         cart.cpu_write(0xE001, 0);
