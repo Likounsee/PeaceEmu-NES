@@ -861,3 +861,24 @@ mod controller_strobe_regressions {
             "the next serial read advances to the latched B bit");
     }
 }
+
+
+#[cfg(test)]
+mod controller_serial_tail_regressions {
+    use super::*;
+
+    #[test]
+    fn controller_returns_one_after_all_eight_latched_buttons_are_read() {
+        let mut bus = CpuBus::new();
+        bus.set_controller_state(0, 0b1010_0101);
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+
+        let bits: Vec<u8> = (0..8).map(|_| bus.read(0x4016) & 1).collect();
+        assert_eq!(bits, [1, 0, 1, 0, 0, 1, 0, 1]);
+        for _ in 0..4 {
+            assert_eq!(bus.read(0x4016) & 1, 1,
+                "unconnected serial bits after the eighth button are pulled high");
+        }
+    }
+}
