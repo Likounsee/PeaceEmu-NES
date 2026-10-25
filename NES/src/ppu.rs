@@ -2070,3 +2070,39 @@ mod scroll_boundary_regressions {
         assert!(ppu.write_latch, "the next scroll write must be treated as the first write");
     }
 }
+
+#[cfg(test)]
+mod mapper_a12_bus_regressions {
+    use super::*;
+
+    #[test]
+    fn background_pattern_fetches_emit_timestamped_a12_edges() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x10; // Background pattern table at $1000.
+        ppu.mask = 0x08; // Enable background rendering.
+        ppu.tick_with_cartridge(9, None);
+
+        assert_eq!(
+            ppu.take_mapper_bus_events(),
+            vec![(0x1000, 5), (0, 9)],
+            "A12 must rise on the pattern-fetch slot and fall when the next nametable slot begins"
+        );
+    }
+
+    #[test]
+    fn disabling_rendering_emits_a_low_edge_for_mapper_irq_filters() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x10;
+        ppu.mask = 0x08;
+        ppu.tick_with_cartridge(5, None);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 5)]);
+
+        ppu.mask = 0;
+        ppu.tick_with_cartridge(1, None);
+        assert_eq!(
+            ppu.take_mapper_bus_events(),
+            vec![(0, 6)],
+            "turning rendering off must release A12 low rather than leave MMC3 filters high"
+        );
+    }
+}
