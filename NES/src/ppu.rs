@@ -259,7 +259,7 @@ impl Ppu {
             if (4..=7).contains(&phase) {
                 let sprite = ((dot - 257) / 8) as usize;
                 let base = sprite * 4;
-                let top = (self.oam[base] as usize + 1) & 0xFF;
+                let top = Self::sprite_top(self.oam[base]);
                 let target_y = if self.scanline == 261 { 0 } else { self.scanline as usize + 1 };
                 let row = target_y.wrapping_sub(top);
                 let height = if self.ctrl & 0x20 != 0 { 16 } else { 8 };
@@ -279,6 +279,15 @@ impl Ppu {
 
     pub(crate) fn take_mapper_bus_events(&mut self) -> Vec<(u16, u64)> {
         core::mem::take(&mut self.mapper_bus_events)
+    }
+
+    /// Converts the OAM Y byte to the first visible scanline for that sprite.
+    ///
+    /// OAM stores the scanline immediately above the sprite. Do not wrap 255 + 1
+    /// to scanline zero: Y=255 places the sprite below the visible 240-line picture.
+    #[inline]
+    fn sprite_top(oam_y: u8) -> usize {
+        usize::from(oam_y) + 1
     }
 
     /// Resolves a sprite row to its low-plane CHR address.
@@ -322,7 +331,7 @@ impl Ppu {
             return false;
         }
 
-        let sprite_top = (self.oam[0] as usize + 1) & 0xFF;
+        let sprite_top = Self::sprite_top(self.oam[0]);
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         if y < sprite_top || y >= sprite_top + height {
             return false;
@@ -411,7 +420,7 @@ impl Ppu {
         let mut in_range = 0usize;
         for sprite in 0..64usize {
             let base = sprite * 4;
-            let top = (self.oam[base] as usize + 1) & 0xFF;
+            let top = Self::sprite_top(self.oam[base]);
             if y < top || y >= top + height { continue; }
             in_range += 1;
             if in_range > 8 { break; }
@@ -446,7 +455,7 @@ impl Ppu {
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         let mut count = 0usize;
         for sprite in 0..64usize {
-            let top = (self.oam[sprite * 4] as usize + 1) & 0xFF;
+            let top = Self::sprite_top(self.oam[sprite * 4]);
             if y >= top && y < top + height {
                 count += 1;
                 if count > 8 {
@@ -536,7 +545,7 @@ impl Ppu {
         let mut sprite_claimed = vec![false; 256 * 240];
         for sprite in 0..64usize {
             let base = sprite * 4;
-            let top = (self.oam[base] as usize + 1) & 0xFF;
+            let top = Self::sprite_top(self.oam[base]);
             let tile = self.oam[base + 1] as usize;
             let attributes = self.oam[base + 2];
             let left = self.oam[base + 3] as usize;
@@ -1849,6 +1858,26 @@ mod sprite_pattern_address_tests {
 #[cfg(test)]
 mod sprite_overflow_regression_tests {
     use super::*;
+
+    #[test]
+    fn oam_y_255_does_not_wrap_sprites_into_scanline_zero() {
+        let mut ppu = Ppu::new();
+        assert_eq!(Ppu::sprite_top(0), 1);
+        assert_eq!(Ppu::sprite_top(239), 240);
+        assert_eq!(Ppu::sprite_top(255), 256);
+
+        // Nine sprites whose Y byte is 255 are all below the visible picture;
+        // they must not trigger overflow on scanline zero.
+        for sprite in 0..9 {
+            ppu.oam[sprite * 4] = 255;
+        }
+        ppu.mask = 0x18;
+        ppu.scanline = 0;
+        ppu.dot = 255;
+        ppu.tick_with_cartridge(1, None);
+        assert_eq!(ppu.position(), (0, 256));
+        assert_eq!(ppu.status & 0x20, 0, "off-screen sprites must not count toward scanline-zero overflow");
+    }
 
     #[test]
     fn ninth_in_range_sprite_sets_overflow_and_prerender_clears_it() {
