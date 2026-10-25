@@ -519,6 +519,46 @@ mod tests {
     }
 
     #[test]
+    fn noise_lfsr_uses_distinct_feedback_taps_for_long_and_short_modes() {
+        let mut short_mode = Apu::new();
+        short_mode.registers[0x0E] = 0x00; // Tap bit 1.
+        short_mode.noise_shift = 0b10;
+        short_mode.noise_timer_counter = 0;
+        short_mode.tick_cpu_cycles(1);
+
+        let mut long_mode = Apu::new();
+        long_mode.registers[0x0E] = 0x80; // Tap bit 6.
+        long_mode.noise_shift = 0b10;
+        long_mode.noise_timer_counter = 0;
+        long_mode.tick_cpu_cycles(1);
+
+        assert_eq!(short_mode.noise_shift, 0x4001,
+            "short mode XORs bit 0 with bit 1 before shifting");
+        assert_eq!(long_mode.noise_shift, 0x0001,
+            "long mode XORs bit 0 with bit 6 before shifting");
+    }
+
+    #[test]
+    fn noise_timer_honors_every_ntsc_period_table_entry() {
+        const PERIODS: [u16; 16] = [
+            4, 8, 16, 32, 64, 96, 128, 160,
+            202, 254, 380, 508, 762, 1016, 2034, 4068,
+        ];
+        for (index, period) in PERIODS.into_iter().enumerate() {
+            let mut apu = Apu::new();
+            apu.registers[0x0E] = index as u8;
+            apu.noise_shift = 1;
+            // Start one tick before expiry so the first LFSR step is exactly
+            // the selected period away, independent of the power-on zero state.
+            apu.noise_timer_counter = period - 1;
+            apu.tick_cpu_cycles(u32::from(period - 1));
+            assert_eq!(apu.noise_shift, 1, "period {period} expired too early");
+            apu.tick_cpu_cycles(1);
+            assert_ne!(apu.noise_shift, 1, "period {period} failed to clock the LFSR");
+        }
+    }
+
+    #[test]
     fn noise_timer_clocks_each_cpu_cycle_instead_of_alternating_cycles() {
         let mut apu = Apu::new();
         apu.registers[0x0E] = 0; // Noise period table entry = 4 CPU cycles.
