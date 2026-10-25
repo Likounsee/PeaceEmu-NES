@@ -36,6 +36,8 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 - **Validation** : après ajustement du test de rendu 8×16 à la coordonnée Y de l'OAM et suppression d'une opération identité détectée par Clippy, la CI passe sur Rust stable, Rust 1.78 et Windows : tests, formatage et Clippy réussis. Les tests synthétiques ne remplacent pas les essais de ROM réelles, notamment pour l'alignement sprite/hitbox de *Super Mario Bros.*
 - **APU/DMC IRQ** : nouvelle régression pour la levée de l'IRQ à la fin d'un échantillon d'un octet, sa lecture via `$4015` sans acquittement et son effacement via `$4010`.
 - **MMC3/mirroring** : nouvelle régression garantissant que le registre `$A000` ne remplace pas le câblage four-screen imposé par la cartouche.
+- **PPU/mémoire vidéo** : tests d'intégration des quatre nametables physiques en four-screen, de l'alias `$3000` → `$2000` et des alias de mirroring horizontal/vertical.
+- **MMC3/trainer** : test du chargement du trainer aux adresses `$7000-$71FF` et de la conservation des données lorsque la PRG-RAM est désactivée puis réactivée.
 
 
 ## Ce qui est implémenté
