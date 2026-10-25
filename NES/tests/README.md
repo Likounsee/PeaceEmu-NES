@@ -61,3 +61,6 @@ cargo build --manifest-path NES/Cargo.toml --bin peaceemu-nes-desktop --release 
 ```
 
 Si l'une des commandes échoue, corriger la cause et conserver le test de régression approprié. Ne pas supprimer ou affaiblir un test uniquement pour faire passer la CI.
+
+
+Régressions PPU ajoutées : buffering des lectures `$2007`, incrément d’adresse VRAM, lecture palette immédiate et conservation des bits hauts de l’open bus.
