@@ -2191,7 +2191,7 @@ mod tests {
     use super::*;
     fn image(prg: u8, chr: u8, flags6: u8, flags7: u8) -> Vec<u8> {
         let mut v = vec![0; 16 + prg as usize * PRG_BANK_LEN + chr as usize * CHR_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\x1A");
+        v[0..4].copy_from_slice(b"NES\x1A"); v[4] = prg; v[5] = chr; v[6] = flags6; v[7] = flags7; v
     }
     #[test] fn rejects_short_or_invalid_header() {
         assert_eq!(Nrom::parse(&[0; 8]), Err(CartridgeError::TruncatedHeader));
@@ -2224,7 +2224,7 @@ mod tests {
     fn prg_ram_is_writable_and_trainer_is_loaded_at_7000() {
         // Trainer payload is the 512 bytes immediately following the header.
         let mut with_trainer = vec![0; 16 + TRAINER_LEN + PRG_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\x1A");
+        with_trainer[0..4].copy_from_slice(b"NES\x1A");
         with_trainer[4] = 1;
         with_trainer[6] = 0x04;
         with_trainer[16] = 0x5A;
@@ -3178,7 +3178,7 @@ mod unrom512_tests {
 
     fn image(prg_banks: u8, chr_banks: u8) -> Vec<u8> {
         let mut data = vec![0; INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN + chr_banks as usize * CHR_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\x1A");
+        data[0..4].copy_from_slice(b"NES\x1A");
         data[4] = prg_banks;
         data[5] = chr_banks;
         data[6] = 0xE8;
@@ -3369,7 +3369,7 @@ mod nes2_nrom_tests {
     fn nes2_non_nrom_mappers_remain_explicitly_unsupported() {
         let mut image = nes2_nrom(1, 0);
         image[6] = 0x10;
-        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
+        assert_eq!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported));
     }
 }
 
@@ -3380,7 +3380,7 @@ mod mmc3_chr_layout_regression_tests {
 
     fn image() -> Vec<u8> {
         let mut data = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN + 2 * CHR_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\x1A");
+        data[0..4].copy_from_slice(b"NES\x1A");
         data[4] = 2;
         data[5] = 2;
         data[6] = 0x40;
@@ -3436,7 +3436,7 @@ mod mmc3_chr_layout_regression_tests {
     #[test]
     fn mmc3_chr_ram_writes_follow_the_current_bank_mapping() {
         let mut data = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\x1A");
+        data[0..4].copy_from_slice(b"NES\x1A");
         data[4] = 2;
         data[6] = 0x40;
         let mut cart = Cartridge::parse(&data).unwrap();
@@ -3512,7 +3512,7 @@ mod mmc1_prg_ram_and_mode_regression_tests {
 
     fn image() -> Vec<u8> {
         let mut data = vec![0; INES_HEADER_LEN + 4 * PRG_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\x1A");
+        data[0..4].copy_from_slice(b"NES\x1A");
         data[4] = 4;
         data[6] = 0x10; // MMC1, horizontal initial mirroring.
         for bank in 0..4usize {
@@ -4117,19 +4117,19 @@ mod mapper_header_error_regressions {
 
     #[test]
     fn unsupported_ines_mapper_is_reported_before_rom_size_validation() {
-        let mut image = vec![0; INES_HEADER_LEN];
-        image[0..4].copy_from_slice(b"NES\x1A");
-        image[4] = 1;
-        image[6] = 0x20; // Mapper 2 (UxROM), not implemented by this core.
-        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::UnsupportedMapper(2))));
+        let mut rom = vec![0; INES_HEADER_LEN];
+        rom[0..4].copy_from_slice(b"NES\x1A");
+        rom[4] = 1;
+        rom[6] = 0x20; // Mapper 2 (UxROM), not implemented by this core.
+        assert!(matches!(Cartridge::parse(&rom), Err(CartridgeError::UnsupportedMapper(2))));
     }
 
     #[test]
     fn nes2_nrom_header_decodes_rom_size_before_truncation_check() {
-        let mut image = vec![0; INES_HEADER_LEN];
-        image[0..4].copy_from_slice(b"NES\x1A");
-        image[4] = 1; // 16 KiB PRG-ROM in NES 2.0 linear size encoding.
-        image[7] = 0x08; // NES 2.0 marker.
-        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::TruncatedImage { .. })));
+        let mut rom = vec![0; INES_HEADER_LEN];
+        rom[0..4].copy_from_slice(b"NES\x1A");
+        rom[4] = 1; // 16 KiB PRG-ROM in NES 2.0 linear size encoding.
+        rom[7] = 0x08; // NES 2.0 marker.
+        assert!(matches!(Cartridge::parse(&rom), Err(CartridgeError::TruncatedImage { .. })));
     }
 }
