@@ -1,4 +1,4 @@
-//! iNES parsing and mapper implementations for NROM, MMC1, UxROM, CNROM, MMC3, AxROM, GxROM, Color Dreams, Camerica, BNROM, CPROM, MMC2, UNROM 512, and Mapper 15.
+//! iNES parsing and mapper implementations for NROM, MMC1, UxROM, CNROM, MMC3, AxROM, GxROM, Color Dreams, Camerica, BNROM, CPROM, MMC2/MMC4, UNROM 512, and Mapper 15.
 
 use core::cell::Cell;
 use core::fmt;
@@ -3308,7 +3308,7 @@ mod mmc4_tests {
     #[test]
     fn mapper10_switches_16k_prg_and_keeps_last_bank_fixed() {
         let mut cart = Cartridge::parse(&mmc4_image(8, 2)).unwrap();
-        assert!(matches!(cart, Cartridge::Mmc2(_)));
+        assert!(matches!(&cart, Cartridge::Mmc2(_)));
         assert_eq!(cart.cpu_read(0x8000), Some(0));
         assert_eq!(cart.cpu_read(0xBFFF), Some(0));
         assert_eq!(cart.cpu_read(0xC000), Some(7));
