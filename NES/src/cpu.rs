@@ -1724,7 +1724,11 @@ mod indirect_jump_and_branch_regressions {
 
     #[test]
     fn taken_branch_reports_three_cycles_without_crossing_and_four_with_crossing() {
-        let (mut cpu, mut bus) = setup(&[0xD0, 0xFE]);
+        let mut bus = CpuBus::new();
+        bus.write(0x0600, 0xD0);
+        bus.write(0x0601, 0xFE);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
         cpu.state.status &= !flags::ZERO;
         let same_page = cpu.step(&mut bus).unwrap();
         assert_eq!(same_page.cycles, 3);
