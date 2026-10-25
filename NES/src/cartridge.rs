@@ -4057,6 +4057,8 @@ mod mapper_register_boundary_regressions {
     fn mmc3_prg_ram_enable_and_write_protect_bits_are_independent() {
         let mut cart = Cartridge::parse(&mmc3_ram_image()).unwrap();
 
+        // Start from an explicit known state instead of depending on power-on register values.
+        assert!(cart.cpu_write(0xA001, 0x80)); // Enabled and writable.
         assert!(cart.cpu_write(0x6000, 0x5A));
         assert_eq!(cart.cpu_read(0x6000), Some(0x5A));
 
