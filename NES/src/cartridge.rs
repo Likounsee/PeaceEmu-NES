@@ -4924,6 +4924,25 @@ mod mmc3_chr_inversion_regressions {
 mod mapper_4_chr_window_regressions {
     use super::*;
 
+    fn mmc3_image(prg_banks: u8, chr_banks: u8) -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN + chr_banks as usize * CHR_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = prg_banks;
+        image[5] = chr_banks;
+        image[6] = 0x40;
+        let prg_start = INES_HEADER_LEN;
+        for bank in 0..(prg_banks as usize * 2) {
+            let start = prg_start + bank * 0x2000;
+            image[start..start + 0x2000].fill(bank as u8);
+        }
+        let chr_start = prg_start + prg_banks as usize * PRG_BANK_LEN;
+        for bank in 0..(chr_banks as usize * 8) {
+            let start = chr_start + bank * 0x400;
+            image[start..start + 0x400].fill((0x40 + bank) as u8);
+        }
+        image
+    }
+
     #[test]
     fn chr_inversion_reorders_all_eight_one_kib_windows_without_aliasing() {
         let mut cart = Cartridge::parse(&mmc3_image(2, 4)).unwrap();
