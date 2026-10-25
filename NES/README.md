@@ -31,7 +31,7 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 - **APU/DMC** : tests ajoutés pour le wrap d'adresse de `$FFFF` vers `$8000` après consommation des octets et pour le redémarrage de la lecture en mode loop sans écraser l'octet tamponné.
 - **PPU/sprites 8×16** : test de rendu de pixels réels à travers la frontière entre les deux tuiles, avec retournement vertical ; la coordonnée de scanline tient compte du décalage Y de l'OAM.
 - **MMC3/PRG-RAM** : test des trois états de la RAM ($A001) : lecture/écriture autorisées, RAM lisible mais protégée en écriture, puis RAM désactivée et réactivée sans fuite d'écritures.
-- **Validation** : le commit de base couvrant les dernières régressions MMC3/sprites est vert sur Rust stable, Rust 1.78 et Windows. Les nouveaux tests DMC, rendu 8×16 et PRG-RAM sont soumis à la CI ; leur validation finale reste en attente. Les tests synthétiques ne remplacent pas les essais de ROM réelles, notamment pour l'alignement sprite/hitbox de *Super Mario Bros.*
+- **Validation** : après ajustement du test de rendu 8×16 à la coordonnée Y de l'OAM et suppression d'une opération identité détectée par Clippy, la CI passe sur Rust stable, Rust 1.78 et Windows : tests, formatage et Clippy réussis. Les tests synthétiques ne remplacent pas les essais de ROM réelles, notamment pour l'alignement sprite/hitbox de *Super Mario Bros.*
 
 
 ## Ce qui est implémenté
