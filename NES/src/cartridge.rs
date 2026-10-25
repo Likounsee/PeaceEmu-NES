@@ -3369,7 +3369,7 @@ mod nes2_nrom_tests {
     fn nes2_non_nrom_mappers_remain_explicitly_unsupported() {
         let mut image = nes2_nrom(1, 0);
         image[6] = 0x10;
-        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported));
+        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
     }
 }
 
