@@ -1742,3 +1742,44 @@ mod indirect_jump_and_branch_regressions {
         assert_eq!(cpu.state().pc, 0x0700);
     }
 }
+
+
+#[cfg(test)]
+mod indexed_read_and_decimal_regressions {
+    use super::*;
+
+    #[test]
+    fn indexed_absolute_load_adds_cycle_only_when_crossing_page() {
+        let mut bus = CpuBus::new();
+        bus.write(0x0600, 0xB9); // LDA $06FF,Y
+        bus.write(0x0601, 0xFF);
+        bus.write(0x0602, 0x06);
+        bus.write(0x06FF, 0x11);
+        bus.write(0x0700, 0x22);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        cpu.state.y = 0;
+        let same_page = cpu.step(&mut bus).unwrap();
+        assert_eq!(same_page.cycles, 4);
+        assert_eq!(cpu.state().a, 0x11);
+
+        cpu.set_pc(0x0600);
+        cpu.state.y = 1;
+        let crossed = cpu.step(&mut bus).unwrap();
+        assert_eq!(crossed.cycles, 5);
+        assert_eq!(cpu.state().a, 0x22);
+    }
+
+    #[test]
+    fn nes_2a03_adc_ignores_decimal_flag() {
+        let mut bus = CpuBus::new();
+        bus.write(0x0600, 0x69); // ADC #$01
+        bus.write(0x0601, 0x01);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        cpu.state.a = 0x09;
+        cpu.state.status |= flags::DECIMAL;
+        cpu.step(&mut bus).unwrap();
+        assert_eq!(cpu.state().a, 0x0A, "the NES 2A03 does not perform BCD arithmetic");
+    }
+}
