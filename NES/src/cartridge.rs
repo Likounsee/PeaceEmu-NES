@@ -30,7 +30,12 @@ fn nes2_rom_size(lsb: u8, msb_nibble: u8, unit: usize) -> usize {
     if msb_nibble == 0x0F {
         let exponent = (lsb >> 2) as u32;
         let multiplier = ((lsb & 0x03) as usize) * 2 + 1;
-        1usize.checked_shl(exponent).unwrap_or(usize::MAX).saturating_mul(multiplier)
+        // Keep malformed exponent encodings from overflowing the header-plus-ROM
+        // length arithmetic used by mapper parsers. Such enormous sizes are invalid
+        // for the currently supported boards and will be rejected before slicing.
+        1usize.checked_shl(exponent).unwrap_or(usize::MAX)
+            .saturating_mul(multiplier)
+            .min(usize::MAX / 4)
     } else {
         (((msb_nibble as usize) << 8) | lsb as usize).saturating_mul(unit)
     }
@@ -4075,6 +4080,12 @@ mod added_nes2_size_regression_tests {
         assert_eq!(nes2_rom_size(0x04, 0x0F, PRG_BANK_LEN), 2);
         assert_eq!(nes2_rom_size(0x03, 0x0F, CHR_BANK_LEN), 7);
         assert_eq!(nes2_rom_size(0x07, 0x0F, CHR_BANK_LEN), 14);
+    }
+
+    #[test]
+    fn extreme_nes2_exponent_size_cannot_overflow_image_length_checks() {
+        assert_eq!(nes2_rom_size(0xFC, 0x0F, PRG_BANK_LEN), (usize::MAX / 4));
+        assert_eq!(nes2_rom_size(0xFC, 0x0F, CHR_BANK_LEN), (usize::MAX / 4));
     }
 
     #[test]
