@@ -3083,7 +3083,7 @@ mod sprite_zero_boundary_regressions {
         let cart = opaque_sprite_cartridge();
         let mut ppu = Ppu::new();
         ppu.mask = 0x1E;
-        ppu.oam[0] = 0;
+        ppu.oam[0] = 0xFF;
         ppu.oam[1] = 0;
         ppu.oam[3] = 248;
         ppu.background_opaque[254] = true;
@@ -3099,7 +3099,7 @@ mod sprite_zero_boundary_regressions {
         let cart = opaque_sprite_cartridge();
         let mut ppu = Ppu::new();
         ppu.mask = 0x1E;
-        ppu.oam[0] = 0;
+        ppu.oam[0] = 0xFF;
         ppu.oam[1] = 0;
         ppu.oam[2] = 0x20; // Sprite priority: behind the background.
         ppu.oam[3] = 16;
