@@ -2198,3 +2198,32 @@ mod sprite_pattern_address_regressions {
     }
 
 }
+
+
+#[cfg(test)]
+mod palette_address_regressions {
+    use super::*;
+
+    #[test]
+    fn sprite_universal_palette_entries_mirror_background_universal_entries() {
+        let mut ppu = Ppu::new();
+        ppu.mem_write(0x3F00, 0x09, None);
+        assert_eq!(ppu.mem_read(0x3F10, None), 0x09);
+        ppu.mem_write(0x3F14, 0x16, None);
+        assert_eq!(ppu.mem_read(0x3F04, None), 0x16);
+        ppu.mem_write(0x3F08, 0x27, None);
+        assert_eq!(ppu.mem_read(0x3F18, None), 0x27);
+        ppu.mem_write(0x3F0C, 0x31, None);
+        assert_eq!(ppu.mem_read(0x3F1C, None), 0x31);
+    }
+
+    #[test]
+    fn palette_ram_mirrors_every_thirty_two_bytes_and_masks_to_six_bits() {
+        let mut ppu = Ppu::new();
+        ppu.mem_write(0x3F21, 0xFF, None);
+        assert_eq!(ppu.mem_read(0x3F01, None), 0x3F);
+        ppu.mem_write(0x3F41, 0x12, None);
+        assert_eq!(ppu.mem_read(0x3F01, None), 0x12);
+        assert_eq!(ppu.mem_read(0x3F21, None), 0x12);
+    }
+}
