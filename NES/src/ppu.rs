@@ -195,7 +195,6 @@ impl Ppu {
             // live v register is changed by coarse-X fetches and the dot-256 Y increment,
             // so using it at the end of the line would shift the row being rendered.
             if self.dot == 1 && self.scanline < 240 {
-                self.sprite_line = u16::MAX;
                 self.line_scroll_v = self.v;
                 self.line_scroll_start_x = 0;
             }
@@ -216,10 +215,21 @@ impl Ppu {
                 // can then affect only pixels the PPU has not emitted yet.
                 self.render_sprite_pixel(x, y, cartridge);
             }
-            if self.dot == 256 && (self.scanline < 240 || self.scanline == 261) && self.mask & 0x18 != 0 {
-                // The pre-render scanline evaluates sprites for visible scanline zero.
-                // Sprite evaluation is disabled when both rendering layers are off.
-                self.update_sprite_overflow(self.scanline as usize);
+            if self.dot == 256 && (self.scanline < 240 || self.scanline == 261) {
+                if self.mask & 0x18 != 0 {
+                    // Sprite evaluation for the next visible scanline begins before
+                    // that scanline starts, not at its first visible pixel. This also
+                    // prepares scanline zero from the pre-render line.
+                    self.evaluate_sprite_line_if_needed(
+                        if self.scanline == 261 { 0 } else { self.scanline as usize + 1 }
+                    );
+                    self.update_sprite_overflow(self.scanline as usize);
+                } else {
+                    // Do not reuse last frame's secondary-OAM snapshot when rendering
+                    // was disabled during the pre-render evaluation window.
+                    self.sprite_line = u16::MAX;
+                    self.sprite_line_count = 0;
+                }
             }
 
             // During visible and pre-render scanlines, the rendering pipeline advances
