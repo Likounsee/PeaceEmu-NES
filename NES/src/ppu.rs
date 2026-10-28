@@ -3935,3 +3935,50 @@ mod oam_bus_timing_regressions {
         assert_eq!(ppu.oam_addr, 0);
     }
 }
+
+
+#[cfg(test)]
+mod cycle_sprite_evaluator_regressions {
+    use super::*;
+
+    #[test]
+    fn pre_render_dots_build_secondary_oam_for_scanline_zero() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        for sprite in 0..8usize {
+            let base = sprite * 4;
+            ppu.oam[base..base + 4].copy_from_slice(&[0xFF, sprite as u8, 0, (sprite * 8) as u8]);
+        }
+        ppu.tick(256);
+        assert_eq!(ppu.sprite_line, 0);
+        assert_eq!(ppu.sprite_line_count, 8);
+        for sprite in 0..8usize {
+            assert_eq!(ppu.sprite_line_indices[sprite], sprite as u8);
+            assert_eq!(ppu.sprite_line_oam[sprite][1], sprite as u8);
+        }
+    }
+
+    #[test]
+    fn overflow_is_detected_during_the_post_eight_sprite_scan() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        for sprite in 0..9usize {
+            ppu.oam[sprite * 4] = 0xFF;
+        }
+        ppu.tick(256);
+        assert_ne!(ppu.status & 0x20, 0);
+        assert_eq!(ppu.sprite_line_count, 8);
+    }
+
+    #[test]
+    fn sprites_outside_the_evaluated_range_are_not_copied() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.oam[0..4].copy_from_slice(&[20, 3, 0, 16]);
+        ppu.oam[4..8].copy_from_slice(&[0xFF, 7, 0, 24]);
+        ppu.tick(256);
+        assert_eq!(ppu.sprite_line_count, 1);
+        assert_eq!(ppu.sprite_line_indices[0], 1);
+        assert_eq!(ppu.sprite_line_oam[0], [0xFF, 7, 0, 24]);
+    }
+}
