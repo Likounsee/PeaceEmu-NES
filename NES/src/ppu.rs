@@ -195,6 +195,7 @@ impl Ppu {
             // live v register is changed by coarse-X fetches and the dot-256 Y increment,
             // so using it at the end of the line would shift the row being rendered.
             if self.dot == 1 && self.scanline < 240 {
+                self.sprite_line = u16::MAX;
                 self.line_scroll_v = self.v;
                 self.line_scroll_start_x = 0;
             }
@@ -379,7 +380,8 @@ impl Ppu {
     /// This is deliberately separate from scanline composition: games such as SMB poll
     /// the hit flag mid-scanline and immediately change scroll registers. The flag must
     /// become visible at the overlapping pixel, not after dot 256.
-    fn sprite_zero_hit_at(&self, x: usize, y: usize, cartridge: Option<&Cartridge>) -> bool {
+    fn sprite_zero_hit_at(&mut self, x: usize, y: usize, cartridge: Option<&Cartridge>) -> bool {
+        self.evaluate_sprite_line_if_needed(y);
         if x >= 255 || self.mask & 0x18 != 0x18
             || (x < 8 && self.mask & 0x06 != 0x06)
         {
