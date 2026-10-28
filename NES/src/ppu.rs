@@ -1307,7 +1307,7 @@ mod tests {
     #[test]
     fn mid_scanline_fine_x_write_only_affects_pixels_not_yet_emitted() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap();
         let mut ppu = Ppu::new();
