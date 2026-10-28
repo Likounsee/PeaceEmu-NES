@@ -294,21 +294,44 @@ impl Apu {
                     }
                 }
             }
+            // The NTSC frame sequencer is not a fixed 3,729-cycle metronome:
+            // its quarter/half-frame events alternate 3,729 / 3,728 / 3,729 /
+            // 3,729 cycles. Drive unit clocks from the actual sequence positions so
+            // the second and final events do not drift by one cycle per interval.
             self.frame_cycles = self.frame_cycles.saturating_add(1);
-            while self.frame_cycles >= if self.five_step_mode { FIVE_STEP_PERIOD } else { FOUR_STEP_PERIOD } {
-                self.frame_cycles -= if self.five_step_mode { FIVE_STEP_PERIOD } else { FOUR_STEP_PERIOD };
-                if !self.five_step_mode && !self.frame_irq_inhibit { self.frame_irq = true; }
+            if self.five_step_mode {
+                match self.frame_cycles {
+                    3_729 | 11_186 => self.clock_quarter_units_once(),
+                    7_457 | 18_641 => {
+                        self.clock_quarter_units_once();
+                        self.clock_half_units_once();
+                    }
+                    _ => {}
+                }
+                if self.frame_cycles >= FIVE_STEP_PERIOD {
+                    self.frame_cycles = 0;
+                }
+            } else {
+                match self.frame_cycles {
+                    3_729 | 11_186 => self.clock_quarter_units_once(),
+                    7_457 | 14_915 => {
+                        self.clock_quarter_units_once();
+                        self.clock_half_units_once();
+                    }
+                    _ => {}
+                }
+                if self.frame_cycles >= FOUR_STEP_PERIOD {
+                    if !self.frame_irq_inhibit { self.frame_irq = true; }
+                    self.frame_cycles = 0;
+                }
             }
+
+            // Keep these phase counters useful for diagnostics and chunking
+            // regressions, but do not use their rounded periods to schedule clocks.
             self.quarter_frame_cycles = self.quarter_frame_cycles.saturating_add(1);
-            while self.quarter_frame_cycles >= 3_729 {
-                self.quarter_frame_cycles -= 3_729;
-                self.clock_quarter_units_once();
-            }
+            if self.quarter_frame_cycles >= 3_729 { self.quarter_frame_cycles -= 3_729; }
             self.half_frame_cycles = self.half_frame_cycles.saturating_add(1);
-            while self.half_frame_cycles >= HALF_FRAME_PERIOD {
-                self.half_frame_cycles -= HALF_FRAME_PERIOD;
-                self.clock_half_units_once();
-            }
+            if self.half_frame_cycles >= HALF_FRAME_PERIOD { self.half_frame_cycles -= HALF_FRAME_PERIOD; }
 
             // Resample the running hardware mixer against the configured host PCM rate.
             // The bounded queue prevents a frontend that temporarily stops consuming
@@ -1905,6 +1928,42 @@ mod dmc_irq_end_of_sample_regressions {
         assert!(apu.irq_pending(), "reading $4015 does not acknowledge DMC IRQ");
 
         apu.write(0x4010, 0x00); // Clearing IRQ-enable also acknowledges DMC IRQ.
+        assert!(!apu.irq_pending());
+    }
+}
+
+
+
+#[cfg(test)]
+mod exact_frame_sequence_timing_regressions {
+    use super::*;
+
+    #[test]
+    fn four_step_frame_irq_is_asserted_on_cycle_14915_not_14916() {
+        let mut apu = Apu::new();
+        apu.tick_cpu_cycles(14_914);
+        assert!(!apu.irq_pending(), "four-step frame IRQ must not fire a cycle early");
+        assert_eq!(apu.frame_cycles, 14_914);
+
+        apu.tick_cpu_cycles(1);
+        assert!(apu.irq_pending(), "four-step frame IRQ must fire at cycle 14915");
+        assert_eq!(apu.frame_cycles, 0, "the four-step sequence resets on its terminal event");
+    }
+
+    #[test]
+    fn five_step_sequence_resets_at_cycle_18641_without_frame_irq() {
+        let mut apu = Apu::new();
+        apu.write(0x4017, 0x80);
+        // Reset delay is 3 or 4 cycles depending on APU parity.
+        apu.tick_cpu_cycles(4);
+        assert!(apu.five_step_mode);
+
+        apu.tick_cpu_cycles(18_640);
+        assert!(!apu.irq_pending(), "five-step mode must not assert frame IRQ");
+        assert_ne!(apu.frame_cycles, 0, "the sequence must not reset one cycle early");
+
+        apu.tick_cpu_cycles(1);
+        assert_eq!(apu.frame_cycles, 0, "five-step sequence terminal event is cycle 18641");
         assert!(!apu.irq_pending());
     }
 }
