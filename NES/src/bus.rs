@@ -263,9 +263,9 @@ mod tests {
     fn dmc_dma_sample_read_does_not_create_an_extra_instruction_bus_cycle() {
         let mut bus = CpuBus::new();
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
-        image[16 + 0x1000] = 0xA5;
+        image[16] = 0xA5; // DMC starts at $C000, the first byte of a 16 KiB NROM bank.
         bus.insert_cartridge(Cartridge::parse(&image).unwrap());
         bus.write(0x4010, 0x00);
         bus.write(0x4012, 0x00);
