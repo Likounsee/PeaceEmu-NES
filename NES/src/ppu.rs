@@ -3325,7 +3325,8 @@ mod mid_scanline_scroll_latch_regressions {
         ppu.cpu_write_register(5, 0b1011_0110, None);
 
         assert_eq!(ppu.fine_x, 0, "the second $2005 write must not overwrite fine X");
-        assert_eq!(ppu.line_scroll_v & 0x73E0, 0x59A0 & 0x73E0);
+        assert_eq!(ppu.t, 0x62C0, "the second $2005 write updates the temporary scroll address");
+        assert_eq!(ppu.line_scroll_v, 0x0123, "the current line keeps its active scroll address");
         assert_eq!(ppu.line_scroll_start_x, 0,
             "a second $2005 write updates t but does not immediately replace v on the current line");
     }
