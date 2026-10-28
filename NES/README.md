@@ -21,6 +21,10 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 
 ## Dernière itération
 
+- **CPU/bus** : les instructions implicites de deux cycles (transferts, flags, shifts accumulateur, NOPs implicites et KIL) effectuent maintenant leur lecture factice pendant le bon ordre de bus, plutôt que de laisser ce cycle à la fin de l'instruction. Tests ajoutés pour toutes les opcodes concernées.
+- **Bus/APU** : test d'intégration de la lecture de `$4015` : bit 5 conservé depuis l'open bus et IRQ frame acquittée à la lecture.
+- **Machine/DMA OAM** : test du chemin pair (513 cycles) et vérification du transfert des 256 octets ; le test existant couvre déjà le chemin impair (514 cycles).
+
 - **PPU/PPUDATA** : test supplémentaire de l'alias palette `$3F10` → `$3F00` et du rechargement du buffer différé depuis l'adresse nametable correspondante `$2F10`.
 - **MMC3/PRG-RAM** : le test d'activation/protection démarre désormais avec un état explicite (RAM activée et inscriptible), puis vérifie désactivation, protection et réactivation sans dépendre implicitement des valeurs de démarrage.
 - **APU/DMC** : les tests couvrent le buffer d'échantillon, les stalls DMA, l'indépendance entre IRQ frame/DMC/mapper et la lecture DMC à travers une banque PRG MMC3 sélectionnée.
