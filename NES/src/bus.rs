@@ -221,8 +221,8 @@ mod tests {
     #[test]
     fn apu_status_read_preserves_open_bus_bit_five_and_clears_frame_irq() {
         let mut bus = CpuBus::new();
-        bus.write(0x4000, 0x20); // Set bit 5 on the CPU data-bus latch.
         bus.write(0x4017, 0x00); // Four-step frame counter.
+        bus.write(0x4000, 0x20); // Set bit 5 on the CPU data-bus latch.
         bus.tick_apu(14_919);
         assert!(bus.irq_pending());
 
