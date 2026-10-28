@@ -312,15 +312,22 @@ impl Ppu {
         } else if (257..=320).contains(&dot) {
             let phase = (dot - 257) & 7;
             if (4..=7).contains(&phase) {
-                let sprite = ((dot - 257) / 8) as usize;
-                let base = sprite * 4;
-                let top = sprite_top(self.oam[base]);
+                // Mapper-visible sprite fetches read secondary OAM, not the matching
+                // primary-OAM slot. Selected sprites may come from any of the 64 entries.
+                let slot = ((dot - 257) / 8) as usize;
                 let target_y = if self.scanline == 261 { 0 } else { self.scanline as usize + 1 };
-                let row = target_y.checked_sub(top).unwrap_or(usize::MAX);
-                let height = if self.ctrl & 0x20 != 0 { 16 } else { 8 };
-                if row < height {
-                    address = self.sprite_pattern_address(self.oam[base + 1] as usize, self.oam[base + 2], row);
-                } else if self.ctrl & 0x20 == 0 {
+                if slot < self.sprite_line_count as usize {
+                    let sprite = self.sprite_line_oam[slot];
+                    let top = sprite_top(sprite[0]);
+                    let row = target_y.checked_sub(top).unwrap_or(usize::MAX);
+                    let height = if self.ctrl & 0x20 != 0 { 16 } else { 8 };
+                    if row < height {
+                        address = self.sprite_pattern_address(sprite[1] as usize, sprite[2], row);
+                    } else if self.ctrl & 0x20 == 0 {
+                        address = if self.ctrl & 0x08 != 0 { 0x1000 } else { 0 };
+                    }
+                } else {
+                    // Empty secondary-OAM slots still generate dummy pattern fetches.
                     address = if self.ctrl & 0x08 != 0 { 0x1000 } else { 0 };
                 }
             }
