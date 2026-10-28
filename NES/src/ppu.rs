@@ -193,6 +193,7 @@ impl Ppu {
                 if self.status & 0x40 == 0 && self.sprite_zero_hit_at(x, y, cartridge) {
                     self.status |= 0x40;
                 }
+                self.render_sprite_pixel(x, y, cartridge);
                 // Composite sprites at the beam position rather than painting the
                 // entire row at dot 256. Mid-scanline OAM, CHR-RAM and palette writes
                 // can then affect only pixels the PPU has not emitted yet.
@@ -394,6 +395,51 @@ impl Ppu {
             x - sprite_left,
             cartridge,
         ) != 0
+    }
+
+    /// Composites the sprite pixel under the current beam position.
+    ///
+    /// The live PPU path must update the framebuffer alongside background fetches;
+    /// otherwise sprite-zero timing can advance while the displayed frame remains
+    /// background-only until a later snapshot render. OAM order determines ownership:
+    /// the first non-transparent sprite claims the pixel even when behind the BG.
+    fn render_sprite_pixel(&mut self, x: usize, y: usize, cartridge: Option<&Cartridge>) {
+        if x >= 256 || y >= 240 || self.mask & 0x10 == 0 || (x < 8 && self.mask & 0x04 == 0) {
+            return;
+        }
+
+        let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
+        let index = y * 256 + x;
+        for sprite in 0..64usize {
+            let base = sprite * 4;
+            let top = sprite_top(self.oam[base]);
+            if y < top || y >= top + height {
+                continue;
+            }
+            let left = self.oam[base + 3] as usize;
+            if x < left || x >= left + 8 {
+                continue;
+            }
+            let attributes = self.oam[base + 2];
+            let pixel = self.sprite_pixel(
+                self.oam[base + 1] as usize,
+                attributes,
+                y - top,
+                x - left,
+                cartridge,
+            );
+            if pixel == 0 {
+                continue;
+            }
+
+            // A transparent earlier sprite does not claim the pixel. An opaque
+            // sprite does, regardless of whether the background hides its color.
+            if attributes & 0x20 == 0 || !self.background_opaque[index] {
+                let palette_index = 0x10 + ((attributes & 3) as usize * 4) + pixel as usize;
+                self.framebuffer[index] = self.output_color(self.palette[palette_index]);
+            }
+            return;
+        }
     }
 
     /// Renders one background pixel when the emulated beam reaches it.
@@ -3359,5 +3405,80 @@ mod mid_scanline_scroll_latch_regressions {
 
         assert_eq!(ppu.line_scroll_start_x, 17,
             "writes after visible pixels must not create an out-of-range pixel origin");
+    }
+}
+
+
+
+#[cfg(test)]
+mod beam_sprite_composition_regressions {
+    use super::*;
+
+    fn sprite_pattern_cartridge() -> Cartridge {
+        let mut rom = vec![0; 16 + 16_384 + 8_192];
+        rom[0..4].copy_from_slice(b"NES\x1A");
+        rom[4] = 1;
+        rom[5] = 1;
+        let chr = 16 + 16_384;
+        rom[chr..chr + 16].fill(0xFF);
+        Cartridge::parse(&rom).unwrap()
+    }
+
+    #[test]
+    fn sprite_pixels_are_composited_as_the_beam_reaches_them() {
+        let cartridge = sprite_pattern_cartridge();
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 15;
+        ppu.mask = 0x14; // Sprites enabled, background disabled, left-edge sprites visible.
+        ppu.palette[0x11] = 0x2B;
+        ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 16]);
+
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+
+        assert_eq!(ppu.framebuffer[16], ppu.output_color(0x2B),
+            "sprite zero's first pixel must be visible immediately at beam X=16");
+        assert_eq!(ppu.framebuffer[15], ppu.output_color(0),
+            "pixels before the sprite must remain untouched");
+    }
+
+    #[test]
+    fn behind_background_sprite_claims_pixel_without_overwriting_opaque_background() {
+        let cartridge = sprite_pattern_cartridge();
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 16;
+        ppu.mask = 0x1E;
+        ppu.palette[0] = 0x01;
+        ppu.palette[0x11] = 0x2B;
+        ppu.background_opaque[16] = true;
+        ppu.framebuffer[16] = ppu.output_color(0x01);
+        ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0x20, 16]);
+
+        ppu.render_sprite_pixel(16, 0, Some(&cartridge));
+
+        assert_eq!(ppu.framebuffer[16], ppu.output_color(0x01),
+            "behind-background sprites must not overwrite an opaque background pixel");
+    }
+
+    #[test]
+    fn transparent_sprite_does_not_claim_pixel_before_later_opaque_sprite() {
+        let mut rom = vec![0; 16 + 16_384 + 8_192];
+        rom[0..4].copy_from_slice(b"NES\x1A");
+        rom[4] = 1;
+        rom[5] = 1;
+        let chr = 16 + 16_384;
+        rom[chr + 16..chr + 32].fill(0xFF); // Tile 1 opaque.
+        let cartridge = Cartridge::parse(&rom).unwrap();
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x14;
+        ppu.palette[0x12] = 0x2C;
+        ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 16]); // Tile 0 transparent.
+        ppu.oam[4..8].copy_from_slice(&[0xFF, 1, 1, 16]); // Tile 1 uses sprite palette 1.
+
+        ppu.render_sprite_pixel(16, 0, Some(&cartridge));
+
+        assert_eq!(ppu.framebuffer[16], ppu.output_color(0x2C),
+            "transparent sprite zero must allow sprite one to supply the visible pixel");
     }
 }
