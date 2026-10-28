@@ -95,7 +95,14 @@ impl Ppu {
                 self.write_latch = false;
                 value
             }
-            4 => self.oam[self.oam_addr as usize],
+            4 => {
+                // During secondary-OAM clear (dots 1-64 on visible and pre-render
+                // scanlines), the internal OAM bus is forced to $FF. Returning the
+                // byte at OAMADDR here leaks primary OAM contents that the 2C02 does
+                // not expose during this phase.
+                if self.rendering_oam_clear_phase() { 0xFF }
+                else { self.oam[self.oam_addr as usize] }
+            },
             7 => {
                 let address = self.v & 0x3FFF;
                 let fetched = self.mem_read(address, cartridge);
@@ -190,6 +197,13 @@ impl Ppu {
     ///
     /// The 2C02 uses primary OAM during visible and pre-render rendering
     /// periods. Outside those periods, software can access OAM normally.
+    /// True while the PPU is clearing secondary OAM and forces its OAM data bus high.
+    fn rendering_oam_clear_phase(&self) -> bool {
+        self.mask & 0x18 != 0
+            && (self.scanline < 240 || self.scanline == 261)
+            && (1..=64).contains(&self.dot)
+    }
+
     fn rendering_oam_access_blocked(&self) -> bool {
         self.mask & 0x18 != 0
             && (self.scanline < 240 || self.scanline == 261)
@@ -270,12 +284,13 @@ impl Ppu {
                 if self.dot == 256 {
                     self.increment_y();
                 }
-                if self.dot == 257 {
-                    // The 2C02 resets OAMADDR as it switches from background
-                    // fetches to sprite fetches. Without this, a CPU write to
-                    // $2003 during rendering can leave DMA and later OAMDATA
-                    // accesses pointed into the middle of OAM for the next line.
+                // OAMADDR is held at zero throughout the sprite-fetch interval,
+                // dots 257-320, not merely pulsed at dot 257. A CPU $2003 write
+                // during this interval must not leave a nonzero address behind.
+                if (257..=320).contains(&self.dot) {
                     self.oam_addr = 0;
+                }
+                if self.dot == 257 {
                     self.v = (self.v & !0x041F) | (self.t & 0x041F);
                 }
                 if self.scanline == 261 && (280..=304).contains(&self.dot) {
