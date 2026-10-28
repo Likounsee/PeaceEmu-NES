@@ -130,7 +130,19 @@ impl Ppu {
             }
             1 => self.mask = value,
             3 => self.oam_addr = value,
-            4 => { self.oam[self.oam_addr as usize] = value; self.oam_addr = self.oam_addr.wrapping_add(1); }
+            4 => {
+                // OAM is shared with the renderer. During visible/pre-render
+                // rendering fetches, CPU OAMDATA writes are ignored and OAMADDR
+                // advances by four; allowing ordinary byte writes here lets games
+                // mutate the sprite list at impossible times and changes later
+                // sprite selection compared with a real 2C02.
+                if self.rendering_oam_access_blocked() {
+                    self.oam_addr = self.oam_addr.wrapping_add(4);
+                } else {
+                    self.oam[self.oam_addr as usize] = value;
+                    self.oam_addr = self.oam_addr.wrapping_add(1);
+                }
+            }
             5 => {
                 if !self.write_latch {
                     self.fine_x = value & 7;
@@ -172,6 +184,16 @@ impl Ppu {
             }
             _ => {}
         }
+    }
+
+    /// Returns whether rendering owns OAM and blocks CPU OAMDATA writes.
+    ///
+    /// The 2C02 uses primary OAM during visible and pre-render rendering
+    /// periods. Outside those periods, software can access OAM normally.
+    fn rendering_oam_access_blocked(&self) -> bool {
+        self.mask & 0x18 != 0
+            && (self.scanline < 240 || self.scanline == 261)
+            && (1..=320).contains(&self.dot)
     }
 
     /// Advances the PPU by a number of dots and updates vblank timing.
@@ -1067,6 +1089,35 @@ mod tests {
         ppu.increment_vram_address();
 
         assert_eq!(ppu.v, 0x2120, "outside fetch windows PPUCTRL still selects +32");
+    }
+
+    #[test]
+    fn oamdata_write_is_ignored_and_oamaddr_advances_by_four_during_rendering() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.scanline = 20;
+        ppu.dot = 100;
+        ppu.oam_addr = 0x20;
+        ppu.oam[0x20] = 0xA5;
+
+        ppu.cpu_write_register(4, 0x11, None);
+
+        assert_eq!(ppu.oam[0x20], 0xA5, "rendering owns primary OAM");
+        assert_eq!(ppu.oam_addr, 0x24, "blocked writes advance OAMADDR by four");
+    }
+
+    #[test]
+    fn oamdata_write_remains_available_outside_rendering() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.scanline = 20;
+        ppu.dot = 300; // Horizontal blank, outside the OAM rendering access window.
+        ppu.oam_addr = 0x20;
+
+        ppu.cpu_write_register(4, 0x5A, None);
+
+        assert_eq!(ppu.oam[0x20], 0x5A);
+        assert_eq!(ppu.oam_addr, 0x21);
     }
 
     #[test]
