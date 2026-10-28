@@ -193,7 +193,6 @@ impl Ppu {
                 if self.status & 0x40 == 0 && self.sprite_zero_hit_at(x, y, cartridge) {
                     self.status |= 0x40;
                 }
-                self.render_sprite_pixel(x, y, cartridge);
                 // Composite sprites at the beam position rather than painting the
                 // entire row at dot 256. Mid-scanline OAM, CHR-RAM and palette writes
                 // can then affect only pixels the PPU has not emitted yet.
@@ -395,51 +394,6 @@ impl Ppu {
             x - sprite_left,
             cartridge,
         ) != 0
-    }
-
-    /// Composites the sprite pixel under the current beam position.
-    ///
-    /// The live PPU path must update the framebuffer alongside background fetches;
-    /// otherwise sprite-zero timing can advance while the displayed frame remains
-    /// background-only until a later snapshot render. OAM order determines ownership:
-    /// the first non-transparent sprite claims the pixel even when behind the BG.
-    fn render_sprite_pixel(&mut self, x: usize, y: usize, cartridge: Option<&Cartridge>) {
-        if x >= 256 || y >= 240 || self.mask & 0x10 == 0 || (x < 8 && self.mask & 0x04 == 0) {
-            return;
-        }
-
-        let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
-        let index = y * 256 + x;
-        for sprite in 0..64usize {
-            let base = sprite * 4;
-            let top = sprite_top(self.oam[base]);
-            if y < top || y >= top + height {
-                continue;
-            }
-            let left = self.oam[base + 3] as usize;
-            if x < left || x >= left + 8 {
-                continue;
-            }
-            let attributes = self.oam[base + 2];
-            let pixel = self.sprite_pixel(
-                self.oam[base + 1] as usize,
-                attributes,
-                y - top,
-                x - left,
-                cartridge,
-            );
-            if pixel == 0 {
-                continue;
-            }
-
-            // A transparent earlier sprite does not claim the pixel. An opaque
-            // sprite does, regardless of whether the background hides its color.
-            if attributes & 0x20 == 0 || !self.background_opaque[index] {
-                let palette_index = 0x10 + ((attributes & 3) as usize * 4) + pixel as usize;
-                self.framebuffer[index] = self.output_color(self.palette[palette_index]);
-            }
-            return;
-        }
     }
 
     /// Renders one background pixel when the emulated beam reaches it.
