@@ -219,7 +219,7 @@ impl Ppu {
     fn rendering_oam_access_blocked(&self) -> bool {
         self.mask & 0x18 != 0
             && (self.scanline < 240 || self.scanline == 261)
-            && (1..=320).contains(&self.dot)
+            && (1..=256).contains(&self.dot)
     }
 
     /// Advances the PPU by a number of dots and updates vblank timing.
@@ -605,6 +605,22 @@ impl Ppu {
                     self.eval_oam[index / 4][index % 4] = 0xFF;
                 }
             }
+            return;
+        }
+        // Some callers (debug views and timing-focused tests) can place the beam
+        // directly at dot 255 instead of advancing through dots 1-255. In that
+        // case no evaluator state exists yet; synthesize the line once rather than
+        // publishing an empty secondary OAM. Normal emulation always takes the
+        // cycle-by-cycle path above.
+        if self.dot == 256
+            && self.eval_n == 0
+            && self.eval_m == 0
+            && self.eval_count == 0
+            && !self.eval_copying
+        {
+            let target = self.eval_target_y as usize;
+            self.evaluate_sprite_line_if_needed(target);
+            self.update_sprite_overflow(self.scanline as usize);
             return;
         }
         if !(65..=256).contains(&self.dot) || self.eval_n >= 64 {
