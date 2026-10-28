@@ -217,6 +217,25 @@ impl CpuBus {
 mod tests {
     use super::*;
 
+
+    #[test]
+    fn apu_status_read_preserves_open_bus_bit_five_and_clears_frame_irq() {
+        let mut bus = CpuBus::new();
+        bus.write(0x4000, 0x20); // Set bit 5 on the CPU data-bus latch.
+        bus.write(0x4017, 0x00); // Four-step frame counter.
+        bus.tick_apu(14_919);
+        assert!(bus.irq_pending());
+
+        let first = bus.read(0x4015);
+        assert_ne!(first & 0x20, 0, "bit 5 is not driven by APU status");
+        assert_ne!(first & 0x40, 0, "the frame IRQ is visible in status");
+        assert!(!bus.irq_pending(), "reading $4015 acknowledges the frame IRQ");
+
+        let second = bus.read(0x4015);
+        assert_eq!(second & 0x40, 0, "the acknowledged frame IRQ must stay cleared");
+        assert_ne!(second & 0x20, 0, "open-bus bit 5 remains latched across the status read");
+    }
+
     #[test]
     fn dmc_sample_fetch_reports_four_cpu_stall_cycles() {
         let mut bus = CpuBus::new();
