@@ -41,7 +41,9 @@ fn status_read_during_vblank_cancels_the_pending_nmi_edge() {
     advance_to_vblank(&mut ppu);
 
     assert!(ppu.take_nmi_request());
-    // A status read clears vblank and lowers the NMI line.
+    // Dot 1 is the documented vblank/status race; read on dot 2 to test
+    // ordinary status clearing without conflating the race result.
+    ppu.tick(1);
     assert_ne!(ppu.cpu_read_register(2, None) & 0x80, 0);
     assert!(!ppu.take_nmi_request());
 }
@@ -64,5 +66,8 @@ fn vblank_flag_is_set_at_scanline_241_dot_1() {
     let mut ppu = Ppu::new();
     advance_to_vblank(&mut ppu);
     assert_eq!(ppu.position(), (241, 1));
+    // The flag was raised at dot 1; the CPU-visible read on that same dot races
+    // the set and can return bit 7 clear, so observe it on the following dot.
+    ppu.tick(1);
     assert_ne!(ppu.cpu_read_register(2, None) & 0x80, 0);
 }
