@@ -74,9 +74,20 @@ impl CpuBus {
     /// the normal read path would count an extra instruction bus access and advance
     /// the PPU while tick_apu is servicing the DMA request.
     fn read_dmc_dma_source(&mut self, address: u16) -> u8 {
-        let value = self.cartridge.as_ref()
-            .and_then(|cartridge| cartridge.cpu_read(address))
-            .unwrap_or(self.open_bus);
+        // DMC DMA reads the CPU address bus, not a cartridge-only shortcut.
+        // Decode the same mirrors and I/O registers as a CPU read, but do not
+        // advance instruction timing here: the DMA stall is accounted for by
+        // tick_apu and must not recursively clock the bus.
+        let value = match address {
+            0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
+            0x2000..=0x3FFF => self.ppu.cpu_read_register(address & 7, self.cartridge.as_ref()),
+            0x4015 => self.apu.read(address) | (self.open_bus & 0x20),
+            0x4016..=0x4017 => self.read_controller((address - 0x4016) as usize, self.open_bus),
+            0x6000..=0x7FFF | 0x8000..=0xFFFF => self.cartridge.as_ref()
+                .and_then(|cartridge| cartridge.cpu_read(address))
+                .unwrap_or(self.open_bus),
+            _ => self.open_bus,
+        };
         self.open_bus = value;
         value
     }
