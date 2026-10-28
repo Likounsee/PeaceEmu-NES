@@ -271,6 +271,11 @@ impl Ppu {
                     self.increment_y();
                 }
                 if self.dot == 257 {
+                    // The 2C02 resets OAMADDR as it switches from background
+                    // fetches to sprite fetches. Without this, a CPU write to
+                    // $2003 during rendering can leave DMA and later OAMDATA
+                    // accesses pointed into the middle of OAM for the next line.
+                    self.oam_addr = 0;
                     self.v = (self.v & !0x041F) | (self.t & 0x041F);
                 }
                 if self.scanline == 261 && (280..=304).contains(&self.dot) {
