@@ -14,6 +14,11 @@ pub struct Ppu {
     status: u8,
     oam_addr: u8,
     oam: [u8; 256],
+    /// Secondary-OAM snapshot used by the live scanline renderer.
+    sprite_line_oam: [[u8; 4]; 8],
+    sprite_line_indices: [u8; 8],
+    sprite_line_count: u8,
+    sprite_line: u16,
     nametables: [u8; 4096],
     palette: [u8; 32],
     v: u16,
@@ -47,6 +52,8 @@ impl Default for Ppu {
     fn default() -> Self {
         Self {
             ctrl: 0, mask: 0, status: 0, oam_addr: 0, oam: [0; 256],
+            sprite_line_oam: [[0; 4]; 8], sprite_line_indices: [0; 8],
+            sprite_line_count: 0, sprite_line: u16::MAX,
             nametables: [0; 4096], palette: [0; 32], v: 0, t: 0,
             fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
             scanline: 261, dot: 0, odd_frame: false, frame_scroll_v: 0, frame_fine_x: 0,
@@ -198,6 +205,7 @@ impl Ppu {
             if (1..=256).contains(&self.dot) && self.scanline < 240 {
                 let x = (self.dot - 1) as usize;
                 let y = self.scanline as usize;
+                self.evaluate_sprite_line_if_needed(y);
                 self.render_background_pixel(x, y, cartridge);
                 if self.status & 0x40 == 0 && self.sprite_zero_hit_at(x, y, cartridge) {
                     self.status |= 0x40;
@@ -378,12 +386,16 @@ impl Ppu {
             return false;
         }
 
-        let sprite_top = sprite_top(self.oam[0]);
+        if !self.sprite_line_indices[..self.sprite_line_count as usize].contains(&0) {
+            return false;
+        }
+        let sprite = self.sprite_line_oam[0];
+        let sprite_top = sprite_top(sprite[0]);
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         if y < sprite_top || y >= sprite_top + height {
             return false;
         }
-        let sprite_left = self.oam[3] as usize;
+        let sprite_left = sprite[3] as usize;
         if x < sprite_left || x >= sprite_left + 8 {
             return false;
         }
@@ -394,10 +406,10 @@ impl Ppu {
             return false;
         }
 
-        let attributes = self.oam[2];
+        let attributes = sprite[2];
         let row_in_sprite = y - sprite_top;
         self.sprite_pixel(
-            self.oam[1] as usize,
+            sprite[1] as usize,
             attributes,
             row_in_sprite,
             x - sprite_left,
@@ -464,26 +476,20 @@ impl Ppu {
             return;
         }
 
-        let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
-        let mut in_range = 0usize;
-        for sprite in 0..64usize {
-            let base = sprite * 4;
-            let top = sprite_top(self.oam[base]);
-            if y < top || y >= top + height { continue; }
-            in_range += 1;
-            if in_range > 8 { break; }
-
-            let left = self.oam[base + 3] as usize;
+        // Candidates and their OAM bytes are latched once per scanline. This avoids
+        // rescanning all 64 entries for every pixel and prevents mid-line OAM writes
+        // from retroactively changing the selected secondary-OAM sprites.
+        self.evaluate_sprite_line_if_needed(y);
+        for slot in 0..self.sprite_line_count as usize {
+            let sprite = self.sprite_line_oam[slot];
+            let top = sprite_top(sprite[0]);
+            let left = sprite[3] as usize;
             if x < left || x >= left + 8 { continue; }
-
-            let tile = self.oam[base + 1] as usize;
-            let attributes = self.oam[base + 2];
-            let row_in_sprite = y - top;
-            let pixel = self.sprite_pixel(tile, attributes, row_in_sprite, x - left, cartridge);
+            let tile = sprite[1] as usize;
+            let attributes = sprite[2];
+            let pixel = self.sprite_pixel(tile, attributes, y.saturating_sub(top), x - left, cartridge);
             if pixel == 0 { continue; }
-
-            // Even a sprite hidden behind opaque background claims this pixel, so
-            // lower-priority sprites cannot incorrectly appear through it.
+            // A hidden opaque sprite still blocks lower-priority sprites.
             if attributes & 0x20 == 0 || !self.background_opaque[y * 256 + x] {
                 let palette_index = 0x10 + ((attributes as usize & 3) * 4) + pixel as usize;
                 let color = self.palette[Self::palette_index(0x3F00 + palette_index as u16)];
@@ -493,6 +499,25 @@ impl Ppu {
         }
     }
 
+    /// Latches the first eight sprites intersecting a visible scanline.
+    /// The hardware evaluates them on the preceding line; this renderer snapshots
+    /// on first use of the target line to keep OAM order and line contents stable.
+    fn evaluate_sprite_line_if_needed(&mut self, y: usize) {
+        if y >= 240 || self.sprite_line == y as u16 { return; }
+        self.sprite_line = y as u16;
+        self.sprite_line_count = 0;
+        let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
+        for index in 0..64usize {
+            let base = index * 4;
+            let top = sprite_top(self.oam[base]);
+            if y < top || y >= top + height { continue; }
+            let slot = self.sprite_line_count as usize;
+            if slot == 8 { break; }
+            self.sprite_line_oam[slot].copy_from_slice(&self.oam[base..base + 4]);
+            self.sprite_line_indices[slot] = index as u8;
+            self.sprite_line_count += 1;
+        }
+    }
     /// Emulates the sprite-overflow scan for the following scanline.
     ///
     /// After the first eight in-range sprites, the 2C02's overflow logic does not
