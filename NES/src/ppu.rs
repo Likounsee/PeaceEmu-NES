@@ -696,7 +696,50 @@ impl Ppu {
             self.sprite_line_count += 1;
         }
     }
-    // Sprite overflow is asserted by the cycle-driven evaluator above.
+    /// Emulates the sprite-overflow scan for the following scanline.
+    ///
+    /// After the first eight in-range sprites, the 2C02's overflow logic does not
+    /// keep checking only Y bytes: its n/m counters can walk diagonally through
+    /// tile, attribute and X bytes. This intentionally reproduces the resulting
+    /// false positives and false negatives instead of using a simple sprite count.
+    fn update_sprite_overflow(&mut self, y: usize) {
+        // Sprite evaluation at dot 256 selects sprites for the following scanline.
+        let target_y = if y == 261 { 0 } else { y + 1 };
+        let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
+        let in_range = |oam_y: u8| {
+            let top = sprite_top(oam_y);
+            target_y >= top && target_y < top + height
+        };
+
+        let mut found = 0usize;
+        let mut next_sprite = 0usize;
+        for sprite in 0..64usize {
+            if in_range(self.oam[sprite * 4]) {
+                found += 1;
+                if found == 8 {
+                    next_sprite = sprite + 1;
+                    break;
+                }
+            }
+        }
+        if found < 8 || next_sprite >= 64 { return; }
+
+        // The hardware's post-eight-sprite scan advances n and m differently
+        // depending on whether the examined byte looks like an in-range Y value.
+        let mut n = next_sprite;
+        let mut m = 0usize;
+        while n < 64 {
+            if in_range(self.oam[n * 4 + m]) {
+                self.status |= 0x20;
+                m = (m + 1) & 3;
+                if m == 0 { n += 1; }
+            } else {
+                n += 1;
+                m = (m + 1) & 3;
+            }
+        }
+    }
+
 
     /// Renders a complete background snapshot using the current VRAM scroll address.
     ///
