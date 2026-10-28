@@ -239,11 +239,20 @@ impl NesMachine {
         self.clock_devices_for_cpu_cycles(instruction_cycles.saturating_sub(bus_cycles));
 
         if let Some(page) = self.bus.take_oam_dma_request() {
-            // DMA occupies 513 CPU cycles, plus one alignment cycle on odd parity.
-            let dma_cycles = if self.cpu.total_cycles() & 1 == 0 { 513 } else { 514 };
-            self.bus.transfer_oam_dma(page);
+            // OAM DMA is 512 alternating source-read/OAM-write cycles, preceded
+            // by one halt cycle and an extra alignment cycle on odd CPU parity.
+            // Advance the devices between individual bus phases: source reads from
+            // mirrored I/O pages can have side effects, and SMB's raster split must
+            // not see an entire DMA as an instantaneous memory copy.
+            let dma_cycles = if self.cpu.total_cycles() & 1 == 0 { 513u16 } else { 514u16 };
+            self.clock_devices_for_cpu_cycles(u32::from(dma_cycles - 512));
+            for offset in 0..=u8::MAX {
+                self.clock_devices_for_cpu_cycles(1);
+                let value = self.bus.read_oam_dma_source(page, offset);
+                self.clock_devices_for_cpu_cycles(1);
+                self.bus.write_oam_dma_byte(value);
+            }
             self.cpu.add_stall_cycles(dma_cycles);
-            self.clock_devices_for_cpu_cycles(u32::from(dma_cycles));
         }
         Ok(result)
     }
