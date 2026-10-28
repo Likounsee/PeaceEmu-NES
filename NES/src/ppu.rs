@@ -25,7 +25,9 @@ pub struct Ppu {
     eval_latch: u8,
     eval_copying: bool,
     eval_target_y: u8,
-    eval_secondary_pos: u8,
+    eval_oam: [[u8; 4]; 8],
+    eval_indices: [u8; 8],
+    eval_count: u8,
     nametables: [u8; 4096],
     palette: [u8; 32],
     v: u16,
@@ -62,7 +64,8 @@ impl Default for Ppu {
             sprite_line_oam: [[0xFF; 4]; 8], sprite_line_indices: [0xFF; 8],
             sprite_line_count: 0, sprite_line: u16::MAX,
             eval_n: 0, eval_m: 0, eval_latch: 0xFF, eval_copying: false,
-            eval_target_y: 0, eval_secondary_pos: 0,
+            eval_target_y: 0, eval_oam: [[0xFF; 4]; 8],
+            eval_indices: [0xFF; 8], eval_count: 0,
             nametables: [0; 4096], palette: [0; 32], v: 0, t: 0,
             fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
             scanline: 261, dot: 0, odd_frame: false, frame_scroll_v: 0, frame_fine_x: 0,
@@ -579,9 +582,7 @@ impl Ppu {
                 self.eval_n = 0;
                 self.eval_m = 0;
                 self.eval_copying = false;
-                self.eval_secondary_pos = 0;
-                self.sprite_line_count = 0;
-                self.sprite_line = u16::MAX;
+                self.eval_count = 0;
             }
             return;
         }
@@ -591,25 +592,26 @@ impl Ppu {
             self.eval_m = 0;
             self.eval_latch = 0xFF;
             self.eval_copying = false;
-            self.eval_secondary_pos = 0;
             self.eval_target_y = if self.scanline == 261 { 0 } else { (self.scanline + 1) as u8 };
-            self.sprite_line_oam = [[0xFF; 4]; 8];
-            self.sprite_line_indices = [0xFF; 8];
-            self.sprite_line_count = 0;
-            self.sprite_line = u16::MAX;
+            self.eval_oam = [[0xFF; 4]; 8];
+            self.eval_indices = [0xFF; 8];
+            self.eval_count = 0;
         }
 
         if (1..=64).contains(&self.dot) {
             if self.dot % 2 == 0 {
                 let index = (self.dot / 2 - 1) as usize;
                 if index < 32 {
-                    self.sprite_line_oam[index / 4][index % 4] = 0xFF;
+                    self.eval_oam[index / 4][index % 4] = 0xFF;
                 }
             }
             return;
         }
         if !(65..=256).contains(&self.dot) || self.eval_n >= 64 {
             if self.dot == 256 {
+                self.sprite_line_oam = self.eval_oam;
+                self.sprite_line_indices = self.eval_indices;
+                self.sprite_line_count = self.eval_count;
                 self.sprite_line = self.eval_target_y as u16;
             }
             return;
@@ -624,16 +626,15 @@ impl Ppu {
 
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         let value = self.eval_latch;
-        if self.sprite_line_count < 8 {
+        if self.eval_count < 8 {
             if !self.eval_copying {
                 let top = sprite_top(value);
                 if (self.eval_target_y as usize) >= top
                     && (self.eval_target_y as usize) < top + height
                 {
-                    let slot = self.sprite_line_count as usize;
-                    self.sprite_line_oam[slot][0] = value;
-                    self.sprite_line_indices[slot] = self.eval_n;
-                    self.eval_secondary_pos = (slot * 4 + 1) as u8;
+                    let slot = self.eval_count as usize;
+                    self.eval_oam[slot][0] = value;
+                    self.eval_indices[slot] = self.eval_n;
                     self.eval_m = 1;
                     self.eval_copying = true;
                 } else {
@@ -641,14 +642,14 @@ impl Ppu {
                     self.eval_m = 0;
                 }
             } else {
-                let slot = self.sprite_line_count as usize;
+                let slot = self.eval_count as usize;
                 let byte = usize::from(self.eval_m);
-                self.sprite_line_oam[slot][byte] = value;
+                self.eval_oam[slot][byte] = value;
                 self.eval_m += 1;
                 if self.eval_m >= 4 {
                     self.eval_m = 0;
                     self.eval_n = self.eval_n.saturating_add(1);
-                    self.sprite_line_count += 1;
+                    self.eval_count += 1;
                     self.eval_copying = false;
                 }
             }
@@ -668,6 +669,9 @@ impl Ppu {
             }
         }
         if self.dot == 256 {
+            self.sprite_line_oam = self.eval_oam;
+            self.sprite_line_indices = self.eval_indices;
+            self.sprite_line_count = self.eval_count;
             self.sprite_line = self.eval_target_y as u16;
         }
     }
