@@ -3604,3 +3604,33 @@ mod secondary_oam_latch_regressions {
             "a fresh scanline evaluation must observe the updated primary OAM");
     }
 }
+
+
+#[cfg(test)]
+mod mapper_secondary_oam_fetch_regressions {
+    use super::*;
+
+    #[test]
+    fn mapper_sprite_fetch_uses_selected_secondary_oam_entry() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 255;
+        ppu.ctrl = 0x20; // 8x16 sprites: tile bit zero selects CHR A12.
+        ppu.mask = 0x18;
+        ppu.mapper_bus_initialized = true;
+        ppu.mapper_a12_high = false;
+        ppu.mapper_bus_events.clear();
+
+        // Primary sprite zero is out of range; sprite ten is selected for line one.
+        ppu.oam[0..4].copy_from_slice(&[0x40, 0, 0, 0]);
+        ppu.oam[10 * 4..10 * 4 + 4].copy_from_slice(&[0x00, 0x01, 0, 24]);
+
+        // Dot 256 evaluates the next line, then dot 261 fetches its first sprite pattern.
+        ppu.tick_with_cartridge(6, None);
+
+        assert_eq!(ppu.sprite_line_count, 1);
+        assert_eq!(ppu.sprite_line_indices[0], 10);
+        assert!(ppu.mapper_bus_events.iter().any(|(address, _)| *address == 0x1000),
+            "the selected 8x16 sprite must drive A12 high even though primary OAM slot zero does not");
+    }
+}
