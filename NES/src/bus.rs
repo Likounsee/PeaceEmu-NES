@@ -199,6 +199,16 @@ impl CpuBus {
         }
     }
 
+    /// Reads one source byte during a machine-timed OAM DMA transfer.
+    pub(crate) fn read_oam_dma_source(&mut self, page: u8, offset: u8) -> u8 {
+        self.read((u16::from(page) << 8) | u16::from(offset))
+    }
+
+    /// Writes one byte into OAM during a machine-timed DMA transfer.
+    pub(crate) fn write_oam_dma_byte(&mut self, value: u8) {
+        self.ppu.cpu_write_register(4, value, self.cartridge.as_mut());
+    }
+
     /// Copies cartridge PRG-RAM without applying mapper runtime enable gates.
     pub fn cartridge_prg_ram_snapshot(&self) -> Option<Vec<u8>> {
         self.cartridge.as_ref().and_then(Cartridge::prg_ram_snapshot)
