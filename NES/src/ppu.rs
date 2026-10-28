@@ -469,8 +469,8 @@ impl Ppu {
     /// Draws the highest-priority opaque sprite pixel at the current beam position.
     ///
     /// The first eight sprites intersecting a scanline participate, in OAM order.
-    /// Pixel composition uses current sprite/palette memory so later writes do not
-    /// retroactively change already-emitted pixels.
+    /// OAM bytes are latched for the line; pattern and palette memory remain live so
+    /// CHR-RAM and palette writes affect only pixels not yet emitted.
     fn render_sprite_pixel(&mut self, x: usize, y: usize, cartridge: Option<&Cartridge>) {
         if x >= 256 || y >= 240 || self.mask & 0x10 == 0
             || (x < 8 && self.mask & 0x04 == 0)
@@ -3523,7 +3523,7 @@ mod secondary_oam_latch_regressions {
         ppu.scanline = 0;
         ppu.dot = 16;
         ppu.mask = 0x14;
-        ppu.palette[0x11] = 0x2B;
+        ppu.palette[0x13] = 0x2B;
         ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 16]);
 
         ppu.tick_with_cartridge(1, Some(&cartridge));
@@ -3545,7 +3545,7 @@ mod secondary_oam_latch_regressions {
         ppu.scanline = 0;
         ppu.dot = 16;
         ppu.mask = 0x14;
-        ppu.palette[0x11] = 0x2B;
+        ppu.palette[0x13] = 0x2B;
         ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 16]);
 
         ppu.tick_with_cartridge(1, Some(&cartridge));
