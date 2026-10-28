@@ -686,8 +686,17 @@ impl Ppu {
             {
                 self.status |= 0x20;
                 self.eval_m = (self.eval_m + 1) & 3;
+                // A successful comparison advances the byte index diagonally;
+                // the sprite index advances only when that byte index wraps.
+                if self.eval_m == 0 {
+                    self.eval_n = self.eval_n.saturating_add(1);
+                }
+            } else {
+                // A failed comparison advances to the next sprite and the next
+                // byte position, reproducing the 2C02's overflow false positives.
+                self.eval_n = self.eval_n.saturating_add(1);
+                self.eval_m = (self.eval_m + 1) & 3;
             }
-            self.eval_n = self.eval_n.saturating_add(1);
             if self.eval_n >= 64 {
                 self.sprite_line = self.eval_target_y as u16;
             }
