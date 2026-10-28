@@ -681,22 +681,17 @@ impl Ppu {
             // After eight sprites, the hardware's broken n/m walk may compare
             // tile/attribute/X bytes as though they were Y coordinates.
             let top = sprite_top(value);
+            // The 2C02 increments n on every comparison after the eighth
+            // sprite. m advances only when the compared byte happens to look like
+            // an in-range Y coordinate; this is the source of false-positive
+            // overflow flags when tile/attribute/X bytes are scanned diagonally.
             if (self.eval_target_y as usize) >= top
                 && (self.eval_target_y as usize) < top + height
             {
                 self.status |= 0x20;
                 self.eval_m = (self.eval_m + 1) & 3;
-                // A successful comparison advances the byte index diagonally;
-                // the sprite index advances only when that byte index wraps.
-                if self.eval_m == 0 {
-                    self.eval_n = self.eval_n.saturating_add(1);
-                }
-            } else {
-                // A failed comparison advances to the next sprite and the next
-                // byte position, reproducing the 2C02's overflow false positives.
-                self.eval_n = self.eval_n.saturating_add(1);
-                self.eval_m = (self.eval_m + 1) & 3;
             }
+            self.eval_n = self.eval_n.saturating_add(1);
             if self.eval_n >= 64 {
                 self.sprite_line = self.eval_target_y as u16;
             }
