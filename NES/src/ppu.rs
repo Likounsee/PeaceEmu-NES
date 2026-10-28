@@ -167,7 +167,10 @@ impl Ppu {
                 // advances by four; allowing ordinary byte writes here lets games
                 // mutate the sprite list at impossible times and changes later
                 // sprite selection compared with a real 2C02.
-                if self.rendering_oam_access_blocked() {
+                if self.rendering_oam_fetch_phase() {
+                    // During sprite fetch, OAMADDR is forced to zero by the PPU
+                    // every dot. A CPU write cannot sneak a byte into primary OAM.
+                } else if self.rendering_oam_access_blocked() {
                     self.oam_addr = self.oam_addr.wrapping_add(4);
                 } else {
                     self.oam[self.oam_addr as usize] = value;
@@ -1332,6 +1335,23 @@ mod tests {
 
         assert_eq!(ppu.oam[0x20], 0xA5, "rendering owns primary OAM");
         assert_eq!(ppu.oam_addr, 0x24, "blocked writes advance OAMADDR by four");
+    }
+
+    #[test]
+    fn oamdata_write_during_sprite_fetch_cannot_modify_primary_oam() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.scanline = 20;
+        ppu.dot = 280;
+        ppu.oam_addr = 0;
+        ppu.oam[0] = 0x42;
+
+        ppu.cpu_write_register(4, 0x99, None);
+
+        assert_eq!(ppu.oam[0], 0x42,
+            "primary OAM is not writable during the sprite-fetch interval");
+        assert_eq!(ppu.oam_addr, 0,
+            "sprite fetch keeps OAMADDR pinned to zero");
     }
 
     #[test]
