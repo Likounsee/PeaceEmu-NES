@@ -4053,7 +4053,7 @@ mod cycle_sprite_evaluator_regressions {
         assert_eq!(ppu.status & 0x20, 0, "the odd-dot OAM read cannot set overflow yet");
         ppu.tick(1);
         assert_ne!(ppu.status & 0x20, 0, "overflow is asserted on the compare dot");
-        assert_eq!(ppu.sprite_line_count, 8);
+        assert_eq!(ppu.eval_count, 8, "secondary OAM has retained exactly eight sprites");
     }
 
     #[test]
