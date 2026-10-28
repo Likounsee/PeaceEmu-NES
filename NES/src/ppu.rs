@@ -3606,6 +3606,27 @@ mod mapper_secondary_oam_fetch_regressions {
     use super::*;
 
     #[test]
+    fn empty_8x16_sprite_slots_fetch_ff_secondary_oam_and_raise_a12() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 255;
+        ppu.ctrl = 0x20;
+        ppu.mask = 0x18;
+        ppu.mapper_bus_initialized = true;
+        ppu.mapper_a12_high = false;
+        ppu.mapper_bus_events.clear();
+        for sprite in ppu.oam.chunks_exact_mut(4) {
+            sprite[0] = 0x40; // None of the primary sprites overlaps scanline one.
+        }
+
+        ppu.tick_with_cartridge(6, None);
+
+        assert_eq!(ppu.sprite_line_count, 0);
+        assert_eq!(ppu.sprite_line_oam[0], [0xFF; 4]);
+        assert!(ppu.mapper_bus_events.iter().any(|(address, _)| *address == 0x1000),
+            "unused 8x16 sprite slots still fetch from the $FF tile's high pattern table");
+    }
+    #[test]
     fn mapper_sprite_fetch_uses_selected_secondary_oam_entry() {
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
