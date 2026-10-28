@@ -316,20 +316,13 @@ impl Ppu {
                 // primary-OAM slot. Selected sprites may come from any of the 64 entries.
                 let slot = ((dot - 257) / 8) as usize;
                 let target_y = if self.scanline == 261 { 0 } else { self.scanline as usize + 1 };
-                if slot < self.sprite_line_count as usize {
-                    let sprite = self.sprite_line_oam[slot];
-                    let top = sprite_top(sprite[0]);
-                    let row = target_y.checked_sub(top).unwrap_or(usize::MAX);
-                    let height = if self.ctrl & 0x20 != 0 { 16 } else { 8 };
-                    if row < height {
-                        address = self.sprite_pattern_address(sprite[1] as usize, sprite[2], row);
-                    } else if self.ctrl & 0x20 == 0 {
-                        address = if self.ctrl & 0x08 != 0 { 0x1000 } else { 0 };
-                    }
-                } else {
-                    // Empty secondary-OAM slots still generate dummy pattern fetches.
-                    address = if self.ctrl & 0x08 != 0 { 0x1000 } else { 0 };
-                }
+                let sprite = self.sprite_line_oam[slot];
+                let top = sprite_top(sprite[0]);
+                let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
+                // All eight slots drive the pattern bus, including unused slots
+                // whose secondary-OAM bytes were cleared to $FF.
+                let row = target_y.wrapping_sub(top) % height;
+                address = self.sprite_pattern_address(sprite[1] as usize, sprite[2], row);
             }
         }
         let high = address & 0x1000 != 0;
