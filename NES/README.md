@@ -46,6 +46,9 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 
 ## Ce qui est implémenté
 
+- **Rendu des sprites pendant le balayage PPU** : le chemin dot-par-dot compose maintenant le pixel sprite au moment où le faisceau atteint sa coordonnée, avec priorité OAM, transparence, masquage des huit premiers pixels et priorité arrière-plan/sprite. Cela corrige une incohérence architecturale du chemin de rendu live qui produisait les pixels d'arrière-plan sans composer les sprites avant un rendu snapshot séparé. Trois tests ciblent l'apparition au bon dot, la priorité derrière un pixel de fond opaque et le passage d'un sprite transparent au suivant. Ce changement ne rend pas encore le pipeline 2C02 cycle-exact et ne prouve pas à lui seul la compatibilité SMB.
+
+
 - **PPU/scroll en cours de scanline** : trois tests de régression isolent l'écriture du second octet de `$2005` (mise à jour de `t` sans changement immédiat du scroll actif), l'écriture complète de `$2006` pendant les dots visibles (nouvelle origine à la coordonnée du faisceau) et une écriture après la zone visible. Ils protègent le modèle de rendu incrémental, sans prétendre simuler tous les fetchs du 2C02 ni démontrer une résolution du décalage sprites/hitboxes de Super Mario Bros.
 
 
