@@ -3549,6 +3549,32 @@ mod secondary_oam_latch_regressions {
     }
 
     #[test]
+    fn pre_render_scanline_latches_sprites_for_scanline_zero() {
+        let cartridge = solid_sprite_cartridge();
+        let mut ppu = Ppu::new();
+        ppu.scanline = 261;
+        ppu.dot = 255;
+        ppu.mask = 0x14;
+        ppu.palette[0x13] = 0x2B;
+        ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 16]);
+
+        // Dot 256 is the sprite evaluation window for visible scanline zero.
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+        assert_eq!(ppu.sprite_line, 0);
+        ppu.oam[3] = 40;
+
+        // Begin visible scanline zero. The already-latched X coordinate must win.
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.tick_with_cartridge(17, Some(&cartridge));
+        let sprite_color = ppu.output_color(0x2B);
+        assert_eq!(ppu.framebuffer[16], sprite_color,
+            "scanline zero must use sprites evaluated on the pre-render line");
+        assert_ne!(ppu.framebuffer[40], sprite_color,
+            "OAM writes after pre-render evaluation must not change line zero");
+    }
+
+    #[test]
     fn sprite_line_snapshot_is_refreshed_for_the_next_scanline() {
         let cartridge = solid_sprite_cartridge();
         let mut ppu = Ppu::new();
