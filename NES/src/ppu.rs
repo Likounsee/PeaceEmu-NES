@@ -124,6 +124,15 @@ impl Ppu {
                 if !self.write_latch {
                     self.fine_x = value & 7;
                     self.t = (self.t & !0x001F) | ((value as u16) >> 3);
+                    // This renderer samples fine-X directly for each emitted pixel.
+                    // Anchor a visible mid-scanline change at the beam so it cannot
+                    // shift pixels that have already been produced on this line.
+                    if self.scanline < 240
+                        && (1..=256).contains(&self.dot)
+                        && self.mask & 0x08 != 0
+                    {
+                        self.line_scroll_start_x = self.dot as usize;
+                    }
                 } else {
                     self.t = (self.t & !0x73E0) | (((value as u16) & 0xF8) << 2) | (((value as u16) & 7) << 12);
                 }
@@ -1293,6 +1302,34 @@ mod tests {
         assert_eq!(ppu.framebuffer()[0], 0x21);
         assert!(ppu.background_opaque[0]);
         assert_eq!(ppu.line_scroll_v & 0x7000, 0x1000);
+    }
+
+    #[test]
+    fn mid_scanline_fine_x_write_only_affects_pixels_not_yet_emitted() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x0A;
+        // Every tile row has an opaque first plane, so fine-X is visible in
+        // the transition from the first tile to the second tile.
+        cartridge.ppu_write(0, 0x80);
+        cartridge.ppu_write(16, 0xFF);
+        ppu.palette[1] = 0x21;
+        ppu.palette[0] = 0x0F;
+
+        ppu.tick_with_cartridge(4, Some(&cartridge));
+        let emitted = ppu.framebuffer()[0..4].to_vec();
+        ppu.cpu_write_register(5, 7, Some(&mut cartridge));
+        ppu.tick_with_cartridge(4, Some(&cartridge));
+
+        assert_eq!(&ppu.framebuffer()[0..4], emitted.as_slice(),
+            "a scroll write must not repaint pixels already emitted");
+        assert_eq!(ppu.line_scroll_start_x, 4,
+            "the new fine-X origin starts at the current beam");
     }
 
     #[test]
