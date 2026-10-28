@@ -302,6 +302,31 @@ mod tests {
         assert_eq!(machine.ppu_position(), (261, 3));
     }
 
+
+    #[test]
+    fn oam_dma_uses_513_cycles_when_the_post_instruction_parity_is_even() {
+        // LDA $00 (3 cycles); STA $4014 (4 cycles). Including reset's
+        // seven cycles, DMA begins at cycle 14 and needs no alignment cycle.
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[
+            0xA5, 0x00,
+            0x8D, 0x14, 0x40,
+            0xEA,
+        ])).unwrap();
+        machine.write_cpu(0x0000, 0x02);
+        for offset in 0..=u8::MAX {
+            machine.write_cpu(0x0200 | u16::from(offset), offset ^ 0xA5);
+        }
+
+        assert_eq!(machine.step().unwrap().cycles, 3);
+        let before = machine.total_cycles();
+        assert_eq!(machine.step().unwrap().cycles, 4);
+        assert_eq!(machine.total_cycles() - before, 4 + 513);
+        for offset in 0..=u8::MAX {
+            machine.write_cpu(0x2003, offset);
+            assert_eq!(machine.read_cpu(0x2004), offset ^ 0xA5);
+        }
+    }
+
     #[test]
     fn oam_dma_adds_alignment_stall_cycles_and_advances_ppu() {
         // LDA #$02; STA $4014. Reset starts at 7 cycles, so six instruction
