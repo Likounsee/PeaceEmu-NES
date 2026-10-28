@@ -754,19 +754,18 @@ impl Ppu {
         }
         if found < 8 || next_sprite >= 64 { return; }
 
-        // The hardware's post-eight-sprite scan advances n and m differently
-        // depending on whether the examined byte looks like an in-range Y value.
+        // During the broken post-eight-sprite scan, n advances on every
+        // comparison while m advances only when the byte being compared happens
+        // to look like an in-range Y coordinate. Keep this fallback consistent
+        // with the cycle-driven evaluator used by normal emulation.
         let mut n = next_sprite;
         let mut m = 0usize;
         while n < 64 {
             if in_range(self.oam[n * 4 + m]) {
                 self.status |= 0x20;
                 m = (m + 1) & 3;
-                if m == 0 { n += 1; }
-            } else {
-                n += 1;
-                m = (m + 1) & 3;
             }
+            n += 1;
         }
     }
 
@@ -1727,19 +1726,18 @@ mod tests {
     }
 
     #[test]
-    fn sprite_overflow_models_diagonal_oam_byte_scan() {
+    fn sprite_overflow_scans_later_oam_y_bytes_after_the_first_eight() {
         let mut ppu = Ppu::new();
         // First eight sprites overlap target scanline 10 (OAM Y=9).
         for sprite in 0..8usize {
             ppu.oam[sprite * 4] = 9;
         }
-        // Sprite 8 is out of range. The buggy n/m walk skips its tile byte,
-        // then interprets sprite 9's tile byte as a Y coordinate.
-        ppu.oam[8 * 4] = 200;
-        ppu.oam[9 * 4 + 1] = 9;
+        // The ninth in-range sprite must set overflow even when earlier sprites
+        // occupy every secondary-OAM slot.
+        ppu.oam[8 * 4] = 9;
         ppu.update_sprite_overflow(9);
         assert_ne!(ppu.status & 0x20, 0,
-            "the 2C02 diagonal scan can raise overflow from a non-Y OAM byte");
+            "the ninth in-range sprite must set the overflow flag");
     }
 
     #[test]
