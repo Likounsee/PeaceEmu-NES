@@ -83,7 +83,7 @@ impl CpuBus {
             0x2000..=0x3FFF => self.ppu.cpu_read_register(address & 7, self.cartridge.as_ref()),
             0x4015 => self.apu.read(address) | (self.open_bus & 0x20),
             0x4016..=0x4017 => self.read_controller((address - 0x4016) as usize, self.open_bus),
-            0x6000..=0x7FFF | 0x8000..=0xFFFF => self.cartridge.as_ref()
+            0x6000..=0xFFFF => self.cartridge.as_ref()
                 .and_then(|cartridge| cartridge.cpu_read(address))
                 .unwrap_or(self.open_bus),
             _ => self.open_bus,
