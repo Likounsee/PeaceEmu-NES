@@ -1034,7 +1034,7 @@ mod tests {
 
         assert_eq!(ppu.v & 0x001F, 8, "coarse X advances by one tile");
         assert_eq!((ppu.v >> 5) & 0x1F, 4, "coarse Y stays in the same row before fine-Y rollover");
-        assert_eq!((ppu.v >> 12) & 7, 3, "fine Y stays unchanged before rollover");
+        assert_eq!((ppu.v >> 12) & 7, 4, "fine Y advances by one during the rendering increment");
     }
 
     #[test]
