@@ -3773,3 +3773,35 @@ mod mapper_secondary_oam_fetch_regressions {
             "the selected 8x16 sprite must drive A12 high even though primary OAM slot zero does not");
     }
 }
+
+#[cfg(test)]
+mod oam_address_rendering_regressions {
+    use super::*;
+
+    #[test]
+    fn rendering_resets_oamaddr_at_dot_257() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.scanline = 40;
+        ppu.dot = 256;
+        ppu.oam_addr = 0x9C;
+
+        ppu.tick(1);
+
+        assert_eq!(ppu.position(), (40, 257));
+        assert_eq!(ppu.oam_addr, 0);
+    }
+
+    #[test]
+    fn oamaddr_is_not_forced_to_zero_when_rendering_is_disabled() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0;
+        ppu.scanline = 40;
+        ppu.dot = 256;
+        ppu.oam_addr = 0x9C;
+
+        ppu.tick(1);
+
+        assert_eq!(ppu.oam_addr, 0x9C);
+    }
+}
