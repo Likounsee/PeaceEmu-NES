@@ -681,17 +681,22 @@ impl Ppu {
             // After eight sprites, the hardware's broken n/m walk may compare
             // tile/attribute/X bytes as though they were Y coordinates.
             let top = sprite_top(value);
-            // The 2C02 increments n on every comparison after the eighth
-            // sprite. m advances only when the compared byte happens to look like
-            // an in-range Y coordinate; this is the source of false-positive
-            // overflow flags when tile/attribute/X bytes are scanned diagonally.
+            // After secondary OAM fills, a hit behaves like a four-byte copy
+            // (m carries into n); a miss increments both n and m without carry.
+            // That broken miss path makes later tile/attribute/X bytes become
+            // Y-coordinate candidates and produces false-positive overflow.
             if (self.eval_target_y as usize) >= top
                 && (self.eval_target_y as usize) < top + height
             {
                 self.status |= 0x20;
                 self.eval_m = (self.eval_m + 1) & 3;
+                if self.eval_m == 0 {
+                    self.eval_n = self.eval_n.saturating_add(1);
+                }
+            } else {
+                self.eval_n = self.eval_n.saturating_add(1);
+                self.eval_m = (self.eval_m + 1) & 3;
             }
-            self.eval_n = self.eval_n.saturating_add(1);
             if self.eval_n >= 64 {
                 self.sprite_line = self.eval_target_y as u16;
             }
@@ -754,18 +759,19 @@ impl Ppu {
         }
         if found < 8 || next_sprite >= 64 { return; }
 
-        // During the broken post-eight-sprite scan, n advances on every
-        // comparison while m advances only when the byte being compared happens
-        // to look like an in-range Y coordinate. Keep this fallback consistent
-        // with the cycle-driven evaluator used by normal emulation.
+        // Mirror the 2C02's diagonal overflow walk: a hit advances m with
+        // carry into n, while a miss increments both counters without carry.
         let mut n = next_sprite;
         let mut m = 0usize;
         while n < 64 {
             if in_range(self.oam[n * 4 + m]) {
                 self.status |= 0x20;
                 m = (m + 1) & 3;
+                if m == 0 { n += 1; }
+            } else {
+                n += 1;
+                m = (m + 1) & 3;
             }
-            n += 1;
         }
     }
 
@@ -1726,18 +1732,19 @@ mod tests {
     }
 
     #[test]
-    fn sprite_overflow_scans_later_oam_y_bytes_after_the_first_eight() {
+    fn sprite_overflow_models_diagonal_oam_byte_scan() {
         let mut ppu = Ppu::new();
         // First eight sprites overlap target scanline 10 (OAM Y=9).
         for sprite in 0..8usize {
             ppu.oam[sprite * 4] = 9;
         }
-        // The ninth in-range sprite must set overflow even when earlier sprites
-        // occupy every secondary-OAM slot.
-        ppu.oam[8 * 4] = 9;
+        // Sprite 8 misses. The buggy n/m walk then reads sprite 9's tile byte
+        // as a Y coordinate, producing a false-positive overflow flag.
+        ppu.oam[8 * 4] = 200;
+        ppu.oam[9 * 4 + 1] = 9;
         ppu.update_sprite_overflow(9);
         assert_ne!(ppu.status & 0x20, 0,
-            "the ninth in-range sprite must set the overflow flag");
+            "the 2C02 diagonal scan can raise overflow from a non-Y OAM byte");
     }
 
     #[test]
@@ -4064,12 +4071,12 @@ mod cycle_sprite_evaluator_regressions {
             ppu.oam[sprite * 4] = 0xFF;
         }
         ppu.oam[8 * 4] = 20; // Out of range for target scanline zero.
-        ppu.oam[9 * 4] = 0xFF; // Tenth sprite is in range.
+        ppu.oam[9 * 4 + 1] = 0xFF; // The diagonal walk reads this tile byte as Y.
 
         ppu.tick(130);
         assert_eq!(ppu.status & 0x20, 0, "the ninth sprite is out of range");
         ppu.tick(2);
-        assert_ne!(ppu.status & 0x20, 0, "the next in-range Y byte must be found");
+        assert_ne!(ppu.status & 0x20, 0, "the diagonal tile-byte comparison must set overflow");
     }
 
     #[test]
