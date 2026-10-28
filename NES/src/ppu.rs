@@ -1905,7 +1905,8 @@ mod tests {
         ppu.cpu_write_register(0, 0x80, None);
         ppu.tick(1);
         assert_ne!(ppu.status & 0x80, 0, "vblank is set at scanline 241 dot 1 in this timing model");
-        let _ = ppu.cpu_read_register(2, None);
+        let status = ppu.cpu_read_register(2, None);
+        assert_eq!(status & 0x80, 0, "a dot-1 race must return vblank clear to the CPU");
         assert_eq!(ppu.status & 0x80, 0);
         assert!(!ppu.nmi_line);
     }
