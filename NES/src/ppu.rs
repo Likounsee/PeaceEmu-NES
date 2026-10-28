@@ -14,11 +14,18 @@ pub struct Ppu {
     status: u8,
     oam_addr: u8,
     oam: [u8; 256],
-    /// Secondary-OAM snapshot used by the live scanline renderer.
+    /// Secondary-OAM bytes produced by the dot-driven sprite evaluator.
     sprite_line_oam: [[u8; 4]; 8],
     sprite_line_indices: [u8; 8],
     sprite_line_count: u8,
     sprite_line: u16,
+    /// Sprite evaluation state: n selects the primary-OAM sprite and m its byte.
+    eval_n: u8,
+    eval_m: u8,
+    eval_latch: u8,
+    eval_copying: bool,
+    eval_target_y: u8,
+    eval_secondary_pos: u8,
     nametables: [u8; 4096],
     palette: [u8; 32],
     v: u16,
@@ -52,8 +59,10 @@ impl Default for Ppu {
     fn default() -> Self {
         Self {
             ctrl: 0, mask: 0, status: 0, oam_addr: 0, oam: [0; 256],
-            sprite_line_oam: [[0; 4]; 8], sprite_line_indices: [0; 8],
+            sprite_line_oam: [[0xFF; 4]; 8], sprite_line_indices: [0xFF; 8],
             sprite_line_count: 0, sprite_line: u16::MAX,
+            eval_n: 0, eval_m: 0, eval_latch: 0xFF, eval_copying: false,
+            eval_target_y: 0, eval_secondary_pos: 0,
             nametables: [0; 4096], palette: [0; 32], v: 0, t: 0,
             fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
             scanline: 261, dot: 0, odd_frame: false, frame_scroll_v: 0, frame_fine_x: 0,
@@ -229,6 +238,9 @@ impl Ppu {
                 continue;
             }
             self.dot += 1;
+            // Sprite evaluation is a PPU bus operation, not a scanline-end snapshot.
+            // Run it before pixel composition so secondary OAM is ready for the next line.
+            self.clock_sprite_evaluator();
             self.update_mapper_a12_bus(cartridge);
 
             // Latch the scroll address at the start of each visible scanline. The
@@ -245,7 +257,6 @@ impl Ppu {
             if (1..=256).contains(&self.dot) && self.scanline < 240 {
                 let x = (self.dot - 1) as usize;
                 let y = self.scanline as usize;
-                self.evaluate_sprite_line_if_needed(y);
                 self.render_background_pixel(x, y, cartridge);
                 if self.status & 0x40 == 0 && self.sprite_zero_hit_at(x, y, cartridge) {
                     self.status |= 0x40;
@@ -260,10 +271,8 @@ impl Ppu {
                     // Sprite evaluation for the next visible scanline begins before
                     // that scanline starts, not at its first visible pixel. This also
                     // prepares scanline zero from the pre-render line.
-                    self.evaluate_sprite_line_if_needed(
-                        if self.scanline == 261 { 0 } else { self.scanline as usize + 1 }
-                    );
-                    self.update_sprite_overflow(self.scanline as usize);
+                    // The cycle evaluator has already built secondary OAM during dots 65-256.
+                    // Keep overflow status sticky; it is raised by the evaluator itself.
                 } else {
                     // Do not reuse last frame's secondary-OAM snapshot when rendering
                     // was disabled during the pre-render evaluation window.
@@ -557,9 +566,114 @@ impl Ppu {
         }
     }
 
-    /// Latches the first eight sprites intersecting a visible scanline.
-    /// The hardware evaluates them on the preceding line; this renderer snapshots
-    /// on first use of the target line to keep OAM order and line contents stable.
+    /// Advances the 2C02 sprite evaluator by one PPU dot.
+    ///
+    /// Dots 1-64 clear secondary OAM. Dots 65-256 scan primary OAM using
+    /// n/m byte counters, copying the first eight in-range sprites and then
+    /// running the diagonal overflow scan. This is cycle-driven so CPU OAM
+    /// writes between dots can affect sprites that have not yet been evaluated.
+    fn clock_sprite_evaluator(&mut self) {
+        let rendering_line = self.scanline < 240 || self.scanline == 261;
+        if !rendering_line || self.mask & 0x18 == 0 {
+            if self.dot == 1 {
+                self.eval_n = 0;
+                self.eval_m = 0;
+                self.eval_copying = false;
+                self.eval_secondary_pos = 0;
+                self.sprite_line_count = 0;
+                self.sprite_line = u16::MAX;
+            }
+            return;
+        }
+
+        if self.dot == 1 {
+            self.eval_n = 0;
+            self.eval_m = 0;
+            self.eval_latch = 0xFF;
+            self.eval_copying = false;
+            self.eval_secondary_pos = 0;
+            self.eval_target_y = if self.scanline == 261 { 0 } else { (self.scanline + 1) as u8 };
+            self.sprite_line_oam = [[0xFF; 4]; 8];
+            self.sprite_line_indices = [0xFF; 8];
+            self.sprite_line_count = 0;
+            self.sprite_line = u16::MAX;
+        }
+
+        if (1..=64).contains(&self.dot) {
+            if self.dot % 2 == 0 {
+                let index = (self.dot / 2 - 1) as usize;
+                if index < 32 {
+                    self.sprite_line_oam[index / 4][index % 4] = 0xFF;
+                }
+            }
+            return;
+        }
+        if !(65..=256).contains(&self.dot) || self.eval_n >= 64 {
+            if self.dot == 256 {
+                self.sprite_line = self.eval_target_y as u16;
+            }
+            return;
+        }
+
+        // Odd dots read one primary-OAM byte; even dots consume that byte.
+        if self.dot & 1 != 0 {
+            let address = usize::from(self.eval_n) * 4 + usize::from(self.eval_m);
+            self.eval_latch = self.oam[address];
+            return;
+        }
+
+        let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
+        let value = self.eval_latch;
+        if self.sprite_line_count < 8 {
+            if !self.eval_copying {
+                let top = sprite_top(value);
+                if (self.eval_target_y as usize) >= top
+                    && (self.eval_target_y as usize) < top + height
+                {
+                    let slot = self.sprite_line_count as usize;
+                    self.sprite_line_oam[slot][0] = value;
+                    self.sprite_line_indices[slot] = self.eval_n;
+                    self.eval_secondary_pos = (slot * 4 + 1) as u8;
+                    self.eval_m = 1;
+                    self.eval_copying = true;
+                } else {
+                    self.eval_n = self.eval_n.saturating_add(1);
+                    self.eval_m = 0;
+                }
+            } else {
+                let slot = self.sprite_line_count as usize;
+                let byte = usize::from(self.eval_m);
+                self.sprite_line_oam[slot][byte] = value;
+                self.eval_m += 1;
+                if self.eval_m >= 4 {
+                    self.eval_m = 0;
+                    self.eval_n = self.eval_n.saturating_add(1);
+                    self.sprite_line_count += 1;
+                    self.eval_copying = false;
+                }
+            }
+        } else {
+            // After eight sprites, the hardware's broken n/m walk may compare
+            // tile/attribute/X bytes as though they were Y coordinates.
+            let top = sprite_top(value);
+            if (self.eval_target_y as usize) >= top
+                && (self.eval_target_y as usize) < top + height
+            {
+                self.status |= 0x20;
+                self.eval_m = (self.eval_m + 1) & 3;
+            }
+            self.eval_n = self.eval_n.saturating_add(1);
+            if self.eval_n >= 64 {
+                self.sprite_line = self.eval_target_y as u16;
+            }
+        }
+        if self.dot == 256 {
+            self.sprite_line = self.eval_target_y as u16;
+        }
+    }
+
+    /// Fallback for direct renderer calls that did not advance the PPU beam.
+    /// Normal emulation fills this line through clock_sprite_evaluator().
     fn evaluate_sprite_line_if_needed(&mut self, y: usize) {
         if y >= 240 || self.sprite_line == y as u16 { return; }
         self.sprite_line = y as u16;
@@ -578,49 +692,7 @@ impl Ppu {
             self.sprite_line_count += 1;
         }
     }
-    /// Emulates the sprite-overflow scan for the following scanline.
-    ///
-    /// After the first eight in-range sprites, the 2C02's overflow logic does not
-    /// keep checking only Y bytes: its n/m counters can walk diagonally through
-    /// tile, attribute and X bytes. This intentionally reproduces the resulting
-    /// false positives and false negatives instead of using a simple sprite count.
-    fn update_sprite_overflow(&mut self, y: usize) {
-        // Sprite evaluation at dot 256 selects sprites for the following scanline.
-        let target_y = if y == 261 { 0 } else { y + 1 };
-        let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
-        let in_range = |oam_y: u8| {
-            let top = sprite_top(oam_y);
-            target_y >= top && target_y < top + height
-        };
-
-        let mut found = 0usize;
-        let mut next_sprite = 0usize;
-        for sprite in 0..64usize {
-            if in_range(self.oam[sprite * 4]) {
-                found += 1;
-                if found == 8 {
-                    next_sprite = sprite + 1;
-                    break;
-                }
-            }
-        }
-        if found < 8 || next_sprite >= 64 { return; }
-
-        // The hardware's post-eight-sprite scan advances n and m differently
-        // depending on whether the examined byte looks like an in-range Y value.
-        let mut n = next_sprite;
-        let mut m = 0usize;
-        while n < 64 {
-            if in_range(self.oam[n * 4 + m]) {
-                self.status |= 0x20;
-                m = (m + 1) & 3;
-                if m == 0 { n += 1; }
-            } else {
-                n += 1;
-                m = (m + 1) & 3;
-            }
-        }
-    }
+    // Sprite overflow is asserted by the cycle-driven evaluator above.
 
     /// Renders a complete background snapshot using the current VRAM scroll address.
     ///
