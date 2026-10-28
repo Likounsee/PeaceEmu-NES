@@ -155,6 +155,12 @@ impl Cpu {
             return Ok(StepResult { pc, opcode: 0xFE, cycles: 7 });
         }
         let opcode = self.fetch(bus);
+        // The second cycle of implied instructions is a real read from the
+        // next PC address. Keep it in bus order instead of letting Machine
+        // advance this cycle only after the instruction has finished.
+        if Self::has_implied_dummy_read(opcode) {
+            let _ = bus.read(self.state.pc);
+        }
         let cycles = match opcode {
             // Common stable unofficial NOPs. Addressed forms perform the read, and
             // absolute-X forms charge the page-cross penalty used by the 2A03.
@@ -480,6 +486,19 @@ impl Cpu {
         Ok(StepResult { pc, opcode, cycles })
     }
 
+    fn has_implied_dummy_read(opcode: u8) -> bool {
+        matches!(opcode,
+            // Official implied and accumulator instructions.
+            0x0A | 0x18 | 0x2A | 0x38 | 0x4A | 0x58 | 0x6A | 0x78 |
+            0x88 | 0x8A | 0x98 | 0x9A | 0xA8 | 0xAA | 0xB8 | 0xBA |
+            0xC8 | 0xCA | 0xD8 | 0xE8 | 0xF8 |
+            // Stable implied unofficial NOPs and KIL/JAM opcodes.
+            0xEA | 0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA |
+            0x02 | 0x12 | 0x22 | 0x32 | 0x42 | 0x52 | 0x62 | 0x72 |
+            0x92 | 0xB2 | 0xD2 | 0xF2
+        )
+    }
+
     fn is_unofficial_rmw(opcode: u8) -> bool {
         matches!(opcode,
             0x03 | 0x07 | 0x0F | 0x13 | 0x17 | 0x1B | 0x1F |
@@ -653,6 +672,26 @@ mod tests {
         for (i, v) in program.iter().copied().enumerate() { bus.write(0x0600 + i as u16, v); }
         let mut cpu = Cpu::new(); cpu.set_pc(0x0600); (cpu, bus)
     }
+
+    #[test]
+    fn implied_opcodes_perform_the_second_bus_read_in_instruction_order() {
+        let implied = [
+            0x0A, 0x18, 0x2A, 0x38, 0x4A, 0x58, 0x6A, 0x78,
+            0x88, 0x8A, 0x98, 0x9A, 0xA8, 0xAA, 0xB8, 0xBA,
+            0xC8, 0xCA, 0xD8, 0xE8, 0xF8, 0xEA, 0x1A, 0x3A,
+            0x5A, 0x7A, 0xDA, 0xFA, 0x02, 0x12, 0x22, 0x32,
+            0x42, 0x52, 0x62, 0x72, 0x92, 0xB2, 0xD2, 0xF2,
+        ];
+        for opcode in implied {
+            let (mut cpu, mut bus) = setup(&[opcode, 0xEA]);
+            bus.begin_cpu_instruction();
+            let result = cpu.step(&mut bus).unwrap();
+            let bus_cycles = bus.end_cpu_instruction();
+            assert_eq!(result.cycles, 2, "opcode {opcode:#04X}");
+            assert_eq!(bus_cycles, 2, "opcode {opcode:#04X} must perform its dummy read before the next instruction");
+        }
+    }
+
     #[test] fn lda_adc_sta_sets_flags_and_cycles() {
         let (mut c, mut b) = setup(&[0xA9, 0x7F, 0x69, 1, 0x8D, 0, 2]);
         assert_eq!(c.step(&mut b).unwrap().cycles, 2); c.step(&mut b).unwrap();
