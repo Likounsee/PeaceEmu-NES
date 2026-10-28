@@ -623,6 +623,9 @@ impl Ppu {
         {
             let target = if self.scanline == 261 { 0 } else { self.scanline as usize + 1 };
             self.eval_target_y = target as u8;
+            // A sparse/manual beam jump can leave a cached line from a previous
+            // frame; force the compatibility snapshot to rebuild for this target.
+            self.sprite_line = u16::MAX;
             self.evaluate_sprite_line_if_needed(target);
             self.update_sprite_overflow(self.scanline as usize);
             return;
@@ -699,7 +702,9 @@ impl Ppu {
     /// Fallback for direct renderer calls that did not advance the PPU beam.
     /// Normal emulation fills this line through clock_sprite_evaluator().
     fn evaluate_sprite_line_if_needed(&mut self, y: usize) {
-        if y >= 240 || self.sprite_line == y as u16 { return; }
+        if y >= 240 || (self.sprite_line == y as u16 && (self.ppu_cycle != 0 || self.dot != 0)) {
+            return;
+        }
         self.sprite_line = y as u16;
         self.sprite_line_count = 0;
         self.sprite_line_oam = [[0xFF; 4]; 8];
@@ -1061,9 +1066,10 @@ mod mid_scanline_scroll_regressions {
 
         ppu.cpu_write_register(7, 0x55, None);
 
-        assert_eq!(ppu.v, 0x2001);
-        assert_eq!(ppu.line_scroll_v, 0x2001,
-            "PPUDATA increments must affect the subsequent visible fetch address");
+        assert_eq!(ppu.v, 0x3001,
+            "a rendering-time PPUDATA access advances coarse X and fine Y");
+        assert_eq!(ppu.line_scroll_v, 0x3001,
+            "the updated rendering address affects the subsequent visible fetch address");
         assert_eq!(ppu.line_scroll_start_x, 100,
             "the updated address applies from the next unrendered pixel");
     }
