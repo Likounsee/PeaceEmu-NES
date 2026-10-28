@@ -46,6 +46,9 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 
 ## Ce qui est implémenté
 
+- **PPU/scroll en cours de scanline** : trois tests de régression isolent l'écriture du second octet de `$2005` (mise à jour de `t` sans changement immédiat du scroll actif), l'écriture complète de `$2006` pendant les dots visibles (nouvelle origine à la coordonnée du faisceau) et une écriture après la zone visible. Ils protègent le modèle de rendu incrémental, sans prétendre simuler tous les fetchs du 2C02 ni démontrer une résolution du décalage sprites/hitboxes de Super Mario Bros.
+
+
 - **CPU :** interpréteur 2A03 avec de nombreuses instructions officielles, plusieurs opcodes non officiels stables et composites, flags, pile et interruptions. Les opcodes inconnus produisent une erreur explicite. Le modèle n'est pas cycle-exact.
 - **Bus :** RAM interne de 2 Kio et miroirs, espace cartouche, registres PPU/APU, ports série des manettes, DMA OAM à blocage nominal de 513/514 cycles et accès DMC initial.
 - **Cartouches :** parseur iNES legacy, trainers, PRG-RAM/CHR-RAM, mirroring et dispatch statique pour NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4), AxROM (7), Front Fareast F3xxx (8), MMC2 (9), MMC4 (10), Color Dreams (11), CPROM (13), Mapper 15, BNROM (34), GxROM (66), Camerica (71), UNROM-512 (30) et Jaleco JF-16 (87). UxROM/CNROM gèrent aussi les bus conflicts quand le sous-mapper NES 2.0 indique explicitement cette variante.
