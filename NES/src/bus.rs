@@ -280,6 +280,8 @@ mod tests {
         assert_eq!(bus_cycles, 0, "DMC internal DMA read is not an opcode/data bus access");
         assert_eq!(bus.ppu_position(), before,
             "DMC sample fetch must not advance the PPU a second time; stolen cycles are clocked by the machine");
+        assert_eq!(bus.open_bus, 0xA5,
+            "the sample fetch must still drive the CPU data bus with the fetched byte");
     }
 
     #[test]
