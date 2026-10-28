@@ -456,10 +456,13 @@ impl Ppu {
             return false;
         }
 
-        if !self.sprite_line_indices[..self.sprite_line_count as usize].contains(&0) {
+        let Some(sprite_zero_slot) = self.sprite_line_indices[..self.sprite_line_count as usize]
+            .iter()
+            .position(|&index| index == 0)
+        else {
             return false;
-        }
-        let sprite = self.sprite_line_oam[0];
+        };
+        let sprite = self.sprite_line_oam[sprite_zero_slot];
         let sprite_top = sprite_top(sprite[0]);
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         if y < sprite_top || y >= sprite_top + height {
@@ -618,7 +621,8 @@ impl Ppu {
             && self.eval_count == 0
             && !self.eval_copying
         {
-            let target = self.eval_target_y as usize;
+            let target = if self.scanline == 261 { 0 } else { self.scanline as usize + 1 };
+            self.eval_target_y = target as u8;
             self.evaluate_sprite_line_if_needed(target);
             self.update_sprite_overflow(self.scanline as usize);
             return;
