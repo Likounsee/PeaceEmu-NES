@@ -68,6 +68,19 @@ impl CpuBus {
         }
     }
 
+    /// Reads a DMC sample byte without creating a second CPU bus cycle.
+    ///
+    /// DMC DMA is charged separately by the machine clock. Routing this through
+    /// the normal read path would count an extra instruction bus access and advance
+    /// the PPU while tick_apu is servicing the DMA request.
+    fn read_dmc_dma_source(&mut self, address: u16) -> u8 {
+        let value = self.cartridge.as_ref()
+            .and_then(|cartridge| cartridge.cpu_read(address))
+            .unwrap_or(self.open_bus);
+        self.open_bus = value;
+        value
+    }
+
     /// Reads a byte from the CPU address space.
     pub fn read(&mut self, address: u16) -> u8 {
         self.clock_instruction_bus_access();
@@ -165,7 +178,7 @@ impl CpuBus {
         for _ in 0..cycles {
             self.apu.tick_cpu_cycles(1);
             if let Some(address) = self.apu.take_dmc_dma_request() {
-                let value = self.read(address);
+                let value = self.read_dmc_dma_source(address);
                 self.apu.supply_dmc_byte(value);
                 stall_cycles = stall_cycles.saturating_add(4);
             }
@@ -244,6 +257,29 @@ mod tests {
         let second = bus.read(0x4015);
         assert_eq!(second & 0x40, 0, "the acknowledged frame IRQ must stay cleared");
         assert_ne!(second & 0x20, 0, "open-bus bit 5 remains latched across the status read");
+    }
+
+    #[test]
+    fn dmc_dma_sample_read_does_not_create_an_extra_instruction_bus_cycle() {
+        let mut bus = CpuBus::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x1000] = 0xA5;
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0x4010, 0x00);
+        bus.write(0x4012, 0x00);
+        bus.write(0x4013, 0x00);
+        bus.write(0x4015, 0x10);
+
+        let before = bus.ppu_position();
+        bus.begin_cpu_instruction();
+        assert_eq!(bus.tick_apu(1), 4);
+        let bus_cycles = bus.end_cpu_instruction();
+
+        assert_eq!(bus_cycles, 0, "DMC internal DMA read is not an opcode/data bus access");
+        assert_eq!(bus.ppu_position(), before,
+            "DMC sample fetch must not advance the PPU a second time; stolen cycles are clocked by the machine");
     }
 
     #[test]
