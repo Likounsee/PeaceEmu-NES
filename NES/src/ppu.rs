@@ -3820,3 +3820,46 @@ mod oam_address_rendering_regressions {
         assert_eq!(ppu.oam_addr, 0x9C);
     }
 }
+
+#[cfg(test)]
+mod oam_bus_timing_regressions {
+    use super::*;
+
+    #[test]
+    fn oamdata_reads_ff_during_secondary_oam_clear() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x08;
+        ppu.scanline = 12;
+        ppu.dot = 20;
+        ppu.oam_addr = 7;
+        ppu.oam[7] = 0x42;
+
+        assert_eq!(ppu.cpu_read_register(4, None), 0xFF);
+    }
+
+    #[test]
+    fn oamdata_reads_primary_oam_when_rendering_is_disabled() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0;
+        ppu.scanline = 12;
+        ppu.dot = 20;
+        ppu.oam_addr = 7;
+        ppu.oam[7] = 0x42;
+
+        assert_eq!(ppu.cpu_read_register(4, None), 0x42);
+    }
+
+    #[test]
+    fn oamaddr_is_held_at_zero_through_sprite_fetch_interval() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.scanline = 12;
+        ppu.dot = 299;
+        ppu.oam_addr = 0xA4;
+
+        ppu.tick(1);
+
+        assert_eq!(ppu.position(), (12, 300));
+        assert_eq!(ppu.oam_addr, 0);
+    }
+}
