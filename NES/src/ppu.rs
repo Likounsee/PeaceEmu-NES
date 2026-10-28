@@ -112,8 +112,20 @@ impl Ppu {
                 // scanlines), the internal OAM bus is forced to $FF. Returning the
                 // byte at OAMADDR here leaks primary OAM contents that the 2C02 does
                 // not expose during this phase.
-                if self.rendering_oam_clear_phase() { 0xFF }
-                else { self.oam[self.oam_addr as usize] }
+                if self.rendering_oam_clear_phase() {
+                    // Secondary-OAM clear drives all ones onto the internal OAM bus.
+                    0xFF
+                } else if self.rendering_oam_evaluation_phase() {
+                    // During dots 65-256, OAMDATA exposes the byte currently latched
+                    // by the evaluator's primary-OAM read, not OAM[OAMADDR].
+                    self.eval_latch
+                } else if self.rendering_oam_fetch_phase() {
+                    // Sprite fetches use secondary OAM and the primary OAM bus is
+                    // not available to the CPU during this interval.
+                    0xFF
+                } else {
+                    self.oam[self.oam_addr as usize]
+                }
             },
             7 => {
                 let address = self.v & 0x3FFF;
@@ -220,6 +232,21 @@ impl Ppu {
         self.mask & 0x18 != 0
             && (self.scanline < 240 || self.scanline == 261)
             && (1..=256).contains(&self.dot)
+    }
+
+    /// OAM evaluator reads primary OAM on odd dots 65-255 and consumes the
+    /// latched byte on even dots through dot 256.
+    fn rendering_oam_evaluation_phase(&self) -> bool {
+        self.mask & 0x18 != 0
+            && (self.scanline < 240 || self.scanline == 261)
+            && (65..=256).contains(&self.dot)
+    }
+
+    /// Sprite pattern/secondary-OAM fetch interval, when primary OAM is unavailable.
+    fn rendering_oam_fetch_phase(&self) -> bool {
+        self.mask & 0x18 != 0
+            && (self.scanline < 240 || self.scanline == 261)
+            && (257..=320).contains(&self.dot)
     }
 
     /// Advances the PPU by a number of dots and updates vblank timing.
@@ -1264,6 +1291,32 @@ mod tests {
         ppu.increment_vram_address();
 
         assert_eq!(ppu.v, 0x2120, "outside fetch windows PPUCTRL still selects +32");
+    }
+
+    #[test]
+    fn oamdata_reads_expose_internal_oam_bus_during_rendering() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.scanline = 20;
+        ppu.oam_addr = 0x20;
+        ppu.oam[0x20] = 0x12;
+
+        ppu.dot = 64;
+        assert_eq!(ppu.cpu_read_register(4, None), 0x12,
+            "outside the clear/evaluation/fetch phases OAMDATA reads primary OAM");
+
+        ppu.dot = 65;
+        ppu.eval_latch = 0xA7;
+        assert_eq!(ppu.cpu_read_register(4, None), 0xA7,
+            "sprite evaluation exposes its currently latched primary-OAM byte");
+
+        ppu.dot = 100;
+        ppu.eval_latch = 0x5C;
+        assert_eq!(ppu.cpu_read_register(4, None), 0x5C);
+
+        ppu.dot = 280;
+        assert_eq!(ppu.cpu_read_register(4, None), 0xFF,
+            "sprite fetch does not expose the byte at OAMADDR");
     }
 
     #[test]
