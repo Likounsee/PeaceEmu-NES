@@ -3307,3 +3307,56 @@ mod nametable_address_bus_regressions {
         assert_eq!(vertical.mem_read(0x2800, Some(&vertical_cart)), 0x3C);
     }
 }
+
+
+#[cfg(test)]
+mod mid_scanline_scroll_latch_regressions {
+    use super::*;
+
+    #[test]
+    fn second_ppuscroll_write_changes_only_pixels_from_the_current_beam_x() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 12;
+        ppu.dot = 40;
+        ppu.mask = 0x18;
+        ppu.line_scroll_v = 0x0123;
+        ppu.line_scroll_start_x = 0;
+        ppu.write_latch = true;
+        ppu.cpu_write_register(5, 0b1011_0110, None);
+
+        assert_eq!(ppu.fine_x, 0, "the second $2005 write must not overwrite fine X");
+        assert_eq!(ppu.line_scroll_v & 0x73E0, 0x59A0 & 0x73E0);
+        assert_eq!(ppu.line_scroll_start_x, 0,
+            "a second $2005 write updates t but does not immediately replace v on the current line");
+    }
+
+    #[test]
+    fn second_ppuaddr_write_latches_scroll_at_the_current_beam_without_rewriting_prior_pixels() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 12;
+        ppu.dot = 41;
+        ppu.mask = 0x18;
+        ppu.write_latch = true;
+        ppu.t = 0x2000;
+        ppu.cpu_write_register(6, 0x45, None);
+
+        assert_eq!(ppu.v, 0x2045);
+        assert_eq!(ppu.line_scroll_v, 0x2045);
+        assert_eq!(ppu.line_scroll_start_x, 41,
+            "the new VRAM address takes effect at the current visible beam coordinate");
+    }
+
+    #[test]
+    fn ppuaddr_write_outside_visible_pixel_dots_does_not_move_line_sampling_origin() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 12;
+        ppu.dot = 257;
+        ppu.mask = 0x18;
+        ppu.write_latch = true;
+        ppu.line_scroll_start_x = 17;
+        ppu.cpu_write_register(6, 0x00, None);
+
+        assert_eq!(ppu.line_scroll_start_x, 17,
+            "writes after visible pixels must not create an out-of-range pixel origin");
+    }
+}
