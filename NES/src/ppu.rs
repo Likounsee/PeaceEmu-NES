@@ -80,11 +80,15 @@ impl Ppu {
     pub fn cpu_read_register(&mut self, register: u16, cartridge: Option<&Cartridge>) -> u8 {
         let value = match register & 7 {
             2 => {
-                let value = (self.status & 0xE0) | (self.open_bus & 0x1F);
-                // A status read immediately before the vblank-set dot suppresses
-                // this frame's vblank flag and therefore its NMI edge.
+                let mut value = (self.status & 0xE0) | (self.open_bus & 0x1F);
+                // The vblank flag is set at scanline 241 dot 1. A $2002 read
+                // on dot 0 suppresses that event; a read on dot 1 races the set
+                // and must still return bit 7 clear even if the event just fired.
                 if self.scanline == 241 && self.dot == 0 {
                     self.suppress_vblank = true;
+                    value &= !0x80;
+                } else if self.scanline == 241 && self.dot == 1 {
+                    value &= !0x80;
                 }
                 self.status &= !0x80;
                 self.update_nmi_line();
