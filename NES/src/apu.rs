@@ -1958,9 +1958,9 @@ mod exact_frame_sequence_timing_regressions {
         apu.tick_cpu_cycles(4);
         assert!(apu.five_step_mode);
 
-        apu.tick_cpu_cycles(18_640);
+        apu.tick_cpu_cycles(18_639);
         assert!(!apu.irq_pending(), "five-step mode must not assert frame IRQ");
-        assert_ne!(apu.frame_cycles, 0, "the sequence must not reset one cycle early");
+        assert_eq!(apu.frame_cycles, 18_640, "the sequence must be one cycle short of its terminal event");
 
         apu.tick_cpu_cycles(1);
         assert_eq!(apu.frame_cycles, 0, "five-step sequence terminal event is cycle 18641");
