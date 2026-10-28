@@ -4039,15 +4039,37 @@ mod cycle_sprite_evaluator_regressions {
     }
 
     #[test]
-    fn overflow_is_detected_during_the_post_eight_sprite_scan() {
+    fn overflow_is_raised_on_the_even_dot_that_consumes_the_ninth_sprite_y() {
         let mut ppu = Ppu::new();
         ppu.mask = 0x18;
         for sprite in 0..9usize {
             ppu.oam[sprite * 4] = 0xFF;
         }
-        ppu.tick(256);
-        assert_ne!(ppu.status & 0x20, 0);
+
+        // Eight sprites finish copying at dot 128. Dot 129 reads sprite nine's
+        // Y byte; dot 130 consumes it and raises overflow.
+        ppu.tick(129);
+        assert_eq!(ppu.position(), (261, 129));
+        assert_eq!(ppu.status & 0x20, 0, "the odd-dot OAM read cannot set overflow yet");
+        ppu.tick(1);
+        assert_ne!(ppu.status & 0x20, 0, "overflow is asserted on the compare dot");
         assert_eq!(ppu.sprite_line_count, 8);
+    }
+
+    #[test]
+    fn overflow_scan_continues_after_an_out_of_range_ninth_sprite() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        for sprite in 0..8usize {
+            ppu.oam[sprite * 4] = 0xFF;
+        }
+        ppu.oam[8 * 4] = 20; // Out of range for target scanline zero.
+        ppu.oam[9 * 4] = 0xFF; // Tenth sprite is in range.
+
+        ppu.tick(130);
+        assert_eq!(ppu.status & 0x20, 0, "the ninth sprite is out of range");
+        ppu.tick(2);
+        assert_ne!(ppu.status & 0x20, 0, "the next in-range Y byte must be found");
     }
 
     #[test]
