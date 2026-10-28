@@ -3500,3 +3500,64 @@ mod beam_sprite_composition_regressions {
             "transparent sprite zero must allow sprite one to supply the visible pixel");
     }
 }
+
+
+#[cfg(test)]
+mod secondary_oam_latch_regressions {
+    use super::*;
+
+    fn solid_sprite_cartridge() -> Cartridge {
+        let mut rom = vec![0; 16 + 16_384 + 8_192];
+        rom[0..4].copy_from_slice(b"NES\\x1A");
+        rom[4] = 1;
+        rom[5] = 1;
+        let chr = 16 + 16_384;
+        rom[chr..chr + 16].fill(0xFF);
+        Cartridge::parse(&rom).unwrap()
+    }
+
+    #[test]
+    fn mid_scanline_oam_write_does_not_move_already_evaluated_sprite() {
+        let cartridge = solid_sprite_cartridge();
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 16;
+        ppu.mask = 0x14;
+        ppu.palette[0x11] = 0x2B;
+        ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 16]);
+
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+        ppu.oam[3] = 40;
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+
+        let sprite_color = ppu.output_color(0x2B);
+        assert_eq!(ppu.framebuffer[16], sprite_color);
+        assert_eq!(ppu.framebuffer[17], sprite_color,
+            "changing primary OAM after evaluation must not move this scanline's sprite");
+        assert_ne!(ppu.framebuffer[40], sprite_color,
+            "the new X coordinate is not visible until a later scanline evaluation");
+    }
+
+    #[test]
+    fn sprite_line_snapshot_is_refreshed_for_the_next_scanline() {
+        let cartridge = solid_sprite_cartridge();
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 16;
+        ppu.mask = 0x14;
+        ppu.palette[0x11] = 0x2B;
+        ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 16]);
+
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+        ppu.oam[3] = 40;
+        ppu.scanline = 1;
+        ppu.dot = 0;
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+        for _ in 0..40 { ppu.tick_with_cartridge(1, Some(&cartridge)); }
+
+        let sprite_color = ppu.output_color(0x2B);
+        assert_ne!(ppu.framebuffer[256 + 16], sprite_color);
+        assert_eq!(ppu.framebuffer[256 + 40], sprite_color,
+            "a fresh scanline evaluation must observe the updated primary OAM");
+    }
+}
