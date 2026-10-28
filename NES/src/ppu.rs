@@ -3921,7 +3921,11 @@ mod mapper_secondary_oam_fetch_regressions {
         ppu.mapper_a12_high = false;
         ppu.mapper_bus_events.clear();
 
-        // Primary sprite zero is out of range; sprite ten is selected for line one.
+        // Keep every unmentioned sprite out of range, then select only sprite ten.
+        // Zero-filled OAM would put sprites 1-9 on line one and correctly fill all slots.
+        for sprite in 0..64usize {
+            ppu.oam[sprite * 4] = 0x40;
+        }
         ppu.oam[0..4].copy_from_slice(&[0x40, 0, 0, 0]);
         ppu.oam[10 * 4..10 * 4 + 4].copy_from_slice(&[0x00, 0x01, 0, 24]);
 
