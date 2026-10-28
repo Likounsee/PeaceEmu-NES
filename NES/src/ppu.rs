@@ -3429,7 +3429,7 @@ mod beam_sprite_composition_regressions {
         let cartridge = sprite_pattern_cartridge();
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
-        ppu.dot = 15;
+        ppu.dot = 16;
         ppu.mask = 0x14; // Sprites enabled, background disabled, left-edge sprites visible.
         ppu.palette[0x11] = 0x2B;
         ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 16]);
@@ -3472,7 +3472,7 @@ mod beam_sprite_composition_regressions {
         let cartridge = Cartridge::parse(&rom).unwrap();
         let mut ppu = Ppu::new();
         ppu.mask = 0x14;
-        ppu.palette[0x12] = 0x2C;
+        ppu.palette[0x15] = 0x2C;
         ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 16]); // Tile 0 transparent.
         ppu.oam[4..8].copy_from_slice(&[0xFF, 1, 1, 16]); // Tile 1 uses sprite palette 1.
 
