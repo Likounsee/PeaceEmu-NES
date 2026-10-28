@@ -3431,7 +3431,7 @@ mod beam_sprite_composition_regressions {
         ppu.scanline = 0;
         ppu.dot = 16;
         ppu.mask = 0x14; // Sprites enabled, background disabled, left-edge sprites visible.
-        ppu.palette[0x11] = 0x2B;
+        ppu.palette[0x13] = 0x2B;
         ppu.oam[0..4].copy_from_slice(&[0xFF, 0, 0, 16]);
 
         ppu.tick_with_cartridge(1, Some(&cartridge));
