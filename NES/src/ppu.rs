@@ -776,7 +776,21 @@ impl Ppu {
     pub fn take_nmi_request(&mut self) -> bool { core::mem::replace(&mut self.nmi_pending, false) }
 
     fn increment_vram_address(&mut self) {
-        self.v = self.v.wrapping_add(if self.ctrl & 4 != 0 { 32 } else { 1 }) & 0x7FFF;
+        // During active rendering, PPUDATA accesses collide with the background
+        // fetch pipeline: the 2C02 increments coarse X and then fine/coarse Y,
+        // rather than applying PPUCTRL's linear +1/+32 increment. This matters
+        // for raster effects and for code that touches $2007 while the beam is
+        // fetching visible or prefetch tiles.
+        let rendering_scanline = self.scanline < 240 || self.scanline == 261;
+        let rendering_fetch_window = (1..=256).contains(&self.dot)
+            || (321..=336).contains(&self.dot);
+        if self.mask & 0x18 != 0 && rendering_scanline && rendering_fetch_window {
+            self.increment_coarse_x();
+            self.increment_y();
+        } else {
+            self.v = self.v.wrapping_add(if self.ctrl & 4 != 0 { 32 } else { 1 }) & 0x7FFF;
+        }
+        self.v &= 0x7FFF;
     }
 
     fn mem_read(&self, address: u16, cartridge: Option<&Cartridge>) -> u8 {
@@ -1005,6 +1019,54 @@ mod tests {
         assert_eq!(ppu.cpu_read_register(7, None), 0);
         assert_eq!(ppu.cpu_read_register(7, None), 0x5A);
         assert_eq!(ppu.v & 0x3FFF, 0x2002);
+    }
+
+    #[test]
+    fn ppudata_during_rendering_increments_coarse_x_and_y_instead_of_linear_stride() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 20;
+        ppu.dot = 40;
+        ppu.mask = 0x08;
+        ppu.ctrl = 0x04; // Linear mode would add 32; rendering mode must use X/Y increments.
+        ppu.v = (3 << 12) | (4 << 5) | 7;
+
+        ppu.increment_vram_address();
+
+        assert_eq!(ppu.v & 0x001F, 8, "coarse X advances by one tile");
+        assert_eq!((ppu.v >> 5) & 0x1F, 4, "coarse Y stays in the same row before fine-Y rollover");
+        assert_eq!((ppu.v >> 12) & 7, 3, "fine Y stays unchanged before rollover");
+    }
+
+    #[test]
+    fn ppudata_rendering_increment_applies_special_vertical_rollover() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 20;
+        ppu.dot = 100;
+        ppu.mask = 0x18;
+        // Fine Y 7 and coarse Y 29 wrap Y to row 0 and toggle vertical nametable.
+        ppu.v = (7 << 12) | (29 << 5) | 31;
+
+        ppu.increment_vram_address();
+
+        assert_eq!(ppu.v & 0x001F, 0, "coarse X wraps");
+        assert_ne!(ppu.v & 0x0400, 0, "coarse-X rollover toggles horizontal nametable");
+        assert_eq!((ppu.v >> 5) & 0x1F, 0, "coarse Y 29 wraps to row zero");
+        assert_eq!(ppu.v & 0x0800, 0x0800, "coarse Y 29 toggles vertical nametable");
+        assert_eq!(ppu.v & 0x7000, 0, "fine Y wraps from seven to zero");
+    }
+
+    #[test]
+    fn ppudata_keeps_control_increment_outside_rendering_fetch_windows() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 20;
+        ppu.dot = 300; // Horizontal blank.
+        ppu.mask = 0x08;
+        ppu.ctrl = 0x04;
+        ppu.v = 0x2100;
+
+        ppu.increment_vram_address();
+
+        assert_eq!(ppu.v, 0x2120, "outside fetch windows PPUCTRL still selects +32");
     }
 
     #[test]
