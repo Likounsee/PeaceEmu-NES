@@ -241,9 +241,6 @@ impl Ppu {
                 continue;
             }
             self.dot += 1;
-            // Sprite evaluation is a PPU bus operation, not a scanline-end snapshot.
-            // Run it before pixel composition so secondary OAM is ready for the next line.
-            self.clock_sprite_evaluator();
             self.update_mapper_a12_bus(cartridge);
 
             // Latch the scroll address at the start of each visible scanline. The
@@ -330,6 +327,10 @@ impl Ppu {
                 self.status &= !0xE0;
                 self.update_nmi_line();
             }
+            // Complete the dot's pixel work before publishing the next line's
+            // secondary OAM. In particular, dot 256 still belongs to the old line.
+            self.clock_sprite_evaluator();
+
             if self.dot >= 341 {
                 self.dot = 0;
                 self.scanline += 1;
@@ -3781,7 +3782,7 @@ mod beam_sprite_composition_regressions {
         rom[4] = 1;
         rom[5] = 1;
         let chr = 16 + 16_384;
-        rom[chr + 16..chr + 32].fill(0xFF); // Tile 1 opaque.
+        rom[chr + 16..chr + 24].fill(0xFF); // Tile 1 low plane is opaque (pixel value 1).
         let cartridge = Cartridge::parse(&rom).unwrap();
         let mut ppu = Ppu::new();
         ppu.mask = 0x14;
