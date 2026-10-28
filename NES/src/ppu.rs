@@ -525,6 +525,8 @@ impl Ppu {
         if y >= 240 || self.sprite_line == y as u16 { return; }
         self.sprite_line = y as u16;
         self.sprite_line_count = 0;
+        self.sprite_line_oam = [[0xFF; 4]; 8];
+        self.sprite_line_indices = [0xFF; 8];
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         for index in 0..64usize {
             let base = index * 4;
