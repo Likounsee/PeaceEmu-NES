@@ -15,6 +15,19 @@ const LENGTH_TABLE: [u8; 32] = [
     12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
 ];
 
+/// Computes the pulse sweep unit's 11-bit target, including pulse 1's extra
+/// subtraction in negate mode. This combinational target also feeds the channel
+/// mute comparator when sweep updates are disabled or the shift count is zero.
+#[inline]
+fn pulse_sweep_target(period: u16, sweep: u8, channel: usize) -> u16 {
+    let change = period >> (sweep & 7);
+    if sweep & 0x08 != 0 {
+        period.wrapping_sub(change).wrapping_sub(u16::from(channel == 0))
+    } else {
+        period.saturating_add(change)
+    }
+}
+
 /// CPU-visible register state for the NES audio processing unit.
 #[derive(Clone, Debug)]
 pub struct Apu {
@@ -414,11 +427,7 @@ impl Apu {
             let sweep = self.registers[register + 1];
             let period = u16::from(self.registers[register + 2])
                 | (u16::from(self.registers[register + 3] & 7) << 8);
-            let shift = sweep & 7;
-            let change = period >> shift;
-            let target = if sweep & 0x08 != 0 {
-                period.wrapping_sub(change).wrapping_sub(u16::from(channel == 0))
-            } else { period.saturating_add(change) };
+            let target = pulse_sweep_target(period, sweep, channel);
             if sweep & 0x80 != 0 && shift != 0 && self.pulse_sweep_divider[channel] == 0
                 && period >= 8 && target <= 0x07FF {
                 self.registers[register + 2] = target as u8;
@@ -467,12 +476,12 @@ impl Apu {
             let control = self.registers[register];
             let volume = f32::from(if control & 0x10 != 0 { control & 0x0F } else { self.pulse_envelope_decay[channel] });
             let sweep = self.registers[register + 1];
-            let change = period >> (sweep & 7);
-            let target = if sweep & 0x08 != 0 {
-                period.wrapping_sub(change).wrapping_sub(u16::from(channel == 0))
-            } else { period.saturating_add(change) };
-            let sweep_muted = period < 8 || (sweep & 0x80 != 0 && sweep & 7 != 0 && target > 0x07FF)
-                || (sweep & 0x80 != 0 && sweep & 7 != 0 && sweep & 0x08 != 0 && channel == 0 && change + 1 > period);
+            let target = pulse_sweep_target(period, sweep, channel);
+            // The sweep target combinational path mutes a pulse even when the
+            // sweep unit is disabled. In particular, shift=0 still computes a
+            // target for the mute comparator; gating this check on $4001/$4005
+            // enable makes high-period tones audible when the 2A03 mutes them.
+            let sweep_muted = period < 8 || target > 0x07FF;
             if self.length_counters[channel] > 0 && period >= 8 && !sweep_muted
                 && DUTY[duty] & (1 << self.pulse_sequence[channel]) != 0 {
                 pulse += volume;
@@ -1371,6 +1380,23 @@ mod dmc_address_regression_tests {
 #[cfg(test)]
 mod pulse_output_regression_tests {
     use super::*;
+
+    #[test]
+    fn pulse_mute_comparator_uses_target_even_when_sweep_is_disabled() {
+        let mut apu = Apu::new();
+        apu.write(0x4015, 0x01);
+        apu.write(0x4000, 0x5F); // Duty 1, constant volume 15.
+        apu.write(0x4001, 0x00); // Sweep disabled, shift count zero.
+        apu.write(0x4002, 0x00);
+        apu.write(0x4003, 0xFC); // Timer period 0x700: target 0xE00, out of range.
+        assert_eq!(apu.sample(), 0.0,
+            "pulse channel must be muted when the combinational sweep target exceeds 11 bits, even with sweep disabled");
+
+        apu.write(0x4002, 0xFF);
+        apu.write(0x4003, 0x03); // Period 0x3FF; target 0x7FE is valid.
+        assert!(apu.sample() > 0.0,
+            "a period whose shift-zero target remains in range should still produce pulse output");
+    }
 
     #[test]
     fn pulse_output_requires_enabled_nonzero_length_and_valid_period() {
