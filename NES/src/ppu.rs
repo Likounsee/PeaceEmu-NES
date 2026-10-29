@@ -220,6 +220,17 @@ impl Ppu {
         }
     }
 
+    /// Accepts one byte from the OAM DMA engine.
+    ///
+    /// DMA writes are a separate bus master from CPU $2004 stores: they must
+    /// reach primary OAM even when ordinary CPU OAMDATA writes are blocked by
+    /// the renderer. Keep the DMA address increment here so the machine can
+    /// interleave source reads and destination writes at their actual cycle slots.
+    pub(crate) fn dma_write_oam_byte(&mut self, value: u8) {
+        self.oam[self.oam_addr as usize] = value;
+        self.oam_addr = self.oam_addr.wrapping_add(1);
+    }
+
     /// Returns whether rendering owns OAM and blocks CPU OAMDATA writes.
     ///
     /// The 2C02 uses primary OAM during visible and pre-render rendering
