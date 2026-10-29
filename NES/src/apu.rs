@@ -1388,7 +1388,7 @@ mod pulse_output_regression_tests {
         apu.write(0x4000, 0x5F); // Duty 1, constant volume 15.
         apu.write(0x4001, 0x00); // Sweep disabled, shift count zero.
         apu.write(0x4002, 0x00);
-        apu.write(0x4003, 0xFC); // Timer period 0x700: target 0xE00, out of range.
+        apu.write(0x4003, 0xFF); // Timer period 0x700: target 0xE00, out of range.
         assert_eq!(apu.sample(), 0.0,
             "pulse channel must be muted when the combinational sweep target exceeds 11 bits, even with sweep disabled");
 
