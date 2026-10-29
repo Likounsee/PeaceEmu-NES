@@ -219,7 +219,7 @@ impl CpuBus {
         let base = u16::from(page) << 8;
         for offset in 0..=u8::MAX {
             let value = self.read(base | u16::from(offset));
-            self.ppu.cpu_write_register(4, value, self.cartridge.as_mut());
+            self.ppu.dma_write_oam_byte(value);
         }
     }
 
