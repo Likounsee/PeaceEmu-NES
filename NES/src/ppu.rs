@@ -1366,6 +1366,22 @@ mod tests {
     }
 
     #[test]
+    fn oam_dma_write_reaches_primary_oam_during_renderer_owned_phases() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.scanline = 20;
+        ppu.dot = 280;
+        ppu.oam_addr = 0xFE;
+
+        ppu.dma_write_oam_byte(0xA1);
+        ppu.dma_write_oam_byte(0xB2);
+
+        assert_eq!(ppu.oam[0xFE], 0xA1);
+        assert_eq!(ppu.oam[0xFF], 0xB2);
+        assert_eq!(ppu.oam_addr, 0, "DMA increments OAMADDR with 8-bit wraparound");
+    }
+
+    #[test]
     fn oamdata_write_remains_available_outside_rendering() {
         let mut ppu = Ppu::new();
         ppu.mask = 0x18;
