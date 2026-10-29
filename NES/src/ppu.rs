@@ -160,7 +160,12 @@ impl Ppu {
                 self.update_nmi_line();
             }
             1 => self.mask = value,
-            3 => self.oam_addr = value,
+            3 => {
+                // The 2C02 forces OAMADDR to zero throughout sprite fetch.
+                // A CPU $2003 store during that interval must not leave a transient
+                // nonzero address for a following $2004 access in the same bus slot.
+                self.oam_addr = if self.rendering_oam_fetch_phase() { 0 } else { value };
+            }
             4 => {
                 // OAM is shared with the renderer. During visible/pre-render
                 // rendering fetches, CPU OAMDATA writes are ignored and OAMADDR
@@ -1346,6 +1351,19 @@ mod tests {
 
         assert_eq!(ppu.oam[0x20], 0xA5, "rendering owns primary OAM");
         assert_eq!(ppu.oam_addr, 0x24, "blocked writes advance OAMADDR by four");
+    }
+
+    #[test]
+    fn oamaddr_write_during_sprite_fetch_keeps_address_pinned_to_zero() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.scanline = 20;
+        ppu.dot = 280;
+        ppu.oam_addr = 0x40;
+
+        ppu.cpu_write_register(3, 0xA0, None);
+
+        assert_eq!(ppu.oam_addr, 0, "$2003 cannot escape the sprite-fetch OAMADDR pin");
     }
 
     #[test]
