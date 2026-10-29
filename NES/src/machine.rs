@@ -229,9 +229,10 @@ impl NesMachine {
         let instruction_cycles = u32::from(result.cycles);
         debug_assert!(bus_cycles <= instruction_cycles, "CPU performed more bus accesses than instruction cycles");
 
-        // Bus accesses already advanced PPU time. Advance the APU for those cycles,
-        // then clock only the remaining instruction cycles on both devices.
-        let dmc_stalls = self.bus.tick_apu(bus_cycles.min(instruction_cycles));
+        // CPU bus accesses already clocked both PPU and APU in instruction order.
+        // DMC fetches discovered during those accesses defer their stolen device cycles
+        // until the instruction boundary; the APU itself is not clocked twice here.
+        let dmc_stalls = self.bus.take_instruction_dmc_stalls();
         if dmc_stalls != 0 {
             self.cpu.add_stall_cycles(dmc_stalls.min(u32::from(u16::MAX)) as u16);
             self.clock_devices_for_cpu_cycles(dmc_stalls);
