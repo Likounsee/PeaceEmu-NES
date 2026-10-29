@@ -228,9 +228,10 @@ impl CpuBus {
         self.read((u16::from(page) << 8) | u16::from(offset))
     }
 
-    /// Writes one byte into OAM during a machine-timed DMA transfer.
+    /// Writes one byte into primary OAM as the DMA bus master.
+    /// This bypasses CPU $2004 write restrictions while preserving OAMADDR wraparound.
     pub(crate) fn write_oam_dma_byte(&mut self, value: u8) {
-        self.ppu.cpu_write_register(4, value, self.cartridge.as_mut());
+        self.ppu.dma_write_oam_byte(value);
     }
 
     /// Copies cartridge PRG-RAM without applying mapper runtime enable gates.
