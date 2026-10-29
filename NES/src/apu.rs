@@ -425,6 +425,7 @@ impl Apu {
         for channel in 0..2 {
             let register = channel * 4;
             let sweep = self.registers[register + 1];
+            let shift = sweep & 7;
             let period = u16::from(self.registers[register + 2])
                 | (u16::from(self.registers[register + 3] & 7) << 8);
             let target = pulse_sweep_target(period, sweep, channel);
