@@ -100,7 +100,13 @@ impl Ppu {
                     self.suppress_vblank = true;
                     value &= !0x80;
                 } else if self.scanline == 241 && self.dot == 1 {
+                    // If the CPU samples PPUSTATUS on the vblank-set dot, the
+                    // status bit reads low and the just-generated NMI edge is
+                    // cancelled. tick() may already have raised the edge before
+                    // this register access is decoded, so clear the queued edge
+                    // as well as the visible flag below.
                     value &= !0x80;
+                    self.nmi_pending = false;
                 }
                 self.status &= !0x80;
                 self.update_nmi_line();
@@ -3349,6 +3355,24 @@ mod background_only_sprite_evaluation_regressions {
 #[cfg(test)]
 mod vblank_nmi_race_regressions {
     use super::*;
+
+    #[test]
+    fn status_read_on_vblank_set_dot_cancels_the_queued_nmi_edge() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x80;
+        ppu.scanline = 241;
+        ppu.dot = 1;
+        ppu.status = 0x80;
+        ppu.nmi_line = true;
+        ppu.nmi_pending = true;
+
+        let status = ppu.cpu_read_register(2, None);
+
+        assert_eq!(status & 0x80, 0, "the racing status read observes vblank as clear");
+        assert_eq!(ppu.status & 0x80, 0, "the read clears the vblank flag");
+        assert!(!ppu.nmi_line, "clearing vblank lowers the NMI output");
+        assert!(!ppu.take_nmi_request(), "the NMI edge from this same-dot race must not reach the CPU");
+    }
 
     #[test]
     fn status_read_on_dot_zero_suppresses_vblank_and_its_nmi_edge() {
