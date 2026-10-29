@@ -23,9 +23,11 @@ pub struct CpuBus {
     /// Instruction execution enables one PPU cycle per CPU bus access.
     instruction_timing: bool,
     instruction_bus_cycles: u16,
+    /// DMC stalls discovered while the instruction's bus accesses clock the APU.
+    instruction_dmc_stalls: u32,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0 } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, instruction_dmc_stalls: 0 } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -52,6 +54,7 @@ impl CpuBus {
     pub(crate) fn begin_cpu_instruction(&mut self) {
         self.instruction_timing = true;
         self.instruction_bus_cycles = 0;
+        self.instruction_dmc_stalls = 0;
     }
 
     /// Stops bus-cycle tracking and returns cycles already advanced through PPU dots.
@@ -64,8 +67,18 @@ impl CpuBus {
     fn clock_instruction_bus_access(&mut self) {
         if self.instruction_timing {
             self.instruction_bus_cycles = self.instruction_bus_cycles.saturating_add(1);
+            // Clock the APU in the same order as CPU bus accesses. In particular,
+            // $4017's delayed frame-counter reset must sample the current CPU parity,
+            // not the stale parity left over from the previous instruction.
             self.tick_ppu(3);
+            self.instruction_dmc_stalls = self.instruction_dmc_stalls
+                .saturating_add(self.tick_apu(1));
         }
+    }
+
+    /// Takes DMC stalls discovered while clocking instruction bus accesses.
+    pub(crate) fn take_instruction_dmc_stalls(&mut self) -> u32 {
+        core::mem::take(&mut self.instruction_dmc_stalls)
     }
 
     /// Reads a DMC sample byte without creating a second CPU bus cycle.
