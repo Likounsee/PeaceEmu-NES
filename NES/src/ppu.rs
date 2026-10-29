@@ -1304,9 +1304,9 @@ mod tests {
         ppu.oam_addr = 0x20;
         ppu.oam[0x20] = 0x12;
 
-        ppu.dot = 64;
+        ppu.dot = 0;
         assert_eq!(ppu.cpu_read_register(4, None), 0x12,
-            "outside the clear/evaluation/fetch phases OAMDATA reads primary OAM");
+            "before the clear phase OAMDATA reads primary OAM");
 
         ppu.dot = 65;
         ppu.eval_latch = 0xA7;
@@ -1359,7 +1359,7 @@ mod tests {
         let mut ppu = Ppu::new();
         ppu.mask = 0x18;
         ppu.scanline = 20;
-        ppu.dot = 300; // Horizontal blank, outside the OAM rendering access window.
+        ppu.dot = 321; // Sprite fetch has ended; primary OAM is available again.
         ppu.oam_addr = 0x20;
 
         ppu.cpu_write_register(4, 0x5A, None);
