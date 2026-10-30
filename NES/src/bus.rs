@@ -348,9 +348,9 @@ mod tests {
     #[test]
     fn dmc_dma_waits_through_cpu_writes_and_halts_on_the_next_read() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
-        image[16 + 0x1000] = 0xA5;
+        image[16] = 0xA5;
         let mut bus = CpuBus::new();
         bus.insert_cartridge(Cartridge::parse(&image).unwrap());
         bus.write(0x4010, 0x00);
