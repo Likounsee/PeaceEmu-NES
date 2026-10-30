@@ -1506,7 +1506,7 @@ mod tests {
     #[test]
     fn ppu_generated_a12_edges_obey_the_mmc3_eight_dot_filter() {
         let mut image = vec![0; 16 + 2 * 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 2;
         image[6] = 0x40; // MMC3 / mapper 4.
         let mut cartridge = Cartridge::parse(&image).unwrap();
