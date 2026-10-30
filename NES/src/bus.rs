@@ -914,7 +914,7 @@ mod mmc3_ppu_irq_integration_regressions {
     #[test]
     fn cpu_ppudata_pattern_accesses_drive_mmc3_a12_and_irq() {
         let mut bus = mmc3_bus();
-        bus.tick_ppu(1); // Establish the low A12 baseline while rendering is disabled.
+        bus.tick_ppu(9); // Establish a low A12 baseline for at least eight dots.
         bus.write(0x2006, 0x10);
         bus.write(0x2006, 0x00);
         let _ = bus.read(0x2007); // CPU reads CHR at $1000, driving A12 high.
