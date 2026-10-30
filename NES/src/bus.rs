@@ -366,7 +366,9 @@ mod tests {
         assert_eq!(bus.take_instruction_dmc_stalls(), 4,
             "the pending sample fetch should be serviced on the following read cycle");
         assert_eq!(bus.end_cpu_instruction(), 2);
-        assert_eq!(bus.open_bus, 0xA5);
+        assert_eq!(bus.apu.dmc_sample_buffer, Some(0xA5),
+            "the DMC fetch must fill the sample buffer even though the CPU read drives open bus afterward");
+        assert_eq!(bus.open_bus, 0x55);
     }
 
     #[test]
