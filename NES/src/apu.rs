@@ -467,7 +467,7 @@ impl Apu {
     /// Generates one normalized mono sample (0.0..1.0) from current channel states.
     /// The pulse/TND nonlinear mixer is approximate; DMC output is included in the TND path.
     pub fn sample(&self) -> f32 {
-        const DUTY: [u8; 4] = [0b0000_0001, 0b0000_0011, 0b0000_1111, 0b1111_1100];
+        const DUTY: [u8; 4] = [0b0000_0010, 0b0000_0110, 0b0001_1110, 0b1111_1001];
         let mut pulse = 0.0f32;
         for channel in 0..2 {
             let register = channel * 4;
@@ -1993,4 +1993,32 @@ mod exact_frame_sequence_timing_regressions {
         assert_eq!(apu.frame_cycles, 0, "five-step sequence terminal event is cycle 18641");
         assert!(!apu.irq_pending());
     }
+    #[test]
+    fn pulse_duty_sequencer_matches_all_eight_hardware_phases() {
+        // The pulse sequencer is indexed from phase zero toward phase seven.
+        // These masks encode the 2A03 duty patterns in that same order.
+        const EXPECTED: [[bool; 8]; 4] = [
+            [false, true, false, false, false, false, false, false],
+            [false, true, true, false, false, false, false, false],
+            [false, true, true, true, true, false, false, false],
+            [true, false, false, true, true, true, true, true],
+        ];
+
+        for (duty, phases) in EXPECTED.into_iter().enumerate() {
+            for (phase, audible) in phases.into_iter().enumerate() {
+                let mut apu = Apu::new();
+                apu.registers[0] = ((duty as u8) << 6) | 0x1F; // Constant volume.
+                apu.registers[2] = 8; // Valid, unmuted timer period.
+                apu.length_counters[0] = 1;
+                apu.pulse_sequence[0] = phase as u8;
+
+                assert_eq!(
+                    apu.sample() > 0.0,
+                    audible,
+                    "pulse duty {duty}, phase {phase} has the wrong DAC state"
+                );
+            }
+        }
+    }
+
 }
