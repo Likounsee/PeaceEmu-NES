@@ -974,8 +974,8 @@ mod mmc1_cpu_bus_timing_regressions {
 
         let fixed_bank = 16 + 7 * BANK_LEN;
         let mut program = vec![0xEE, 0x00, 0xE0]; // INC $E000: two writes on adjacent cycles.
-        for _ in 0..4 {
-            program.extend_from_slice(&[0xA9, 0x00, 0x8D, 0x00, 0xE0]); // LDA #0; STA $E000.
+        for value in [1, 0, 0, 0] {
+            program.extend_from_slice(&[0xA9, value, 0x8D, 0x00, 0xE0]); // LDA #value; STA $E000.
         }
         image[fixed_bank..fixed_bank + program.len()].copy_from_slice(&program);
         image[fixed_bank + 0x2000] = 0; // The RMW reads zero from the fixed PRG bank.
