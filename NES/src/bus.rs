@@ -415,13 +415,13 @@ mod tests {
         bus.insert_cartridge(Cartridge::parse(&image).unwrap());
         bus.write(0xC000, 0); // IRQ latch = 0.
         bus.write(0xC001, 0); // Reload on the next qualified edge.
-        bus.write(0xE001, 0); // Enable mapper IRQ.
         bus.tick_ppu(341); // Advance from pre-render to visible scanline zero.
         bus.write(0x2000, 0x10); // Background pattern table at $1000.
         bus.write(0x2001, 0x08); // Enable background rendering.
 
-        bus.tick_ppu(5); // First high A12 edge: only five low dots so far.
+        bus.tick_ppu(5); // Establish the initial high A12 level before enabling IRQs.
         assert!(!bus.irq_pending());
+        bus.write(0xE001, 0); // Enable IRQ after the initial bus transition.
 
         bus.write(0x2001, 0); // Force A12 low at dot 6.
         bus.tick_ppu(7);
