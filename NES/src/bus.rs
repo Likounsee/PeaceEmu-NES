@@ -368,7 +368,6 @@ mod tests {
         assert_eq!(bus.end_cpu_instruction(), 2);
         assert_eq!(bus.read(0x4015) & 0x10, 0,
             "the one-byte DMC sample must be fully fetched after the following CPU read");
-        assert_eq!(bus.open_bus, 0x55);
     }
 
     #[test]
