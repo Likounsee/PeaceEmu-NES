@@ -407,7 +407,7 @@ mod tests {
     #[test]
     fn ppu_generated_mmc3_a12_irq_reaches_the_cpu_bus_irq_line() {
         let mut image = vec![0; 16 + 2 * 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 2;
         image[6] = 0x40; // Mapper 4 / MMC3 with CHR-RAM.
 
