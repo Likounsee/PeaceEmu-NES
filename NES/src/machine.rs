@@ -415,8 +415,8 @@ mod tests {
         assert_eq!(machine.bus.read(0x4015) & 0x10, 0,
             "the pending one-byte DMC sample must be fetched during OAM DMA");
 
-        machine.bus.write(0x2003, 0);
         for offset in 0..=u8::MAX {
+            machine.bus.write(0x2003, offset);
             assert_eq!(machine.bus.read(0x2004), offset ^ 0x6D,
                 "OAM DMA byte {offset} must survive DMC arbitration");
         }
