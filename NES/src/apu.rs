@@ -1395,6 +1395,7 @@ mod pulse_output_regression_tests {
 
         apu.write(0x4002, 0xFF);
         apu.write(0x4003, 0x03); // Period 0x3FF; target 0x7FE is valid.
+        apu.pulse_sequence[0] = 1; // Duty 1 is low at phase 0 and high at phase 1.
         assert!(apu.sample() > 0.0,
             "a period whose shift-zero target remains in range should still produce pulse output");
     }
@@ -1409,6 +1410,7 @@ mod pulse_output_regression_tests {
 
         apu.write(0x4015, 0x01);
         apu.write(0x4003, 0xF8);
+        apu.pulse_sequence[0] = 1; // Duty 1's first active phase.
         assert!(apu.sample() > 0.0, "an enabled pulse with a valid timer and active duty bit is audible");
 
         apu.write(0x4015, 0x00);
