@@ -196,15 +196,6 @@ impl Nrom {
         true
     }
 
-    /// Writes with an absolute CPU-cycle timestamp when the caller has one.
-    /// Other mapper boards retain their existing write behavior.
-    pub fn cpu_write_at(&mut self, address: u16, value: u8, cpu_cycle: u64) -> bool {
-        match self {
-            Self::Mmc1(mapper) => mapper.cpu_write_at(address, value, cpu_cycle),
-            _ => self.cpu_write(address, value),
-        }
-    }
-
     /// Returns cartridge nametable mirroring.
     pub fn mirroring(&self) -> Mirroring { self.mirroring }
     /// Returns true when character memory is RAM.
@@ -2063,6 +2054,16 @@ impl Cartridge {
     /// Writes cartridge RAM or mapper registers.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match self { Self::Nrom(c) => c.cpu_write(address, value), Self::Mmc1(c) => c.cpu_write(address, value), Self::Uxrom(c) => c.cpu_write(address, value), Self::Cnrom(c) => c.cpu_write(address, value), Self::Mmc3(c) => c.cpu_write(address, value), Self::Axrom(c) => c.cpu_write(address, value), Self::Gxrom(c) => c.cpu_write(address, value), Self::Camerica(c) => c.cpu_write(address, value), Self::ColorDreams(c) => c.cpu_write(address, value), Self::Bnrom(c) => c.cpu_write(address, value), Self::Cprom(c) => c.cpu_write(address, value), Self::Mmc2(c) => c.cpu_write(address, value), Self::Unrom512(c) => c.cpu_write(address, value), Self::Mapper15(c) => c.cpu_write(address, value), Self::Mapper8(c) => c.cpu_write(address, value), Self::Mapper87(c) => c.cpu_write(address, value) }
+    }
+
+    /// Writes with an absolute CPU-cycle timestamp when the caller has one.
+    /// MMC1 uses this to suppress consecutive-cycle serial-register writes;
+    /// other mapper boards retain their existing write behavior.
+    pub fn cpu_write_at(&mut self, address: u16, value: u8, cpu_cycle: u64) -> bool {
+        match self {
+            Self::Mmc1(mapper) => mapper.cpu_write_at(address, value, cpu_cycle),
+            _ => self.cpu_write(address, value),
+        }
     }
     /// Returns cartridge nametable mirroring.
     pub fn mirroring(&self) -> Mirroring {
