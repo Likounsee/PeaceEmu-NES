@@ -958,3 +958,36 @@ mod dmc_clock_integration_regressions {
             "the DMC stall must advance the same PPU timeline as ordinary CPU cycles");
     }
 }
+
+
+#[cfg(test)]
+mod mmc1_cpu_bus_timing_regressions {
+    use super::*;
+
+    #[test]
+    fn absolute_inc_does_not_shift_both_rmw_writes_into_mmc1() {
+        const BANK_LEN: usize = 16 * 1024;
+        let mut image = vec![0; 16 + 8 * BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 8;
+        image[6] = 0x10; // Mapper 1 with CHR-RAM.
+
+        let fixed_bank = 16 + 7 * BANK_LEN;
+        let mut program = vec![0xEE, 0x00, 0xE0]; // INC $E000: two writes on adjacent cycles.
+        for _ in 0..4 {
+            program.extend_from_slice(&[0xA9, 0x00, 0x8D, 0x00, 0xE0]); // LDA #0; STA $E000.
+        }
+        image[fixed_bank..fixed_bank + program.len()].copy_from_slice(&program);
+        image[fixed_bank + 0x2000] = 0; // The RMW reads zero from the fixed PRG bank.
+        image[fixed_bank + 0x3FFC] = 0x00;
+        image[fixed_bank + 0x3FFD] = 0xC0;
+
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        for _ in 0..9 {
+            machine.step().unwrap();
+        }
+
+        assert_eq!(machine.read_cpu(0x8000), 2,
+            "MMC1 must receive five serial bits, not the duplicate second write from INC");
+    }
+}
