@@ -248,9 +248,11 @@ impl NesMachine {
             let dma_cycles = if self.cpu.total_cycles() & 1 == 0 { 513u16 } else { 514u16 };
             self.clock_devices_for_cpu_cycles(u32::from(dma_cycles - 512));
             for offset in 0..=u8::MAX {
+                // DMC DMA may halt OAM's read/get phase, but cannot steal
+                // the write/put phase that commits the byte to PPU OAM.
                 self.clock_devices_for_cpu_cycles(1);
                 let value = self.bus.read_oam_dma_source(page, offset);
-                self.clock_devices_for_cpu_cycles(1);
+                self.clock_devices_for_cpu_cycles_with_dmc_access(1, false);
                 self.bus.write_oam_dma_byte(value);
             }
             self.cpu.add_stall_cycles(dma_cycles);
@@ -263,12 +265,23 @@ impl NesMachine {
     /// This is the central clock path for instruction time and DMA stalls. CPU bus
     /// accesses are still instruction-granular, but device time no longer jumps over
     /// scanline boundaries in one large PPU/APU batch.
-    fn clock_devices_for_cpu_cycles(&mut self, mut cycles: u32) {
+    fn clock_devices_for_cpu_cycles(&mut self, cycles: u32) {
+        self.clock_devices_for_cpu_cycles_with_dmc_access(cycles, true);
+    }
+
+    /// Advances shared device time while controlling whether this bus phase can be
+    /// halted by DMC DMA. OAM's put/write phase passes false; get/read and idle
+    /// phases pass true.
+    fn clock_devices_for_cpu_cycles_with_dmc_access(
+        &mut self,
+        mut cycles: u32,
+        dmc_dma_can_halt: bool,
+    ) {
         while cycles != 0 {
             self.bus.advance_cpu_cycle();
             let _crossed_scanlines = self.bus.tick_ppu(3);
             // MMC3 IRQs now follow filtered PPU A12 transitions instead of scanline clocks.
-            let dmc_stalls = self.bus.tick_apu(1);
+            let dmc_stalls = self.bus.tick_apu_with_dma_access(1, dmc_dma_can_halt);
             cycles -= 1;
 
             // DMC DMA steals CPU time. Each stolen cycle advances both video and audio
@@ -372,6 +385,28 @@ mod tests {
         assert_eq!(machine.total_cycles() - before_cycles, 2);
         assert_eq!(machine.ppu_position(), (261, 6),
             "opcode fetch plus the unmodelled implied-instruction cycle must advance six PPU dots");
+    }
+
+    #[test]
+    fn dmc_dma_waits_for_oam_put_phase_to_finish_before_stealing_a_get_phase() {
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
+        machine.bus.write(0x4010, 0x00);
+        machine.bus.write(0x4012, 0x00);
+        machine.bus.write(0x4013, 0x00); // One-byte sample.
+        machine.bus.write(0x4015, 0x10);
+
+        // The OAM put/write phase advances the APU but cannot be halted by DMC.
+        machine.clock_devices_for_cpu_cycles_with_dmc_access(1, false);
+        assert_ne!(machine.bus.read(0x4015) & 0x10, 0,
+            "DMC sample must remain pending throughout an OAM put phase");
+
+        // The next OAM get/read phase is a legal DMC halt point.
+        let before = machine.cpu.total_cycles();
+        machine.clock_devices_for_cpu_cycles_with_dmc_access(1, true);
+        assert_eq!(machine.cpu.total_cycles() - before, 4,
+            "the deferred DMC fetch must charge its four stolen cycles at the next get phase");
+        assert_eq!(machine.bus.read(0x4015) & 0x10, 0,
+            "the DMC sample must be fetched during the following OAM get phase");
     }
 
     #[test]
