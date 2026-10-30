@@ -135,6 +135,11 @@ impl Ppu {
             },
             7 => {
                 let address = self.v & 0x3FFF;
+                self.record_mapper_bus_address(if address >= 0x3F00 {
+                    address.wrapping_sub(0x1000)
+                } else {
+                    address
+                });
                 let fetched = self.mem_read(address, cartridge);
                 let value = if address < 0x3F00 {
                     let old = self.read_buffer;
@@ -223,7 +228,13 @@ impl Ppu {
                 self.write_latch = !self.write_latch;
             }
             7 => {
-                self.mem_write(self.v & 0x3FFF, value, cartridge);
+                let address = self.v & 0x3FFF;
+                self.record_mapper_bus_address(if address >= 0x3F00 {
+                    address.wrapping_sub(0x1000)
+                } else {
+                    address
+                });
+                self.mem_write(address, value, cartridge);
                 self.increment_vram_address();
                 self.sync_visible_scroll_after_vram_access();
             }
@@ -436,6 +447,16 @@ impl Ppu {
                 address = self.sprite_pattern_address(sprite[1] as usize, sprite[2], row);
             }
         }
+        let high = address & 0x1000 != 0;
+        if high != self.mapper_a12_high {
+            self.mapper_a12_high = high;
+            self.mapper_bus_events.push((if high { 0x1000 } else { 0 }, self.ppu_cycle));
+        }
+    }
+
+    /// Records an address driven by a CPU-initiated PPUDATA access on the
+    /// external PPU bus. Palette accesses use the hidden nametable refill address.
+    fn record_mapper_bus_address(&mut self, address: u16) {
         let high = address & 0x1000 != 0;
         if high != self.mapper_a12_high {
             self.mapper_a12_high = high;
