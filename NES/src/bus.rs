@@ -23,11 +23,13 @@ pub struct CpuBus {
     /// Instruction execution enables one PPU cycle per CPU bus access.
     instruction_timing: bool,
     instruction_bus_cycles: u16,
+    /// Absolute CPU-cycle timeline shared with cycle-sensitive cartridge mappers.
+    cpu_cycle: u64,
     /// DMC stalls discovered while the instruction's bus accesses clock the APU.
     instruction_dmc_stalls: u32,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, instruction_dmc_stalls: 0 } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, instruction_dmc_stalls: 0 } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -67,6 +69,7 @@ impl CpuBus {
     fn clock_instruction_bus_access(&mut self) {
         if self.instruction_timing {
             self.instruction_bus_cycles = self.instruction_bus_cycles.saturating_add(1);
+            self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
             // Clock the APU in the same order as CPU bus accesses. In particular,
             // $4017's delayed frame-counter reset must sample the current CPU parity,
             // not the stale parity left over from the previous instruction.
@@ -74,6 +77,12 @@ impl CpuBus {
             self.instruction_dmc_stalls = self.instruction_dmc_stalls
                 .saturating_add(self.tick_apu(1));
         }
+    }
+
+    /// Advances the shared CPU-cycle timeline for an internal or DMA cycle that
+    /// does not pass through a normal CPU memory access.
+    pub(crate) fn advance_cpu_cycle(&mut self) {
+        self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
     }
 
     /// Takes DMC stalls discovered while clocking instruction bus accesses.
@@ -127,11 +136,27 @@ impl CpuBus {
         self.open_bus = value;
         match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF] = value,
-            0x6000..=0x7FFF => { if let Some(cartridge) = self.cartridge.as_mut() { cartridge.cpu_write(address, value); } },
+            0x6000..=0x7FFF => {
+                if let Some(cartridge) = self.cartridge.as_mut() {
+                    if self.instruction_timing {
+                        cartridge.cpu_write_at(address, value, self.cpu_cycle);
+                    } else {
+                        cartridge.cpu_write(address, value);
+                    }
+                }
+            },
             0x2000..=0x3FFF => self.ppu.cpu_write_register(address & 7, value, self.cartridge.as_mut()),
             0x4000..=0x4013 | 0x4015 | 0x4017 => self.apu.write(address, value),
             0x4014 => self.pending_oam_dma = Some(value),
-            0x8000..=0xFFFF => { if let Some(cartridge) = self.cartridge.as_mut() { cartridge.cpu_write(address, value); } },
+            0x8000..=0xFFFF => {
+                if let Some(cartridge) = self.cartridge.as_mut() {
+                    if self.instruction_timing {
+                        cartridge.cpu_write_at(address, value, self.cpu_cycle);
+                    } else {
+                        cartridge.cpu_write(address, value);
+                    }
+                }
+            },
             0x4016 => {
                 let next_strobe = value & 1 != 0;
                 if next_strobe || self.controller_strobe {
