@@ -224,7 +224,7 @@ impl CpuBus {
     /// The 2A03 can halt the CPU for DMC DMA only on a read cycle. A write cycle
     /// still advances every APU unit, but leaves an empty sample buffer pending
     /// until a later readable bus slot (or an internal idle/read cycle).
-    fn tick_apu_with_dma_access(&mut self, cycles: u32, dma_can_halt: bool) -> u32 {
+    pub(crate) fn tick_apu_with_dma_access(&mut self, cycles: u32, dma_can_halt: bool) -> u32 {
         // Most games do not use DMC. Advance their APU cycles in a single batch
         // instead of checking the CPU bus for DMA on every cycle.
         if !self.apu.needs_dmc_bus_service() {
