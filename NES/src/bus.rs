@@ -127,6 +127,7 @@ impl CpuBus {
             0x8000..=0xFFFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
             _ => self.open_bus,
         };
+        self.sync_mapper_bus_events();
         self.open_bus = value;
         value
     }
@@ -166,6 +167,7 @@ impl CpuBus {
             },
             _ => {}
         }
+        self.sync_mapper_bus_events();
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
     /// The values are latched by the next strobe write to $4016.
@@ -199,11 +201,18 @@ impl CpuBus {
     /// Advances the PPU by the specified number of dots.
     pub fn tick_ppu(&mut self, dots: u32) -> u32 {
         let crossed = self.ppu.tick_with_cartridge(dots, self.cartridge.as_ref());
+        self.sync_mapper_bus_events();
+        crossed
+    }
+
+    /// Forwards PPU address-bus transitions to cartridge IRQ circuitry.
+    fn sync_mapper_bus_events(&mut self) {
         let events = self.ppu.take_mapper_bus_events();
         if let Some(cartridge) = self.cartridge.as_mut() {
-            for (address, cycle) in events { cartridge.observe_ppu_address(address, cycle); }
+            for (address, cycle) in events {
+                cartridge.observe_ppu_address(address, cycle);
+            }
         }
-        crossed
     }
     /// Legacy scanline IRQ clock retained for diagnostics.
     pub fn clock_mapper_irq(&mut self) { if let Some(cartridge) = self.cartridge.as_mut() { cartridge.clock_irq_counter(); } }
@@ -900,6 +909,17 @@ mod mmc3_ppu_irq_integration_regressions {
         bus.write(0xC001, 0); // Reload on the next qualified A12 edge.
         bus.write(0xE001, 0); // Enable mapper IRQ.
         bus
+    }
+
+    #[test]
+    fn cpu_ppudata_pattern_accesses_drive_mmc3_a12_and_irq() {
+        let mut bus = mmc3_bus();
+        bus.tick_ppu(1); // Establish the low A12 baseline while rendering is disabled.
+        bus.write(0x2006, 0x10);
+        bus.write(0x2006, 0x00);
+        let _ = bus.read(0x2007); // CPU reads CHR at $1000, driving A12 high.
+        assert!(bus.irq_pending(),
+            "a CPU PPUDATA pattern-table access must be visible to MMC3's A12 IRQ filter");
     }
 
     #[test]
