@@ -5136,3 +5136,46 @@ mod mmc3_trainer_ram_regressions {
         assert_eq!(cart.cpu_read(0x7000), Some(0x5A), "disabling RAM must hide, not erase, trainer data");
     }
 }
+
+
+#[cfg(test)]
+mod mmc1_cycle_write_regressions {
+    use super::*;
+
+    fn mmc1_image() -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + 8 * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 8;
+        image[6] = 0x10; // Mapper 1, CHR-RAM.
+        for bank in 0..8usize {
+            image[INES_HEADER_LEN + bank * PRG_BANK_LEN
+                ..INES_HEADER_LEN + (bank + 1) * PRG_BANK_LEN]
+                .fill(bank as u8);
+        }
+        image
+    }
+
+    #[test]
+    fn mmc1_ignores_only_the_second_mapper_write_on_adjacent_cpu_cycles() {
+        let mut cartridge = Cartridge::parse(&mmc1_image()).unwrap();
+
+        assert!(cartridge.cpu_write_at(0xE000, 0, 10));
+        assert!(cartridge.cpu_write_at(0xE000, 1, 11),
+            "a suppressed hardware write is still a handled mapper access");
+        assert!(cartridge.cpu_write_at(0xE000, 1, 12));
+        assert!(cartridge.cpu_write_at(0xE000, 0, 14));
+        assert!(cartridge.cpu_write_at(0xE000, 0, 16));
+        assert!(cartridge.cpu_write_at(0xE000, 0, 18));
+
+        assert_eq!(cartridge.cpu_read(0x8000), Some(2),
+            "the consecutive-cycle bit must not enter the five-bit serial value");
+    }
+
+    #[test]
+    fn mmc1_ram_writes_are_not_subject_to_serial_register_write_suppression() {
+        let mut cartridge = Cartridge::parse(&mmc1_image()).unwrap();
+        assert!(cartridge.cpu_write_at(0x6000, 0xA5, 20));
+        assert!(cartridge.cpu_write_at(0x6000, 0x5A, 21));
+        assert_eq!(cartridge.cpu_read(0x6000), Some(0x5A));
+    }
+}
