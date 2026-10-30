@@ -240,24 +240,28 @@ impl NesMachine {
         self.clock_devices_for_cpu_cycles(instruction_cycles.saturating_sub(bus_cycles));
 
         if let Some(page) = self.bus.take_oam_dma_request() {
-            // OAM DMA is 512 alternating source-read/OAM-write cycles, preceded
-            // by one halt cycle and an extra alignment cycle on odd CPU parity.
-            // Advance the devices between individual bus phases: source reads from
-            // mirrored I/O pages can have side effects, and SMB's raster split must
-            // not see an entire DMA as an instantaneous memory copy.
-            let dma_cycles = if self.cpu.total_cycles() & 1 == 0 { 513u16 } else { 514u16 };
-            self.clock_devices_for_cpu_cycles(u32::from(dma_cycles - 512));
-            for offset in 0..=u8::MAX {
-                // DMC DMA may halt OAM's read/get phase, but cannot steal
-                // the write/put phase that commits the byte to PPU OAM.
-                self.clock_devices_for_cpu_cycles(1);
-                let value = self.bus.read_oam_dma_source(page, offset);
-                self.clock_devices_for_cpu_cycles_with_dmc_access(1, false);
-                self.bus.write_oam_dma_byte(value);
-            }
-            self.cpu.add_stall_cycles(dma_cycles);
+            self.perform_oam_dma(page);
         }
         Ok(result)
+    }
+
+    /// Runs one OAM DMA transfer, allowing DMC to arbitrate only on read/get phases.
+    fn perform_oam_dma(&mut self, page: u8) {
+        // OAM DMA is 512 alternating source-read/OAM-write cycles, preceded
+        // by one halt cycle and an extra alignment cycle on odd CPU parity.
+        // Advance devices between phases so I/O side effects and raster timing
+        // remain observable during the transfer.
+        let dma_cycles = if self.cpu.total_cycles() & 1 == 0 { 513u16 } else { 514u16 };
+        self.clock_devices_for_cpu_cycles(u32::from(dma_cycles - 512));
+        for offset in 0..=u8::MAX {
+            // DMC DMA may halt OAM's read/get phase, but cannot steal
+            // the write/put phase that commits the byte to PPU OAM.
+            self.clock_devices_for_cpu_cycles(1);
+            let value = self.bus.read_oam_dma_source(page, offset);
+            self.clock_devices_for_cpu_cycles_with_dmc_access(1, false);
+            self.bus.write_oam_dma_byte(value);
+        }
+        self.cpu.add_stall_cycles(dma_cycles);
     }
 
     /// Advances PPU and APU time in CPU-cycle-sized quanta.
@@ -385,6 +389,37 @@ mod tests {
         assert_eq!(machine.total_cycles() - before_cycles, 2);
         assert_eq!(machine.ppu_position(), (261, 6),
             "opcode fetch plus the unmodelled implied-instruction cycle must advance six PPU dots");
+    }
+
+    #[test]
+    fn oam_dma_services_pending_dmc_fetch_without_corrupting_oam_bytes() {
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
+        for offset in 0..=u8::MAX {
+            machine.bus.write(0x0200 | u16::from(offset), offset ^ 0x6D);
+        }
+
+        // Arm a one-byte DMC sample and let its request become pending on a
+        // non-haltable CPU write phase immediately before OAM DMA begins.
+        machine.bus.write(0x4010, 0x00);
+        machine.bus.write(0x4012, 0x00);
+        machine.bus.write(0x4013, 0x00);
+        machine.bus.write(0x4015, 0x10);
+        machine.bus.tick_apu_with_dma_access(1, false);
+
+        let before = machine.total_cycles();
+        machine.perform_oam_dma(0x02);
+
+        // Reset starts on odd parity: base OAM DMA is 514 cycles. The pending
+        // DMC fetch adds four stolen cycles without replacing any OAM transfer.
+        assert_eq!(machine.total_cycles() - before, 518);
+        assert_eq!(machine.bus.read(0x4015) & 0x10, 0,
+            "the pending one-byte DMC sample must be fetched during OAM DMA");
+
+        machine.bus.write(0x2003, 0);
+        for offset in 0..=u8::MAX {
+            assert_eq!(machine.bus.read(0x2004), offset ^ 0x6D,
+                "OAM DMA byte {offset} must survive DMC arbitration");
+        }
     }
 
     #[test]
