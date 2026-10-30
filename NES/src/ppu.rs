@@ -1504,6 +1504,49 @@ mod tests {
     }
 
     #[test]
+    fn ppu_generated_a12_edges_obey_the_mmc3_eight_dot_filter() {
+        let mut image = vec![0; 16 + 2 * 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 2;
+        image[6] = 0x40; // MMC3 / mapper 4.
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        cartridge.cpu_write(0xC000, 0); // IRQ latch = 0.
+        cartridge.cpu_write(0xC001, 0); // Reload on the next qualified edge.
+        cartridge.cpu_write(0xE001, 0); // Enable IRQs.
+
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.ctrl = 0x10; // Background pattern table at $1000.
+        ppu.mask = 0x08;
+        ppu.tick_with_cartridge(5, Some(&cartridge));
+        for (address, cycle) in ppu.take_mapper_bus_events() {
+            cartridge.observe_ppu_address(address, cycle);
+        }
+        assert!(!cartridge.irq_pending(), "the initial high transition has not had eight low dots");
+
+        // Drop A12 at dot 6, then raise it at dot 13: exactly seven low dots.
+        ppu.mask = 0;
+        ppu.tick_with_cartridge(7, Some(&cartridge));
+        ppu.mask = 0x08;
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+        for (address, cycle) in ppu.take_mapper_bus_events() {
+            cartridge.observe_ppu_address(address, cycle);
+        }
+        assert!(!cartridge.irq_pending(), "the PPU-generated seven-dot low interval must be rejected");
+
+        // The next low transition is dot 14. Keep rendering disabled through dot 21,
+        // then the pattern fetch at dot 22 produces an eight-dot qualified edge.
+        ppu.mask = 0;
+        ppu.tick_with_cartridge(8, Some(&cartridge));
+        ppu.mask = 0x08;
+        ppu.tick_with_cartridge(1, Some(&cartridge));
+        for (address, cycle) in ppu.take_mapper_bus_events() {
+            cartridge.observe_ppu_address(address, cycle);
+        }
+        assert!(cartridge.irq_pending(), "the PPU-generated eight-dot low interval must clock MMC3 IRQ");
+    }
+
+    #[test]
     fn mapper_a12_uses_the_actual_pattern_table_address() {
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
