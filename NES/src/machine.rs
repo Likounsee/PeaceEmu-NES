@@ -265,6 +265,7 @@ impl NesMachine {
     /// scanline boundaries in one large PPU/APU batch.
     fn clock_devices_for_cpu_cycles(&mut self, mut cycles: u32) {
         while cycles != 0 {
+            self.bus.advance_cpu_cycle();
             let _crossed_scanlines = self.bus.tick_ppu(3);
             // MMC3 IRQs now follow filtered PPU A12 transitions instead of scanline clocks.
             let dmc_stalls = self.bus.tick_apu(1);
