@@ -2004,19 +2004,22 @@ mod exact_frame_sequence_timing_regressions {
             [true, false, false, true, true, true, true, true],
         ];
 
-        for (duty, phases) in EXPECTED.into_iter().enumerate() {
-            for (phase, audible) in phases.into_iter().enumerate() {
-                let mut apu = Apu::new();
-                apu.registers[0] = ((duty as u8) << 6) | 0x1F; // Constant volume.
-                apu.registers[2] = 8; // Valid, unmuted timer period.
-                apu.length_counters[0] = 1;
-                apu.pulse_sequence[0] = phase as u8;
+        for channel in 0..2 {
+            for (duty, phases) in EXPECTED.into_iter().enumerate() {
+                for (phase, audible) in phases.into_iter().enumerate() {
+                    let mut apu = Apu::new();
+                    let register = channel * 4;
+                    apu.registers[register] = ((duty as u8) << 6) | 0x1F; // Constant volume.
+                    apu.registers[register + 2] = 8; // Valid, unmuted timer period.
+                    apu.length_counters[channel] = 1;
+                    apu.pulse_sequence[channel] = phase as u8;
 
-                assert_eq!(
-                    apu.sample() > 0.0,
-                    audible,
-                    "pulse duty {duty}, phase {phase} has the wrong DAC state"
-                );
+                    assert_eq!(
+                        apu.sample() > 0.0,
+                        audible,
+                        "pulse channel {channel}, duty {duty}, phase {phase} has the wrong DAC state"
+                    );
+                }
             }
         }
     }
