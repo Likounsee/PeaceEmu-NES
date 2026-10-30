@@ -628,6 +628,7 @@ mod tests {
         machine.write_cpu(0x4000, 0x9F);
         machine.write_cpu(0x4002, 0x20);
         machine.write_cpu(0x4003, 0xF8);
+        machine.clock_devices_for_cpu_cycles(1); // Advance from duty phase 0 to its first active phase.
         assert!(machine.audio_sample() > 0.0);
     }
 
@@ -968,7 +969,7 @@ mod mmc1_cpu_bus_timing_regressions {
     fn absolute_inc_does_not_shift_both_rmw_writes_into_mmc1() {
         const BANK_LEN: usize = 16 * 1024;
         let mut image = vec![0; 16 + 8 * BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 8;
         image[6] = 0x10; // Mapper 1 with CHR-RAM.
 
