@@ -405,6 +405,38 @@ mod tests {
     }
 
     #[test]
+    fn ppu_generated_mmc3_a12_irq_reaches_the_cpu_bus_irq_line() {
+        let mut image = vec![0; 16 + 2 * 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 2;
+        image[6] = 0x40; // Mapper 4 / MMC3 with CHR-RAM.
+
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0xC000, 0); // IRQ latch = 0.
+        bus.write(0xC001, 0); // Reload on the next qualified edge.
+        bus.write(0xE001, 0); // Enable mapper IRQ.
+        bus.ppu.scanline = 0;
+        bus.write(0x2000, 0x10); // Background pattern table at $1000.
+        bus.write(0x2001, 0x08); // Enable background rendering.
+
+        bus.tick_ppu(5); // First high A12 edge: only five low dots so far.
+        assert!(!bus.irq_pending());
+
+        bus.write(0x2001, 0); // Force A12 low at dot 6.
+        bus.tick_ppu(7);
+        bus.write(0x2001, 0x08); // Next high edge at dot 13: seven low dots.
+        bus.tick_ppu(1);
+        assert!(!bus.irq_pending(), "the bus must forward and filter a seven-dot A12 interval");
+
+        bus.write(0x2001, 0); // Start another low interval at dot 14.
+        bus.tick_ppu(8);
+        bus.write(0x2001, 0x08); // Qualified high edge at dot 22.
+        bus.tick_ppu(1);
+        assert!(bus.irq_pending(), "the PPU IRQ must propagate through CpuBus to the CPU IRQ line");
+    }
+
+    #[test]
     fn mmc3_mapper_irq_is_visible_on_the_cpu_irq_line() {
         let mut image = vec![0; 16 + 2 * 16_384 + 8_192];
         image[0..4].copy_from_slice(b"NES\x1A");
