@@ -1166,7 +1166,7 @@ mod mmc1_timed_bus_write_regressions {
     fn instruction_bus_suppresses_only_the_second_adjacent_mmc1_write() {
         const BANK_LEN: usize = 16 * 1024;
         let mut image = vec![0; 16 + 8 * BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 8;
         image[6] = 0x10;
         for bank in 0..8usize {
@@ -1181,14 +1181,21 @@ mod mmc1_timed_bus_write_regressions {
         bus.write(0xE000, 0);
         bus.write(0xE000, 1);
         assert_eq!(bus.end_cpu_instruction(), 2);
+        // The RMW instruction has four earlier fetch/read cycles not represented
+        // by these two writes, so account for its remaining internal bus slots.
+        for _ in 0..4 {
+            bus.advance_cpu_cycle();
+        }
 
-        // Four later stores are separated by full instruction boundaries.
+        // Four later stores are separated by full four-cycle STA instructions.
         for value in [1, 0, 0, 0] {
             bus.begin_cpu_instruction();
             bus.write(0xE000, value);
             assert_eq!(bus.end_cpu_instruction(), 1);
             // Model the remaining CPU cycles in the instruction.
-            bus.advance_cpu_cycle();
+            for _ in 0..3 {
+                bus.advance_cpu_cycle();
+            }
         }
 
         assert_eq!(bus.read(0x8000), 2,
