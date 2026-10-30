@@ -416,7 +416,7 @@ mod tests {
         bus.write(0xC000, 0); // IRQ latch = 0.
         bus.write(0xC001, 0); // Reload on the next qualified edge.
         bus.write(0xE001, 0); // Enable mapper IRQ.
-        bus.ppu.scanline = 0;
+        bus.tick_ppu(341); // Advance from pre-render to visible scanline zero.
         bus.write(0x2000, 0x10); // Background pattern table at $1000.
         bus.write(0x2001, 0x08); // Enable background rendering.
 
