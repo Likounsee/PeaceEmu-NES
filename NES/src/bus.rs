@@ -1156,3 +1156,42 @@ mod dmc_mapper_bank_integration_regressions {
             "the selected $C000 bank's all-one sample should raise the DMC DAC");
     }
 }
+
+
+#[cfg(test)]
+mod mmc1_timed_bus_write_regressions {
+    use super::*;
+
+    #[test]
+    fn instruction_bus_suppresses_only_the_second_adjacent_mmc1_write() {
+        const BANK_LEN: usize = 16 * 1024;
+        let mut image = vec![0; 16 + 8 * BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 8;
+        image[6] = 0x10;
+        for bank in 0..8usize {
+            image[16 + bank * BANK_LEN..16 + (bank + 1) * BANK_LEN].fill(bank as u8);
+        }
+
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+
+        // This models the two writes of an absolute RMW instruction.
+        bus.begin_cpu_instruction();
+        bus.write(0xE000, 0);
+        bus.write(0xE000, 1);
+        assert_eq!(bus.end_cpu_instruction(), 2);
+
+        // Four later stores are separated by full instruction boundaries.
+        for value in [1, 0, 0, 0] {
+            bus.begin_cpu_instruction();
+            bus.write(0xE000, value);
+            assert_eq!(bus.end_cpu_instruction(), 1);
+            // Model the remaining CPU cycles in the instruction.
+            bus.advance_cpu_cycle();
+        }
+
+        assert_eq!(bus.read(0x8000), 2,
+            "the timed bus must preserve the RMW's first write and suppress its second");
+    }
+}
