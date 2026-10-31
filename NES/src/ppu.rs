@@ -913,6 +913,13 @@ impl Ppu {
             let scroll_y = base_coarse_y * 8 + fine_y + y;
             let tile_y = scroll_y / 8;
             let (coarse_y, nt_y) = Self::scroll_coarse_y(base_coarse_y, base_nt_y, tile_y - base_coarse_y);
+            // Snapshot rendering follows the same tile-latch rule as the beam
+            // renderer: decode each tile's nametable, pattern and attribute bytes
+            // once, then reuse them for its eight output pixels.
+            let mut cached_tile_addr = None;
+            let mut cached_low = 0u8;
+            let mut cached_high = 0u8;
+            let mut cached_palette_id = 0u8;
             for x in 0..WIDTH {
                 let output = y * WIDTH + x;
                 if !rendering_enabled || (x < 8 && !show_left) {
@@ -926,24 +933,29 @@ impl Ppu {
                 let nametable = 0x2000u16 + ((nt_y * 2 + nt_x) as u16) * 0x400;
                 let coarse_x = tile_x % 32;
                 let tile_addr = nametable + (coarse_y * 32 + coarse_x) as u16;
-                let tile = self.mem_read(tile_addr, cartridge) as u16;
                 let row = (scroll_y % 8) as u16;
                 let col = (scroll_x % 8) as u16;
-                let pattern_addr = pattern_base + tile * 16 + row;
-                let low = self.mem_read(pattern_addr, cartridge);
-                let high = self.mem_read(pattern_addr + 8, cartridge);
-                let bit = 7 - col;
-                let pixel = ((low >> bit) & 1) | (((high >> bit) & 1) << 1);
-                self.background_opaque[output] = pixel != 0;
-                if pixel == 0 {
-                    self.framebuffer[output] = self.output_color(self.palette[0]);
-                } else {
+                if cached_tile_addr != Some(tile_addr) {
+                    let tile = self.mem_read(tile_addr, cartridge) as u16;
+                    let pattern_addr = pattern_base + tile * 16 + row;
+                    cached_low = self.mem_read(pattern_addr, cartridge);
+                    cached_high = self.mem_read(pattern_addr + 8, cartridge);
                     let attr_addr = nametable + 0x3C0
                         + ((coarse_y / 4) * 8 + coarse_x / 4) as u16;
                     let attr = self.mem_read(attr_addr, cartridge);
                     let shift = (((coarse_y % 4) / 2) * 4 + ((coarse_x % 4) / 2) * 2) as u8;
-                    let palette_id = (attr >> shift) & 3;
-                    self.framebuffer[output] = self.output_color(self.palette[(palette_id * 4 + pixel) as usize]);
+                    cached_palette_id = (attr >> shift) & 3;
+                    cached_tile_addr = Some(tile_addr);
+                }
+                let bit = 7 - col;
+                let pixel = ((cached_low >> bit) & 1) | (((cached_high >> bit) & 1) << 1);
+                self.background_opaque[output] = pixel != 0;
+                if pixel == 0 {
+                    self.framebuffer[output] = self.output_color(self.palette[0]);
+                } else {
+                    self.framebuffer[output] = self.output_color(
+                        self.palette[(cached_palette_id * 4 + pixel) as usize]
+                    );
                 }
             }
         }
