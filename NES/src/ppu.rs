@@ -451,7 +451,7 @@ impl Ppu {
     fn clock_background_fetch_pipeline(&mut self, cartridge: Option<&Cartridge>) {
         let rendering_line = self.scanline < 240 || self.scanline == 261;
         let fetch_window = (1..=256).contains(&self.dot) || (321..=336).contains(&self.dot);
-        if !rendering_line || !fetch_window || self.mask & 0x08 == 0 {
+        if !rendering_line || !fetch_window || self.mask & 0x18 == 0 {
             return;
         }
 
