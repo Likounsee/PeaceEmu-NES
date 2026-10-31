@@ -3276,7 +3276,7 @@ mod camerica_tests {
     #[test]
     fn mapper_71_nes2_parses_extended_header_and_maps_banks() {
         let mut image = camerica_image(4);
-        image[7] = 0x48; // NES 2.0 marker and mapper 71 high nibble.
+        image[7] = 0x08; // NES 2.0 marker and mapper 71 high nibble.
         image[8] = 0;
         image[9] = 0;
         image[10] = 7; // 8 KiB volatile PRG-RAM.
