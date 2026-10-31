@@ -862,6 +862,12 @@ impl Ppu {
 
     /// Advances sprite X counters and pattern shifters after the current pixel.
     fn clock_sprite_output_pipeline(&mut self) {
+        // The sprite output units are clocked only while either rendering
+        // layer is active. With rendering disabled, X delays and pattern
+        // shifters must retain their state rather than silently consuming pixels.
+        if self.mask & 0x18 == 0 {
+            return;
+        }
         for slot in 0..self.sprite_line_count as usize {
             if self.sprite_x_counter[slot] != 0 {
                 self.sprite_x_counter[slot] -= 1;
@@ -4811,6 +4817,52 @@ mod background_tile_latch_regressions {
         assert_eq!(ppu.framebuffer[1], ppu.output_color(ppu.palette[0]));
         assert_eq!(ppu.framebuffer[2], ppu.output_color(0x2A));
         assert_eq!(ppu.sprite_shift_low[0], 0);
+    }
+
+    #[test]
+    fn sprite_output_pipeline_stalls_when_rendering_is_disabled() {
+        let mut ppu = Ppu::new();
+        ppu.sprite_line_count = 1;
+        ppu.sprite_pattern_valid[0] = true;
+        ppu.sprite_x_counter[0] = 3;
+        ppu.sprite_shift_low[0] = 0x80;
+        ppu.sprite_shift_high[0] = 0x40;
+
+        ppu.clock_sprite_output_pipeline();
+        assert_eq!(ppu.sprite_x_counter[0], 3);
+        assert_eq!(ppu.sprite_shift_low[0], 0x80);
+        assert_eq!(ppu.sprite_shift_high[0], 0x40);
+
+        ppu.mask = 0x08; // Background rendering alone still clocks sprite units.
+        ppu.clock_sprite_output_pipeline();
+        assert_eq!(ppu.sprite_x_counter[0], 2);
+        assert_eq!(ppu.sprite_shift_low[0], 0x80);
+    }
+
+    #[test]
+    fn sprite_fetch_uses_8x16_tile_bank_and_vertical_flip() {
+        let mut image = vec![0; 16 + 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        // Sprite tile 3 selects pattern bank $1000 and tile pair 2/3.
+        // Vertical flip on row 0 selects the bottom row of the 16-pixel sprite:
+        // tile 3, row 7 -> CHR offset $1000 + 3*16 + 7.
+        image[16 + 16_384 + 0x1000 + 3 * 16 + 7] = 0x80;
+        let cartridge = Cartridge::parse(&image).unwrap();
+
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x20;
+        ppu.mask = 0x10;
+        ppu.scanline = 261;
+        ppu.sprite_line_oam[0] = [0xFF, 3, 0x80, 0];
+        ppu.dot = 261;
+        ppu.clock_sprite_pattern_fetch(Some(&cartridge));
+        ppu.dot = 263;
+        ppu.clock_sprite_pattern_fetch(Some(&cartridge));
+
+        assert_eq!(ppu.sprite_pattern_low[0], 0x80);
+        assert!(ppu.sprite_pattern_valid[0]);
     }
 
     #[test]
