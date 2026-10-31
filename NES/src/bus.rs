@@ -1304,3 +1304,45 @@ mod mmc1_timed_bus_write_regressions {
             "the timed bus must preserve the RMW's first write and suppress its second");
     }
 }
+
+
+#[cfg(test)]
+mod mmc3_ppudata_write_bus_regressions {
+    use super::*;
+
+    fn configured_mmc3_bus() -> CpuBus {
+        let mut image = vec![0; 16 + 2 * 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 2;
+        image[5] = 1;
+        image[6] = 0x40;
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0xC000, 0);
+        bus.write(0xC001, 0);
+        bus.write(0xE001, 0);
+        bus.tick_ppu(9);
+        bus
+    }
+
+    #[test]
+    fn cpu_ppudata_chr_write_clocks_mmc3_a12_irq() {
+        let mut bus = configured_mmc3_bus();
+        bus.write(0x2006, 0x10);
+        bus.write(0x2006, 0x00);
+        bus.write(0x2007, 0x5A);
+        assert!(bus.irq_pending(),
+            "CPU PPUDATA writes to CHR space must be forwarded to MMC3 A12 filtering");
+    }
+
+    #[test]
+    fn cpu_ppudata_palette_write_does_not_fake_an_external_a12_edge() {
+        let mut bus = configured_mmc3_bus();
+        bus.write(0x2006, 0x3F);
+        bus.write(0x2006, 0x00);
+        bus.write(0x2007, 0x2A);
+        assert!(!bus.irq_pending(),
+            "internal palette RAM writes must not trigger MMC3 as if $2F00 were read");
+    }
+}
+
