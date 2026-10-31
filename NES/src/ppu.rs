@@ -4701,6 +4701,30 @@ mod background_tile_latch_regressions {
     }
 
     #[test]
+    fn fetched_sprite_planes_ignore_chr_ram_changes_until_next_sprite_fetch() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        cartridge.ppu_write(0, 0x80);
+        cartridge.ppu_write(8, 0x40);
+
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.scanline = 261;
+        ppu.sprite_line_oam[0] = [0xFF, 0, 0, 0];
+        ppu.dot = 261;
+        ppu.clock_sprite_pattern_fetch(Some(&cartridge));
+        ppu.dot = 263;
+        ppu.clock_sprite_pattern_fetch(Some(&cartridge));
+
+        cartridge.ppu_write(0, 0);
+        cartridge.ppu_write(8, 0);
+        assert_eq!(ppu.fetched_sprite_pixel(0, 0, 0), Some(1));
+        assert_eq!(ppu.fetched_sprite_pixel(0, 0, 1), Some(2));
+    }
+
+    #[test]
     fn background_shifter_output_uses_fine_x_and_attribute_planes() {
         let mut ppu = Ppu::new();
         ppu.mask = 0x0A;
