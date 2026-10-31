@@ -70,6 +70,7 @@ pub struct Ppu {
     bg_next_attribute: u8,
     bg_next_pattern_low: u8,
     bg_next_pattern_high: u8,
+    bg_pipeline_primed: bool,
     ppu_cycle: u64,
     mapper_a12_high: bool,
     mapper_bus_initialized: bool,
@@ -99,6 +100,7 @@ impl Default for Ppu {
             bg_attribute_shift_low: 0, bg_attribute_shift_high: 0,
             bg_next_tile_id: 0, bg_next_attribute: 0,
             bg_next_pattern_low: 0, bg_next_pattern_high: 0,
+            bg_pipeline_primed: false,
             ppu_cycle: 0, mapper_a12_high: false, mapper_bus_initialized: false, mapper_bus_events: Vec::new(),
         }
     }
@@ -350,7 +352,13 @@ impl Ppu {
             if (1..=256).contains(&self.dot) && self.scanline < 240 {
                 let x = (self.dot - 1) as usize;
                 let y = self.scanline as usize;
-                self.render_background_pixel_from_shifters(x, y);
+                if self.bg_pipeline_primed {
+                    self.render_background_pixel_from_shifters(x, y);
+                } else {
+                    // Preserve deterministic output before the first pre-render
+                    // background prefetch has primed the hardware shifters.
+                    self.render_background_pixel(x, y, cartridge);
+                }
                 if self.status & 0x40 == 0 && self.sprite_zero_hit_at(x, y, cartridge) {
                     self.status |= 0x40;
                 }
@@ -487,6 +495,9 @@ impl Ppu {
                 self.bg_attribute_shift_high =
                     (self.bg_attribute_shift_high & 0xFF00)
                         | if self.bg_next_attribute & 2 != 0 { 0x00FF } else { 0 };
+                if self.scanline == 261 && self.dot == 336 {
+                    self.bg_pipeline_primed = true;
+                }
             }
             _ => {}
         }
