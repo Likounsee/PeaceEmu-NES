@@ -4703,7 +4703,7 @@ mod background_tile_latch_regressions {
     #[test]
     fn fetched_sprite_planes_ignore_chr_ram_changes_until_next_sprite_fetch() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap();
         cartridge.ppu_write(0, 0x80);
