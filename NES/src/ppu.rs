@@ -55,7 +55,6 @@ pub struct Ppu {
     /// eight output pixels sourced from the same fetched tile.
     bg_tile_cache_valid: bool,
     bg_tile_cache_tile_addr: u16,
-    bg_tile_cache_pattern_addr: u16,
     bg_tile_cache_pattern_base: u16,
     bg_tile_cache_fine_y: u8,
     bg_tile_cache_start_x: usize,
@@ -84,7 +83,7 @@ impl Default for Ppu {
             nmi_pending: false, nmi_line: false, suppress_vblank: false,
             framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
             bg_tile_cache_valid: false, bg_tile_cache_tile_addr: 0,
-            bg_tile_cache_pattern_addr: 0, bg_tile_cache_pattern_base: 0,
+            bg_tile_cache_pattern_base: 0,
             bg_tile_cache_fine_y: 0, bg_tile_cache_start_x: 0,
             bg_tile_cache_low: 0, bg_tile_cache_high: 0, bg_tile_cache_palette_id: 0,
             ppu_cycle: 0, mapper_a12_high: false, mapper_bus_initialized: false, mapper_bus_events: Vec::new(),
@@ -625,7 +624,6 @@ impl Ppu {
             let pattern_addr = pattern_base + tile * 16 + fine_y as u16;
             self.bg_tile_cache_low = self.mem_read(pattern_addr, cartridge);
             self.bg_tile_cache_high = self.mem_read(pattern_addr + 8, cartridge);
-            self.bg_tile_cache_pattern_addr = pattern_addr;
             let attr_addr = nametable + 0x3C0 + ((coarse_y / 4) * 8 + coarse_x / 4) as u16;
             let attr = self.mem_read(attr_addr, cartridge);
             let shift = (((coarse_y % 4) / 2) * 4 + ((coarse_x % 4) / 2) * 2) as u8;
@@ -4391,6 +4389,66 @@ mod palette_read_mapper_bus_regressions {
         assert_eq!(ppu.mapper_bus_events, vec![(0, 0)],
             "palette reads must expose the hidden $2F00 refill, unlike palette writes");
         assert_eq!(ppu.read_buffer, 0x55);
+    }
+}
+
+
+
+#[cfg(test)]
+mod background_tile_latch_regressions {
+    use super::*;
+
+    fn cartridge_with_two_background_tiles() -> Cartridge {
+        let mut image = vec![0; 16 + 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        image[16 + 0] = 0xFF; // Tile 0: opaque low plane.
+        image[16 + 16] = 0x00; // Tile 1: transparent.
+        Cartridge::parse(&image).unwrap()
+    }
+
+    #[test]
+    fn pattern_and_attribute_data_remain_latched_for_the_current_tile() {
+        let cartridge = cartridge_with_two_background_tiles();
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x0A; // Background plus leftmost eight pixels.
+        ppu.palette[1] = 0x11;
+        ppu.palette[5] = 0x22;
+        ppu.nametables[0] = 0; // First tile uses pattern tile 0.
+        ppu.nametables[0x3C0] = 0; // First attribute quadrant uses palette 0.
+
+        ppu.render_background_pixel(0, 0, Some(&cartridge));
+        assert_eq!(ppu.framebuffer[0], 0x11);
+
+        // Change both source records after the first pixel. The rest of this
+        // eight-pixel tile must continue using the already-fetched tile data.
+        ppu.nametables[0] = 1;
+        ppu.nametables[0x3C0] = 1;
+        ppu.render_background_pixel(1, 0, Some(&cartridge));
+        assert_eq!(ppu.framebuffer[1], 0x11,
+            "a mid-tile nametable/attribute write must not rewrite fetched tile latches");
+
+        // The next tile is a new fetch and observes the changed attribute and
+        // tile index, so its transparent pixels use the universal background.
+        ppu.render_background_pixel(8, 0, Some(&cartridge));
+        assert_eq!(ppu.framebuffer[8], ppu.palette[0]);
+        assert_eq!(ppu.bg_tile_cache_palette_id, 1);
+    }
+
+    #[test]
+    fn next_tile_fetch_observes_chr_ram_bank_content_changes() {
+        let cartridge = cartridge_with_two_background_tiles();
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x0A;
+        ppu.palette[1] = 0x11;
+        ppu.nametables[0] = 0;
+        ppu.render_background_pixel(0, 0, Some(&cartridge));
+        assert_eq!(ppu.framebuffer[0], 0x11);
+
+        ppu.render_background_pixel(8, 0, Some(&cartridge));
+        assert_eq!(ppu.framebuffer[8], 0x11,
+            "a new tile fetch should independently load its pattern bytes");
     }
 }
 
