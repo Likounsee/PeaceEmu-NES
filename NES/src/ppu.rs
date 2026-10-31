@@ -3376,6 +3376,67 @@ mod mapper_a12_bus_regressions {
     }
 
     #[test]
+    fn sprite_fetch_a12_edges_follow_secondary_oam_and_exact_slot_cycles() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x20; // 8x16 sprites: tile bit zero selects CHR A12.
+        ppu.mask = 0x10;
+        ppu.scanline = 0;
+        ppu.dot = 260;
+        ppu.ppu_cycle = 260;
+        ppu.mapper_bus_initialized = true;
+        ppu.mapper_a12_high = false;
+        // The selected sprite was copied from primary OAM entry 37.
+        ppu.sprite_line_oam[0] = [0, 0x03, 0, 0];
+
+        ppu.dot = 261; // Slot 0 pattern fetch, phase 4.
+        ppu.ppu_cycle = 261;
+        ppu.update_mapper_a12_bus(None);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 261)],
+            "an odd 8x16 tile must raise A12 on the sprite pattern-fetch slot");
+
+        ppu.dot = 265; // Slot 1 begins; its dummy/name-table portion drives A12 low.
+        ppu.ppu_cycle = 265;
+        ppu.update_mapper_a12_bus(None);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 265)],
+            "A12 must fall at the next slot's low-address fetch phase");
+    }
+
+    #[test]
+    fn sprite_fetch_a12_uses_sprite_pattern_table_control_in_8x8_mode() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x18; // Background and sprite pattern tables both at $1000.
+        ppu.mask = 0x18;
+        ppu.scanline = 261;
+        ppu.dot = 261;
+        ppu.ppu_cycle = 261;
+        ppu.mapper_bus_initialized = true;
+        ppu.mapper_a12_high = false;
+        ppu.sprite_line_oam[0] = [0xFF, 0x00, 0x00, 0x00];
+
+        ppu.update_mapper_a12_bus(None);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 261)],
+            "8x8 sprite fetches must use PPUCTRL bit 3, independently of background bit 4");
+    }
+
+    #[test]
+    fn sprite_fetch_a12_uses_the_selected_secondary_oam_slot_not_primary_index() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x20;
+        ppu.mask = 0x10;
+        ppu.scanline = 12;
+        ppu.dot = 261;
+        ppu.ppu_cycle = 900;
+        ppu.mapper_bus_initialized = true;
+        ppu.mapper_a12_high = false;
+        ppu.sprite_line_indices[0] = 37;
+        ppu.sprite_line_oam[0] = [12, 0x02, 0, 0];
+
+        ppu.update_mapper_a12_bus(None);
+        assert!(ppu.take_mapper_bus_events().is_empty(),
+            "even tile 2 in secondary OAM selects the low CHR bank, regardless of primary OAM index");
+    }
+
+    #[test]
     fn disabling_rendering_emits_a_low_edge_for_mapper_irq_filters() {
         let mut ppu = Ppu::new();
         ppu.ctrl = 0x10;
