@@ -4775,6 +4775,7 @@ mod background_tile_latch_regressions {
     #[test]
     fn sprite_x_counters_delay_and_gate_live_pattern_shifters() {
         let mut ppu = Ppu::new();
+        ppu.mask = 0x10;
         ppu.sprite_line_count = 1;
         ppu.sprite_pattern_valid[0] = true;
         ppu.sprite_x_counter[0] = 2;
