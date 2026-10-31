@@ -869,27 +869,47 @@ pub struct Axrom {
 }
 
 impl Axrom {
-    /// Parses a legacy iNES mapper-7 image with 2-32 16 KiB PRG units and CHR-RAM.
+    /// Parses iNES or NES 2.0 mapper-7 images with 32 KiB PRG banks and 8 KiB CHR-RAM.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
-        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
-        let mapper = ((image[6] >> 4) as u16)
-            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        let nes2 = image[7] & 0x0C == 0x08;
+        let mapper = if nes2 {
+            ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
+                | (((image[8] & 0x0F) as u16) << 8)
+        } else {
+            ((image[6] >> 4) as u16)
+                | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
+        };
         if mapper != 7 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
-        let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if image[4] < 2 || image[4] > 16 || image[4] % 2 != 0 {
+        if nes2 && image[8] >> 4 != 0 { return Err(CartridgeError::Nes2NotSupported); }
+
+        let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
+            else { image[4] as usize * PRG_BANK_LEN };
+        if prg_len < 2 * PRG_BANK_LEN || prg_len % (2 * PRG_BANK_LEN) != 0
+            || prg_len > 16 * PRG_BANK_LEN {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
-        let chr_len = image[5] as usize * CHR_BANK_LEN;
-        if chr_len != 0 { return Err(CartridgeError::InvalidChrSize(chr_len)); }
+        let chr_rom_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) }
+            else { image[5] as usize * CHR_BANK_LEN };
+        if chr_rom_len != 0 { return Err(CartridgeError::InvalidChrSize(chr_rom_len)); }
+
+        let prg_ram_len = if nes2 {
+            nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4))
+        } else { PRG_RAM_LEN };
+        let chr_ram_len = if nes2 {
+            nes2_ram_size(image[11] & 0x0F).saturating_add(nes2_ram_size(image[11] >> 4))
+        } else { CHR_BANK_LEN };
+        if prg_ram_len > PRG_RAM_LEN { return Err(CartridgeError::Nes2NotSupported); }
+        if chr_ram_len != CHR_BANK_LEN { return Err(CartridgeError::Nes2NotSupported); }
+
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
         let expected = INES_HEADER_LEN + trainer_len + prg_len;
         if image.len() < expected {
             return Err(CartridgeError::TruncatedImage { expected, actual: image.len() });
         }
         let prg_start = INES_HEADER_LEN + trainer_len;
-        let mut prg_ram = vec![0; PRG_RAM_LEN];
+        let mut prg_ram = vec![0; prg_ram_len.max(if trainer_len != 0 { PRG_RAM_LEN } else { 0 })];
         if trainer_len != 0 {
             prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
         }
@@ -905,7 +925,7 @@ impl Axrom {
     /// Reads PRG-RAM or the selected 32 KiB PRG-ROM window.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
         match address {
-            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+            0x6000..=0x7FFF => self.prg_ram.get(address as usize - 0x6000).copied(),
             0x8000..=0xFFFF => {
                 let index = self.selected_prg_bank * 2 * PRG_BANK_LEN + address as usize - 0x8000;
                 Some(self.prg_rom[index])
@@ -917,7 +937,7 @@ impl Axrom {
     /// Writes PRG-RAM or selects the PRG bank and one-screen nametable page.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
-            0x6000..=0x7FFF => { self.prg_ram[address as usize - 0x6000] = value; true }
+            0x6000..=0x7FFF => { if let Some(byte) = self.prg_ram.get_mut(address as usize - 0x6000) { *byte = value; true } else { false } }
             0x8000..=0xFFFF => {
                 // Keep the selected window inside the ROM image. Smaller legacy
                 // AxROM images can expose fewer than eight 32 KiB banks.
@@ -2030,7 +2050,7 @@ impl Cartridge {
             let mapper = ((image[6] >> 4) as u16)
                 | (image[7] & 0xF0) as u16
                 | (((image[8] & 0x0F) as u16) << 8);
-            if !matches!(mapper, 0 | 2 | 3 | 4 | 8 | 11 | 66 | 71) { return Err(CartridgeError::Nes2NotSupported); }
+            if !matches!(mapper, 0 | 2 | 3 | 4 | 7 | 8 | 11 | 66 | 71) { return Err(CartridgeError::Nes2NotSupported); }
         }
         let mapper = if nes2 {
             ((image[6] >> 4) as u16)
@@ -5406,6 +5426,68 @@ mod color_dreams_nes2_tests {
         assert!(matches!(Cartridge::parse(&submapper), Err(CartridgeError::Nes2NotSupported)));
 
         let mut truncated = nes2_color_dreams();
+        truncated.pop();
+        assert!(matches!(Cartridge::parse(&truncated), Err(CartridgeError::TruncatedImage { .. })));
+    }
+}
+
+
+
+#[cfg(test)]
+mod axrom_nes2_tests {
+    use super::*;
+
+    fn nes2_axrom() -> Vec<u8> {
+        let prg_len = 4 * PRG_BANK_LEN;
+        let mut image = vec![0; INES_HEADER_LEN + prg_len];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 4;
+        image[6] = 0x70;
+        image[7] = 0x08;
+        image[8] = 0;
+        image[9] = 0;
+        image[10] = 7;
+        image[11] = 7;
+        for bank in 0..2 {
+            let start = INES_HEADER_LEN + bank * 2 * PRG_BANK_LEN;
+            image[start..start + 2 * PRG_BANK_LEN].fill(0x60 + bank as u8);
+        }
+        image
+    }
+
+    #[test]
+    fn nes2_axrom_maps_declared_ram_and_switches_prg_and_mirroring() {
+        let mut cart = Cartridge::parse(&nes2_axrom()).unwrap();
+        assert!(matches!(cart, Cartridge::Axrom(_)));
+        assert_eq!(cart.cpu_read(0x8000), Some(0x60));
+        assert!(cart.cpu_write(0x6000, 0xA5));
+        assert_eq!(cart.cpu_read(0x6000), Some(0xA5));
+        assert!(cart.cpu_write(0x8000, 0x11));
+        assert_eq!(cart.cpu_read(0x8000), Some(0x61));
+        assert_eq!(cart.mirroring(), Mirroring::OneScreenUpper);
+    }
+
+    #[test]
+    fn nes2_axrom_without_prg_ram_keeps_ram_unmapped() {
+        let mut image = nes2_axrom();
+        image[10] = 0;
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.cpu_read(0x6000), None);
+        assert!(!cart.cpu_write(0x6000, 0xA5));
+        assert_eq!(cart.cpu_read(0x8000), Some(0x60));
+    }
+
+    #[test]
+    fn nes2_axrom_rejects_unsupported_submapper_chr_ram_and_truncation() {
+        let mut submapper = nes2_axrom();
+        submapper[8] = 0x10;
+        assert!(matches!(Cartridge::parse(&submapper), Err(CartridgeError::Nes2NotSupported)));
+
+        let mut chr_ram = nes2_axrom();
+        chr_ram[11] = 6;
+        assert!(matches!(Cartridge::parse(&chr_ram), Err(CartridgeError::Nes2NotSupported)));
+
+        let mut truncated = nes2_axrom();
         truncated.pop();
         assert!(matches!(Cartridge::parse(&truncated), Err(CartridgeError::TruncatedImage { .. })));
     }
