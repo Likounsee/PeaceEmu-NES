@@ -4436,6 +4436,7 @@ mod background_tile_latch_regressions {
         // Change both source records after the first pixel. The rest of this
         // eight-pixel tile must continue using the already-fetched tile data.
         ppu.nametables[0] = 1;
+        ppu.nametables[1] = 1; // The next tile independently selects transparent tile 1.
         ppu.nametables[0x3C0] = 1;
         ppu.render_background_pixel(1, 0, Some(&cartridge));
         assert_eq!(ppu.framebuffer[1], 0x11,
