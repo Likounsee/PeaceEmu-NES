@@ -720,6 +720,9 @@ impl Mapper8 {
         let declared_prg_ram_len = if nes2 {
             nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4))
         } else { PRG_RAM_LEN };
+        if nes2 && declared_prg_ram_len > PRG_RAM_LEN {
+            return Err(CartridgeError::Nes2NotSupported);
+        }
         let prg_ram_len = declared_prg_ram_len.min(PRG_RAM_LEN)
             .max(if trainer_len != 0 { PRG_RAM_LEN } else { 0 });
         let mut prg_ram = vec![0; prg_ram_len];
