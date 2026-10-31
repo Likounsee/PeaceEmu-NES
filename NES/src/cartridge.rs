@@ -872,7 +872,7 @@ impl Axrom {
     /// Parses iNES or NES 2.0 mapper-7 images with 32 KiB PRG banks and 8 KiB CHR-RAM.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
         let nes2 = image[7] & 0x0C == 0x08;
         let mapper = if nes2 {
             ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
@@ -5375,7 +5375,7 @@ mod color_dreams_nes2_tests {
         let prg_len = 4 * PRG_BANK_LEN;
         let chr_len = 2 * CHR_BANK_LEN;
         let mut image = vec![0; INES_HEADER_LEN + prg_len + chr_len];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 4;
         image[5] = 2;
         image[6] = 0xB0;
@@ -5440,7 +5440,7 @@ mod axrom_nes2_tests {
     fn nes2_axrom() -> Vec<u8> {
         let prg_len = 4 * PRG_BANK_LEN;
         let mut image = vec![0; INES_HEADER_LEN + prg_len];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 4;
         image[6] = 0x70;
         image[7] = 0x08;
