@@ -1277,7 +1277,7 @@ impl Bnrom {
     /// Parses iNES or NES 2.0 mapper-34 BNROM images (submapper 0) using CHR-RAM.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
         let nes2 = image[7] & 0x0C == 0x08;
         let mapper = if nes2 {
             ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
@@ -1377,7 +1377,7 @@ impl Cprom {
     /// Parses iNES or NES 2.0 mapper-13 images with fixed 32 KiB PRG and 16 KiB CHR-RAM.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
         let nes2 = image[7] & 0x0C == 0x08;
         let mapper = if nes2 {
             ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
@@ -5376,7 +5376,7 @@ mod nes2_bnrom_cprom_tests {
     fn bnrom_image() -> Vec<u8> {
         let prg_len = 4 * PRG_BANK_LEN;
         let mut image = vec![0; INES_HEADER_LEN + prg_len];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 4;
         image[6] = 0x20;
         image[7] = 0x08;
@@ -5392,7 +5392,7 @@ mod nes2_bnrom_cprom_tests {
     fn cprom_image() -> Vec<u8> {
         let prg_len = 2 * PRG_BANK_LEN;
         let mut image = vec![0; INES_HEADER_LEN + prg_len];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 2;
         image[6] = 0xD0;
         image[7] = 0x08;
