@@ -4553,7 +4553,7 @@ mod background_tile_latch_regressions {
     fn background_fetch_pipeline_latches_tile_attribute_and_pattern_in_phase_order() {
         let image = {
             let mut bytes = vec![0; 16 + 16_384];
-            bytes[0..4].copy_from_slice(b"NES\\x1A");
+            bytes[0..4].copy_from_slice(b"NES\x1A");
             bytes[4] = 1;
             bytes
         };
