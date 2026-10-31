@@ -5525,7 +5525,7 @@ mod nes2_bnrom_cprom_tests {
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 4;
         image[6] = 0x20;
-        image[7] = 0x08;
+        image[7] = 0x28; // NES 2.0 marker plus mapper 34 high bits.
         image[10] = 7;
         image[11] = 7;
         for bank in 0..2 {
