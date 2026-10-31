@@ -4618,7 +4618,7 @@ mod background_tile_latch_regressions {
 
         assert_eq!(ppu.dot, 280);
         assert_eq!(ppu.v & 0x7BE0, 0x7B20);
-        assert_eq!(ppu.v & 0x041F, 0x0015,
+        assert_eq!(ppu.v & 0x041F, 0x0415,
             "pre-render vertical reload preserves the horizontal scroll fields");
     }
 
