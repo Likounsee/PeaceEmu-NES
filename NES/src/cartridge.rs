@@ -3899,7 +3899,7 @@ mod nes2_nrom_tests {
         let mut submapper = nes2_nrom(2, 0);
         submapper[6] = 0x20;
         submapper[7] = 0x08;
-        submapper[8] = 0x20;
+        submapper[8] = 0x30; // Submapper 3 is not implemented.
         assert!(matches!(Cartridge::parse(&submapper), Err(CartridgeError::Nes2NotSupported)));
 
         let mut oversized_prg_ram = nes2_nrom(2, 0);
