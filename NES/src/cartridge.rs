@@ -439,6 +439,11 @@ impl Uxrom {
                 | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
         };
         if mapper != 2 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
+        // This implementation models the standard UxROM board (submapper 0)
+        // and the bus-conflict variant (submapper 1) only.
+        if nes2 && image[8] >> 4 > 1 {
+            return Err(CartridgeError::Nes2NotSupported);
+        }
 
         let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
             else { image[4] as usize * PRG_BANK_LEN };
@@ -460,7 +465,10 @@ impl Uxrom {
         let declared_prg_ram_len = if nes2 {
             nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4))
         } else { PRG_RAM_LEN };
-        let prg_ram_len = declared_prg_ram_len.min(PRG_RAM_LEN)
+        if nes2 && declared_prg_ram_len > PRG_RAM_LEN {
+            return Err(CartridgeError::Nes2NotSupported);
+        }
+        let prg_ram_len = declared_prg_ram_len
             .max(if trainer_len != 0 { PRG_RAM_LEN } else { 0 });
         let mut prg_ram = vec![0; prg_ram_len];
         if trainer_len != 0 {
@@ -469,7 +477,11 @@ impl Uxrom {
         let declared_chr_ram_len = if nes2 {
             nes2_ram_size(image[11] & 0x0F).saturating_add(nes2_ram_size(image[11] >> 4))
         } else { CHR_BANK_LEN };
-        let chr_ram_len = declared_chr_ram_len.min(CHR_BANK_LEN);
+        if nes2 && (declared_chr_ram_len > CHR_BANK_LEN
+            || (chr_len != 0 && declared_chr_ram_len != 0)) {
+            return Err(CartridgeError::Nes2NotSupported);
+        }
+        let chr_ram_len = declared_chr_ram_len;
         let chr_is_ram = chr_len == 0 && chr_ram_len > 0;
         let chr = if chr_len != 0 { image[chr_start..chr_start + chr_len].to_vec() }
             else { vec![0; chr_ram_len] };
@@ -3879,6 +3891,33 @@ mod nes2_nrom_tests {
         assert_eq!(cart.cpu_read(0x6000), Some(0xA5));
         assert!(cart.ppu_write(0x0000, 0x5A));
         assert_eq!(cart.ppu_read(0x0000), Some(0x5A));
+    }
+
+    #[test]
+    fn nes2_uxrom_rejects_unsupported_submappers_and_oversized_ram() {
+        let mut submapper = nes2_nrom(2, 0);
+        submapper[6] = 0x20;
+        submapper[7] = 0x08;
+        submapper[8] = 0x20;
+        assert!(matches!(Cartridge::parse(&submapper), Err(CartridgeError::Nes2NotSupported)));
+
+        let mut oversized_prg_ram = nes2_nrom(2, 0);
+        oversized_prg_ram[6] = 0x20;
+        oversized_prg_ram[7] = 0x08;
+        oversized_prg_ram[10] = 8; // 16 KiB exceeds the UxROM RAM window.
+        assert!(matches!(Cartridge::parse(&oversized_prg_ram), Err(CartridgeError::Nes2NotSupported)));
+
+        let mut oversized_chr_ram = nes2_nrom(2, 0);
+        oversized_chr_ram[6] = 0x20;
+        oversized_chr_ram[7] = 0x08;
+        oversized_chr_ram[11] = 8;
+        assert!(matches!(Cartridge::parse(&oversized_chr_ram), Err(CartridgeError::Nes2NotSupported)));
+
+        let mut mixed_chr = nes2_nrom(2, 1);
+        mixed_chr[6] = 0x20;
+        mixed_chr[7] = 0x08;
+        mixed_chr[11] = 7;
+        assert!(matches!(Cartridge::parse(&mixed_chr), Err(CartridgeError::Nes2NotSupported)));
     }
 
     #[test]
