@@ -1292,7 +1292,7 @@ impl Bnrom {
         let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
             else { image[4] as usize * PRG_BANK_LEN };
         if prg_len < 2 * PRG_BANK_LEN || prg_len % (2 * PRG_BANK_LEN) != 0
-            || prg_len > 8 * 2 * PRG_BANK_LEN {
+            || prg_len > 8 * PRG_BANK_LEN {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         let chr_rom_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) }
@@ -1600,20 +1600,29 @@ pub struct ColorDreams {
 }
 
 impl ColorDreams {
-    /// Parses a legacy iNES mapper-11 image with switchable PRG-ROM and CHR-ROM.
+    /// Parses iNES or NES 2.0 mapper-11 images with banked PRG-ROM and CHR-ROM.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
-        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
-        let mapper = ((image[6] >> 4) as u16)
-            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        let nes2 = image[7] & 0x0C == 0x08;
+        let mapper = if nes2 {
+            ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
+                | (((image[8] & 0x0F) as u16) << 8)
+        } else {
+            ((image[6] >> 4) as u16)
+                | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
+        };
         if mapper != 11 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
-        let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if image[4] < 2 || image[4] % 2 != 0 || image[4] > 32 {
+        if nes2 && image[8] >> 4 != 0 { return Err(CartridgeError::Nes2NotSupported); }
+        let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
+            else { image[4] as usize * PRG_BANK_LEN };
+        if prg_len < 2 * PRG_BANK_LEN || prg_len % (2 * PRG_BANK_LEN) != 0
+            || prg_len > 32 * PRG_BANK_LEN {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
-        let chr_len = image[5] as usize * CHR_BANK_LEN;
-        if chr_len == 0 || chr_len > 16 * CHR_BANK_LEN {
+        let chr_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) }
+            else { image[5] as usize * CHR_BANK_LEN };
+        if chr_len == 0 || chr_len > 16 * CHR_BANK_LEN || chr_len % CHR_BANK_LEN != 0 {
             return Err(CartridgeError::InvalidChrSize(chr_len));
         }
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
@@ -1623,7 +1632,11 @@ impl ColorDreams {
         }
         let prg_start = INES_HEADER_LEN + trainer_len;
         let chr_start = prg_start + prg_len;
-        let mut prg_ram = vec![0; PRG_RAM_LEN];
+        let declared_ram_len = if nes2 {
+            nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4))
+        } else { PRG_RAM_LEN };
+        if declared_ram_len > PRG_RAM_LEN { return Err(CartridgeError::Nes2NotSupported); }
+        let mut prg_ram = vec![0; declared_ram_len.max(if trainer_len != 0 { PRG_RAM_LEN } else { 0 })];
         if trainer_len != 0 {
             prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
         }
@@ -1638,25 +1651,22 @@ impl ColorDreams {
             mirroring,
         })
     }
-
-    /// Reads PRG-RAM or the selected 32 KiB PRG-ROM window.
+    /// Reads mapped PRG-RAM or the selected 32 KiB PRG-ROM window.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
         match address {
-            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+            0x6000..=0x7FFF => self.prg_ram.get(address as usize - 0x6000).copied(),
             0x8000..=0xFFFF => {
                 let index = self.selected_prg_bank * 2 * PRG_BANK_LEN + address as usize - 0x8000;
-                Some(self.prg_rom[index])
+                self.prg_rom.get(index).copied()
             }
             _ => None,
         }
     }
-
-    /// Writes PRG-RAM or selects the 32 KiB PRG and 8 KiB CHR banks.
+    /// Writes mapped PRG-RAM or selects the 32 KiB PRG and 8 KiB CHR banks.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
             0x6000..=0x7FFF => {
-                self.prg_ram[address as usize - 0x6000] = value;
-                true
+                if let Some(byte) = self.prg_ram.get_mut(address as usize - 0x6000) { *byte = value; true } else { false }
             }
             0x8000..=0xFFFF => {
                 let prg_count = self.prg_rom.len() / (2 * PRG_BANK_LEN);
@@ -1668,20 +1678,14 @@ impl ColorDreams {
             _ => false,
         }
     }
-
-    /// Returns the fixed mirroring mode from the iNES header.
     pub fn mirroring(&self) -> Mirroring { self.mirroring }
-    /// Color Dreams uses CHR-ROM in this implementation.
     pub fn chr_is_ram(&self) -> bool { false }
-    /// Reads from the selected 8 KiB CHR-ROM bank.
     pub fn ppu_read(&self, address: u16) -> Option<u8> {
         if address >= 0x2000 { return None; }
-        Some(self.chr_rom[self.selected_chr_bank * CHR_BANK_LEN + address as usize])
+        self.chr_rom.get(self.selected_chr_bank * CHR_BANK_LEN + address as usize).copied()
     }
-    /// CHR-ROM is read-only.
     pub fn ppu_write(&mut self, _address: u16, _value: u8) -> bool { false }
 }
-
 
 /// MMC2 (mapper 9): one switchable 8 KiB PRG window and two latch-controlled 4 KiB CHR windows.
 #[derive(Clone, Debug, Eq, PartialEq)]
