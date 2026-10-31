@@ -3629,6 +3629,7 @@ mod sprite_priority_pipeline_regressions {
     fn prepared_ppu() -> Ppu {
         let mut ppu = Ppu::new();
         ppu.mask = 0x14;
+        ppu.dot = 1; // Preserve the explicitly prepared secondary-OAM line.
         ppu.sprite_line = 0;
         ppu.sprite_line_count = 2;
         ppu.sprite_line_oam[0] = [0xFF, 0, 0, 0];
