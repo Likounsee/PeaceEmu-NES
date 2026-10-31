@@ -4792,7 +4792,7 @@ mod background_tile_latch_regressions {
     #[test]
     fn horizontal_flip_reverses_sprite_planes_before_shifting() {
         let mut image = vec![0; 16 + 16_384 + 8_192];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[5] = 1;
         image[16 + 16_384] = 0x80;
