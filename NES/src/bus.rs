@@ -1312,7 +1312,7 @@ mod mmc3_ppudata_write_bus_regressions {
 
     fn configured_mmc3_bus() -> CpuBus {
         let mut image = vec![0; 16 + 2 * 16_384 + 8_192];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 2;
         image[5] = 1;
         image[6] = 0x40;
