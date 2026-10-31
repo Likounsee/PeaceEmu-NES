@@ -18,6 +18,10 @@ pub struct Ppu {
     sprite_line_oam: [[u8; 4]; 8],
     sprite_line_indices: [u8; 8],
     sprite_line_count: u8,
+    /// Pattern bytes fetched for the eight hardware sprite slots on the prior line.
+    sprite_pattern_low: [u8; 8],
+    sprite_pattern_high: [u8; 8],
+    sprite_pattern_valid: [bool; 8],
     sprite_line: u16,
     /// Sprite evaluation state: n selects the primary-OAM sprite and m its byte.
     eval_n: u8,
@@ -82,7 +86,9 @@ impl Default for Ppu {
         Self {
             ctrl: 0, mask: 0, status: 0, oam_addr: 0, oam: [0; 256],
             sprite_line_oam: [[0xFF; 4]; 8], sprite_line_indices: [0xFF; 8],
-            sprite_line_count: 0, sprite_line: u16::MAX,
+            sprite_line_count: 0,
+            sprite_pattern_low: [0; 8], sprite_pattern_high: [0; 8],
+            sprite_pattern_valid: [false; 8], sprite_line: u16::MAX,
             eval_n: 0, eval_m: 0, eval_latch: 0xFF, eval_copying: false,
             eval_target_y: 0, eval_oam: [[0xFF; 4]; 8],
             eval_indices: [0xFF; 8], eval_count: 0,
@@ -431,6 +437,7 @@ impl Ppu {
             // Complete the dot's pixel work before publishing the next line's
             // secondary OAM. In particular, dot 256 still belongs to the old line.
             self.clock_sprite_evaluator();
+            self.clock_sprite_pattern_fetch(cartridge);
 
             if self.dot >= 341 {
                 self.dot = 0;
@@ -654,13 +661,10 @@ impl Ppu {
 
         let attributes = sprite[2];
         let row_in_sprite = y - sprite_top;
-        self.sprite_pixel(
-            sprite[1] as usize,
-            attributes,
-            row_in_sprite,
-            x - sprite_left,
-            cartridge,
-        ) != 0
+        self.fetched_sprite_pixel(sprite_zero_slot, attributes, x - sprite_left)
+            .unwrap_or_else(|| self.sprite_pixel(
+                sprite[1] as usize, attributes, row_in_sprite, x - sprite_left, cartridge
+            )) != 0
     }
 
     /// Renders one background pixel when the emulated beam reaches it.
@@ -781,7 +785,10 @@ impl Ppu {
             if x < left || x >= left + 8 { continue; }
             let tile = sprite[1] as usize;
             let attributes = sprite[2];
-            let pixel = self.sprite_pixel(tile, attributes, y.saturating_sub(top), x - left, cartridge);
+            let pixel = self.fetched_sprite_pixel(slot, attributes, x - left)
+                .unwrap_or_else(|| self.sprite_pixel(
+                    tile, attributes, y.saturating_sub(top), x - left, cartridge
+                ));
             if pixel == 0 { continue; }
             // A hidden opaque sprite still blocks lower-priority sprites.
             if attributes & 0x20 == 0 || !self.background_opaque[y * 256 + x] {
@@ -791,6 +798,48 @@ impl Ppu {
             }
             return;
         }
+    }
+
+    /// Performs the two CHR reads for each secondary-OAM sprite slot.
+    ///
+    /// The eight slots occupy dots 257-320. Pattern planes are fetched on
+    /// phases 4 and 6 of each eight-dot slot and retained for the following line.
+    fn clock_sprite_pattern_fetch(&mut self, cartridge: Option<&Cartridge>) {
+        if !(self.scanline < 240 || self.scanline == 261) || self.mask & 0x18 == 0 {
+            return;
+        }
+        if self.dot == 257 {
+            self.sprite_pattern_valid = [false; 8];
+        }
+        if !(257..=320).contains(&self.dot) {
+            return;
+        }
+        let phase = (self.dot - 257) & 7;
+        if phase != 4 && phase != 6 {
+            return;
+        }
+        let slot = ((self.dot - 257) / 8) as usize;
+        let sprite = self.sprite_line_oam[slot];
+        let target_y = if self.scanline == 261 { 0 } else { self.scanline as usize + 1 };
+        let top = sprite_top(sprite[0]);
+        let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
+        let row = target_y.wrapping_sub(top) % height;
+        let address = self.sprite_pattern_address(sprite[1] as usize, sprite[2], row);
+        if phase == 4 {
+            self.sprite_pattern_low[slot] = self.mem_read(address, cartridge);
+        } else {
+            self.sprite_pattern_high[slot] = self.mem_read(address + 8, cartridge);
+            self.sprite_pattern_valid[slot] = true;
+        }
+    }
+
+    /// Reads one pixel from the fetched sprite planes, falling back only for
+    /// direct renderer/debug calls that did not advance through sprite fetch.
+    fn fetched_sprite_pixel(&self, slot: usize, attributes: u8, screen_x: usize) -> Option<u8> {
+        if screen_x >= 8 || !self.sprite_pattern_valid[slot] { return None; }
+        let bit = if attributes & 0x40 != 0 { screen_x } else { 7 - screen_x };
+        Some(((self.sprite_pattern_low[slot] >> bit) & 1)
+            | (((self.sprite_pattern_high[slot] >> bit) & 1) << 1))
     }
 
     /// Advances the 2C02 sprite evaluator by one PPU dot.
@@ -4620,6 +4669,35 @@ mod background_tile_latch_regressions {
         assert_eq!(ppu.v & 0x7BE0, 0x7B20);
         assert_eq!(ppu.v & 0x041F, 0x0415,
             "pre-render vertical reload preserves the horizontal scroll fields");
+    }
+
+    #[test]
+    fn sprite_fetch_latches_both_pattern_planes_for_the_next_scanline() {
+        let mut image = vec![0; 16 + 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        cartridge.ppu_write(0, 0x80);
+        cartridge.ppu_write(8, 0x40);
+
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.scanline = 261;
+        ppu.sprite_line_oam[0] = [0xFF, 0, 0, 0];
+        ppu.dot = 260;
+        ppu.clock_sprite_pattern_fetch(Some(&cartridge));
+        assert!(!ppu.sprite_pattern_valid[0]);
+        ppu.dot = 261;
+        ppu.clock_sprite_pattern_fetch(Some(&cartridge));
+        assert_eq!(ppu.sprite_pattern_low[0], 0x80);
+        assert!(!ppu.sprite_pattern_valid[0]);
+        ppu.dot = 263;
+        ppu.clock_sprite_pattern_fetch(Some(&cartridge));
+        assert_eq!(ppu.sprite_pattern_high[0], 0x40);
+        assert!(ppu.sprite_pattern_valid[0]);
+        assert_eq!(ppu.fetched_sprite_pixel(0, 0, 0), Some(1));
+        assert_eq!(ppu.fetched_sprite_pixel(0, 0, 1), Some(2));
     }
 
     #[test]
