@@ -602,6 +602,9 @@ impl Cnrom {
         let declared_prg_ram_len = if nes2 {
             nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4))
         } else { PRG_RAM_LEN };
+        if nes2 && declared_prg_ram_len > PRG_RAM_LEN {
+            return Err(CartridgeError::Nes2NotSupported);
+        }
         let prg_ram_len = declared_prg_ram_len.min(PRG_RAM_LEN)
             .max(if trainer_len != 0 { PRG_RAM_LEN } else { 0 });
         let mut prg_ram = vec![0; prg_ram_len];
@@ -698,11 +701,15 @@ impl Mapper8 {
         if nes2 && image[8] >> 4 != 0 { return Err(CartridgeError::Nes2NotSupported); }
         let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
             else { image[4] as usize * PRG_BANK_LEN };
-        if prg_len < 2 * PRG_BANK_LEN || prg_len % (2 * PRG_BANK_LEN) != 0 {
+        if prg_len < 2 * PRG_BANK_LEN || prg_len % (2 * PRG_BANK_LEN) != 0
+            || (nes2 && prg_len > 8 * PRG_BANK_LEN) {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         let chr_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) }
             else { image[5] as usize * CHR_BANK_LEN };
+        if nes2 && chr_len > 4 * CHR_BANK_LEN {
+            return Err(CartridgeError::InvalidChrSize(chr_len));
+        }
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
         let expected = INES_HEADER_LEN + trainer_len + prg_len + chr_len;
         if image.len() < expected {
@@ -722,6 +729,10 @@ impl Mapper8 {
         let declared_chr_ram_len = if nes2 {
             nes2_ram_size(image[11] & 0x0F).saturating_add(nes2_ram_size(image[11] >> 4))
         } else { CHR_BANK_LEN };
+        if nes2 && (declared_chr_ram_len > 4 * CHR_BANK_LEN
+            || (chr_len != 0 && declared_chr_ram_len != 0)) {
+            return Err(CartridgeError::Nes2NotSupported);
+        }
         let chr_ram_len = declared_chr_ram_len.min(4 * CHR_BANK_LEN);
         let chr_is_ram = chr_len == 0 && chr_ram_len != 0;
         // Keep the declared physical RAM size: smaller chips mirror inside the
@@ -5013,9 +5024,33 @@ mod mapper8_nes2_tests {
     }
 
     #[test]
-    fn mapper8_nes2_rejects_unknown_submappers() {
+    fn mapper8_nes2_rejects_oversized_rom_and_ram_declarations() {
+        let mut oversized_prg = nes2_mapper8();
+        oversized_prg[4] = 9;
+        oversized_prg[9] = 0;
+        assert!(matches!(Cartridge::parse(&oversized_prg), Err(CartridgeError::InvalidPrgSize(_))));
+
+        let mut oversized_chr = nes2_mapper8();
+        oversized_chr[5] = 5;
+        oversized_chr[9] = 0;
+        oversized_chr.extend(vec![0; CHR_BANK_LEN]);
+        assert!(matches!(Cartridge::parse(&oversized_chr), Err(CartridgeError::InvalidChrSize(_))));
+
+        let mut oversized_prg_ram = nes2_mapper8();
+        oversized_prg_ram[10] = 8; // 16 KiB exceeds the mapper's 8 KiB CPU window.
+        assert!(matches!(Cartridge::parse(&oversized_prg_ram), Err(CartridgeError::Nes2NotSupported)));
+
+        let mut oversized_chr_ram = nes2_mapper8();
+        oversized_chr_ram[11] = 11; // 128 KiB exceeds the four-bank CHR selector.
+        assert!(matches!(Cartridge::parse(&oversized_chr_ram), Err(CartridgeError::Nes2NotSupported)));
+    }
+
+    #[test]
+    fn mapper8_nes2_rejects_simultaneous_chr_rom_and_chr_ram() {
         let mut image = nes2_mapper8();
-        image[8] = 0x10;
+        image[5] = 1;
+        image[11] = 5;
+        image.extend(vec![0xCC; CHR_BANK_LEN]);
         assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
     }
 }
