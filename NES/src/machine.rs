@@ -229,13 +229,11 @@ impl NesMachine {
         let instruction_cycles = u32::from(result.cycles);
         debug_assert!(bus_cycles <= instruction_cycles, "CPU performed more bus accesses than instruction cycles");
 
-        // CPU bus accesses already clocked both PPU and APU in instruction order.
-        // DMC fetches discovered during those accesses defer their stolen device cycles
-        // until the instruction boundary; the APU itself is not clocked twice here.
+        // DMC stall device cycles are clocked at the exact bus access that
+        // requested them. Charge only the CPU's elapsed-cycle counter here.
         let dmc_stalls = self.bus.take_instruction_dmc_stalls();
         if dmc_stalls != 0 {
             self.cpu.add_stall_cycles(dmc_stalls.min(u32::from(u16::MAX)) as u16);
-            self.clock_devices_for_cpu_cycles(dmc_stalls);
         }
         self.clock_devices_for_cpu_cycles(instruction_cycles.saturating_sub(bus_cycles));
 
@@ -832,6 +830,30 @@ mod tests {
         assert_eq!(machine.read_cpu(0x2004), 0, "source byte $0200 reaches OAM address $80");
         machine.write_cpu(0x2003, 0xFF);
         assert_eq!(machine.read_cpu(0x2004), 0x7D, "source byte $027F reaches wrapped OAM address $FF");
+    }
+
+    #[test]
+    fn dmc_stall_is_applied_before_later_ppu_register_accesses_in_the_instruction() {
+        // LDA $2002 reads PPUSTATUS on its fourth bus cycle. Place vblank's
+        // set edge 15 PPU dots after the initial beam position: without an
+        // immediate DMC halt, the read happens before the edge; with the halt
+        // after the opcode fetch, it happens after the edge.
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[
+            0xAD, 0x02, 0x20,
+        ])).unwrap();
+        machine.bus.tick_ppu(240 * 341 + 326);
+        assert_eq!(machine.bus.ppu_position(), (240, 326));
+
+        machine.bus.write(0x4010, 0x00);
+        machine.bus.write(0x4012, 0x00);
+        machine.bus.write(0x4013, 0x00);
+        machine.bus.write(0x4015, 0x10);
+
+        machine.step().unwrap();
+        assert_ne!(machine.cpu_state().a & 0x80, 0,
+            "PPUSTATUS must see vblank after the DMC halt delays the operand accesses");
+        assert_eq!(machine.total_cycles(), 4 + 4 + 7,
+            "the four nominal instruction cycles and four DMC stall cycles are both charged");
     }
 
     #[test]
