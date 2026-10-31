@@ -4548,5 +4548,43 @@ mod background_tile_latch_regressions {
         ppu.render_background_pixel(8, 0, Some(&cartridge));
         assert_eq!(ppu.framebuffer[8], ppu.palette[0]);
     }
+
+    #[test]
+    fn background_fetch_pipeline_latches_tile_attribute_and_pattern_in_phase_order() {
+        let image = {
+            let mut bytes = vec![0; 16 + 16_384];
+            bytes[0..4].copy_from_slice(b"NES\\x1A");
+            bytes[4] = 1;
+            bytes
+        };
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        cartridge.ppu_write(0, 0xA5);
+        cartridge.ppu_write(8, 0x5A);
+
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x08;
+        ppu.scanline = 0;
+        ppu.v = 0;
+        ppu.nametables[0] = 0;
+        ppu.nametables[0x3C0] = 2; // Palette 2 in the top-left attribute quadrant.
+
+        for dot in 1..=8 {
+            ppu.dot = dot;
+            ppu.clock_background_fetch_pipeline(Some(&cartridge));
+            match dot {
+                1 => assert_eq!(ppu.bg_next_tile_id, 0),
+                3 => assert_eq!(ppu.bg_next_attribute, 2),
+                5 => assert_eq!(ppu.bg_next_pattern_low, 0xA5),
+                7 => assert_eq!(ppu.bg_next_pattern_high, 0x5A),
+                _ => {}
+            }
+        }
+
+        assert_eq!(ppu.bg_pattern_shift_low & 0x00FF, 0xA5);
+        assert_eq!(ppu.bg_pattern_shift_high & 0x00FF, 0x5A);
+        assert_eq!(ppu.bg_attribute_shift_low & 0x00FF, 0x00);
+        assert_eq!(ppu.bg_attribute_shift_high & 0x00FF, 0xFF);
+    }
+
 }
 
