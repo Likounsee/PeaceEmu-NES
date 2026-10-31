@@ -4449,18 +4449,31 @@ mod background_tile_latch_regressions {
     }
 
     #[test]
-    fn next_tile_fetch_observes_chr_ram_bank_content_changes() {
-        let cartridge = cartridge_with_two_background_tiles();
+    fn current_tile_keeps_fetched_chr_bytes_until_the_next_tile() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1; // One PRG bank.
+        // CHR bank count remains zero: the cartridge supplies writable CHR RAM.
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        cartridge.ppu_write(0, 0xFF);
+
         let mut ppu = Ppu::new();
         ppu.mask = 0x0A;
         ppu.palette[1] = 0x11;
         ppu.nametables[0] = 0;
+        ppu.nametables[1] = 0; // Adjacent tile uses the same CHR tile.
         ppu.render_background_pixel(0, 0, Some(&cartridge));
         assert_eq!(ppu.framebuffer[0], 0x11);
 
+        // A CHR-RAM write after the first pixel cannot alter the already-latched
+        // pattern bytes for pixels 1-7 of this tile.
+        cartridge.ppu_write(0, 0x00);
+        ppu.render_background_pixel(1, 0, Some(&cartridge));
+        assert_eq!(ppu.framebuffer[1], 0x11);
+
+        // The adjacent tile is fetched separately and sees the updated CHR RAM.
         ppu.render_background_pixel(8, 0, Some(&cartridge));
-        assert_eq!(ppu.framebuffer[8], 0x11,
-            "a new tile fetch should independently load its pattern bytes");
+        assert_eq!(ppu.framebuffer[8], ppu.palette[0]);
     }
 }
 
