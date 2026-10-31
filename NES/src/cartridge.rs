@@ -1005,6 +1005,9 @@ impl Gxrom {
         };
         if mapper != 66 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
         if nes2 && image[8] >> 4 != 0 { return Err(CartridgeError::Nes2NotSupported); }
+        // GxROM boards supported here have CHR-ROM only. Do not silently
+        // accept declared CHR-RAM that the mapper cannot expose.
+        if nes2 && image[11] != 0 { return Err(CartridgeError::Nes2NotSupported); }
 
         let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
             else { image[4] as usize * PRG_BANK_LEN };
@@ -1026,7 +1029,11 @@ impl Gxrom {
 
         let prg_start = INES_HEADER_LEN + trainer_len;
         let chr_start = prg_start + prg_len;
-        let prg_ram_len = if nes2 { nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4)).min(PRG_RAM_LEN) } else { PRG_RAM_LEN };
+        let declared_prg_ram_len = if nes2 {
+            nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4))
+        } else { PRG_RAM_LEN };
+        if declared_prg_ram_len > PRG_RAM_LEN { return Err(CartridgeError::Nes2NotSupported); }
+        let prg_ram_len = declared_prg_ram_len;
         let mut prg_ram = vec![0; prg_ram_len.max(if trainer_len != 0 { PRG_RAM_LEN } else { 0 })];
         if trainer_len != 0 {
             prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
@@ -4990,10 +4997,46 @@ mod gxrom_nes2_tests {
     }
 
     #[test]
-    fn gxrom_nes2_rejects_unknown_submappers() {
+    fn gxrom_nes2_rejects_unknown_submappers_and_unsupported_memory() {
         let mut image = nes2_gxrom();
         image[8] = 0x10;
         assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
+
+        // This implementation supports at most one 8 KiB PRG-RAM chip.
+        let mut oversized_prg_ram = nes2_gxrom();
+        oversized_prg_ram[10] = 8;
+        assert!(matches!(Cartridge::parse(&oversized_prg_ram), Err(CartridgeError::Nes2NotSupported)));
+
+        // The supported GxROM board has CHR-ROM, not a CHR-RAM aperture.
+        let mut declared_chr_ram = nes2_gxrom();
+        declared_chr_ram[11] = 7;
+        assert!(matches!(Cartridge::parse(&declared_chr_ram), Err(CartridgeError::Nes2NotSupported)));
+    }
+
+    #[test]
+    fn gxrom_nes2_preserves_declared_small_prg_ram_and_trainer_window() {
+        let mut image = nes2_gxrom();
+        image[10] = 6; // 4 KiB PRG-RAM.
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert!(cart.cpu_write(0x6000, 0x5A));
+        assert_eq!(cart.cpu_read(0x7000), Some(0x5A));
+        assert!(cart.cpu_write(0x7FFF, 0xA5));
+        assert_eq!(cart.cpu_read(0x6FFF), Some(0xA5));
+
+        let mut trainer_image = nes2_gxrom();
+        trainer_image[6] |= 0x04;
+        trainer_image[10] = 6;
+        let trainer_start = INES_HEADER_LEN;
+        trainer_image[trainer_start..trainer_start + TRAINER_LEN].fill(0xC3);
+        let prg_start = trainer_start + TRAINER_LEN;
+        let chr_start = prg_start + 4 * PRG_BANK_LEN;
+        let mut with_trainer = vec![0; INES_HEADER_LEN + TRAINER_LEN + 4 * PRG_BANK_LEN + 2 * CHR_BANK_LEN];
+        with_trainer[..INES_HEADER_LEN].copy_from_slice(&trainer_image[..INES_HEADER_LEN]);
+        with_trainer[trainer_start..trainer_start + TRAINER_LEN].fill(0xC3);
+        with_trainer[prg_start..prg_start + 4 * PRG_BANK_LEN].copy_from_slice(&trainer_image[INES_HEADER_LEN..INES_HEADER_LEN + 4 * PRG_BANK_LEN]);
+        with_trainer[chr_start..].copy_from_slice(&trainer_image[INES_HEADER_LEN + 4 * PRG_BANK_LEN..]);
+        let cart = Cartridge::parse(&with_trainer).unwrap();
+        assert_eq!(cart.cpu_read(0x7000), Some(0xC3));
     }
 }
 
