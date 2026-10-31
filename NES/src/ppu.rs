@@ -894,25 +894,25 @@ impl Ppu {
     /// writes between dots can affect sprites that have not yet been evaluated.
     fn clock_sprite_evaluator(&mut self) {
         let rendering_line = self.scanline < 240 || self.scanline == 261;
-        if !rendering_line || self.mask & 0x18 == 0 {
-            if self.dot == 1 {
-                self.eval_n = 0;
-                self.eval_m = 0;
-                self.eval_copying = false;
-                self.eval_count = 0;
-            }
-            return;
-        }
-
         if self.dot == 1 {
+            // The evaluator's target is derived from the beam even when rendering
+            // is currently disabled. Games may enable rendering partway through
+            // dots 1-256; in that case the evaluator must resume against this
+            // scanline's successor rather than a stale target from the prior line.
+            self.eval_target_y = if self.scanline == 261 { 0 } else { (self.scanline + 1) as u8 };
             self.eval_n = 0;
             self.eval_m = 0;
             self.eval_latch = 0xFF;
             self.eval_copying = false;
-            self.eval_target_y = if self.scanline == 261 { 0 } else { (self.scanline + 1) as u8 };
+            self.eval_count = 0;
+        }
+        if !rendering_line || self.mask & 0x18 == 0 {
+            return;
+        }
+
+        if self.dot == 1 {
             self.eval_oam = [[0xFF; 4]; 8];
             self.eval_indices = [0xFF; 8];
-            self.eval_count = 0;
         }
 
         if (1..=64).contains(&self.dot) {
@@ -2923,6 +2923,61 @@ mod sprite_pattern_address_tests {
 #[cfg(test)]
 mod sprite_overflow_regression_tests {
     use super::*;
+
+    #[test]
+    fn ninth_sprite_sets_overflow_on_its_even_dot_comparison() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x18;
+        for sprite in 0..9 {
+            ppu.oam[sprite * 4] = 0;
+        }
+
+        ppu.tick(129); // Dot 129 only reads sprite nine's Y byte.
+        assert_eq!(ppu.status & 0x20, 0,
+            "overflow cannot be visible before the evaluator consumes the Y byte");
+        ppu.tick(1); // Dot 130 compares the latched Y byte.
+        assert_ne!(ppu.status & 0x20, 0,
+            "the ninth in-range sprite raises overflow on dot 130");
+    }
+
+    #[test]
+    fn diagonal_overflow_scan_can_match_a_tile_byte_as_a_y_coordinate() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x18;
+        ppu.oam.fill(0x40); // All sprites are normally out of range.
+        for sprite in 0..8 {
+            ppu.oam[sprite * 4] = 0; // Fill the eight secondary-OAM slots.
+        }
+        ppu.oam[8 * 4] = 0x40; // Ninth sprite Y misses: n advances, m becomes 1.
+        ppu.oam[9 * 4 + 1] = 0x00; // Diagonal scan treats this tile byte as Y=0.
+
+        ppu.tick(132);
+        assert_ne!(ppu.status & 0x20, 0,
+            "the 2C02 diagonal overflow walk can mistake a tile byte for an in-range Y");
+    }
+
+    #[test]
+    fn disabled_dot_one_still_latches_the_next_scanline_sprite_target() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 40;
+        ppu.dot = 0;
+        ppu.mask = 0;
+        ppu.oam[0..4].copy_from_slice(&[40, 0, 0, 12]);
+
+        ppu.tick(1);
+        assert_eq!(ppu.eval_target_y, 41,
+            "the evaluator target follows the beam even while rendering is disabled");
+
+        ppu.mask = 0x10;
+        ppu.tick(65); // Clear secondary OAM, read sprite zero at dot 65, compare at 66.
+        assert_eq!(ppu.eval_target_y, 41);
+        assert!(ppu.eval_copying,
+            "enabling rendering mid-line must evaluate against the current line's successor");
+    }
 
     #[test]
     fn ninth_in_range_sprite_sets_overflow_and_prerender_clears_it() {
