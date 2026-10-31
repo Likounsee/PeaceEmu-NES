@@ -841,7 +841,7 @@ mod tests {
         let mut machine = NesMachine::from_ines(&nrom_with_program(&[
             0xAD, 0x02, 0x20,
         ])).unwrap();
-        machine.bus.tick_ppu(240 * 341 + 326);
+        machine.bus.tick_ppu(241 * 341 + 326);
         assert_eq!(machine.bus.ppu_position(), (240, 326));
 
         machine.bus.write(0x4010, 0x00);
