@@ -229,11 +229,12 @@ impl Ppu {
             }
             7 => {
                 let address = self.v & 0x3FFF;
-                self.record_mapper_bus_address(if address >= 0x3F00 {
-                    address.wrapping_sub(0x1000)
-                } else {
-                    address
-                });
+                // Palette RAM is internal to the PPU. Unlike a palette read,
+                // which performs a hidden nametable refill at address - $1000,
+                // a palette write does not issue that external memory access.
+                if address < 0x3F00 {
+                    self.record_mapper_bus_address(address);
+                }
                 self.mem_write(address, value, cartridge);
                 self.increment_vram_address();
                 self.sync_visible_scroll_after_vram_access();
@@ -4297,3 +4298,39 @@ mod cycle_sprite_evaluator_regressions {
         assert_eq!(ppu.sprite_line_oam[0], [0xFF, 7, 0, 24]);
     }
 }
+
+
+#[cfg(test)]
+mod palette_write_mapper_bus_regressions {
+    use super::*;
+
+    #[test]
+    fn palette_writes_do_not_emit_external_mapper_bus_edges() {
+        let mut ppu = Ppu::new();
+        ppu.mapper_bus_initialized = true;
+        ppu.mapper_a12_high = false;
+        ppu.mapper_bus_events.clear();
+        ppu.v = 0x3F00;
+
+        ppu.cpu_write_register(7, 0x2A, None);
+
+        assert_eq!(ppu.palette[0], 0x2A);
+        assert!(ppu.mapper_bus_events.is_empty(),
+            "internal palette RAM writes must not masquerade as external $2Fxx bus reads");
+    }
+
+    #[test]
+    fn pattern_table_writes_still_drive_the_external_mapper_bus() {
+        let mut ppu = Ppu::new();
+        ppu.mapper_bus_initialized = true;
+        ppu.mapper_a12_high = false;
+        ppu.mapper_bus_events.clear();
+        ppu.v = 0x1000;
+
+        ppu.cpu_write_register(7, 0x5A, None);
+
+        assert_eq!(ppu.mapper_bus_events, vec![(0x1000, 0)],
+            "CHR writes are external PPU bus accesses and must retain their A12 edge");
+    }
+}
+
