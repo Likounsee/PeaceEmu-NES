@@ -1460,7 +1460,7 @@ impl ColorDreams {
     /// Parses iNES or NES 2.0 mapper-11 images with banked PRG-ROM and CHR-ROM.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
         let nes2 = image[7] & 0x0C == 0x08;
         let mapper = if nes2 {
             ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
@@ -1516,7 +1516,7 @@ impl ColorDreams {
     /// Reads PRG-RAM or the selected 32 KiB PRG-ROM window.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
         match address {
-            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+            0x6000..=0x7FFF => self.prg_ram.get(address as usize - 0x6000).copied(),
             0x8000..=0xFFFF => {
                 let index = self.selected_prg_bank * 2 * PRG_BANK_LEN + address as usize - 0x8000;
                 Some(self.prg_rom[index])
@@ -1529,8 +1529,12 @@ impl ColorDreams {
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
             0x6000..=0x7FFF => {
-                self.prg_ram[address as usize - 0x6000] = value;
-                true
+                if let Some(byte) = self.prg_ram.get_mut(address as usize - 0x6000) {
+                    *byte = value;
+                    true
+                } else {
+                    false
+                }
             }
             0x8000..=0xFFFF => {
                 let prg_count = self.prg_rom.len() / (2 * PRG_BANK_LEN);
