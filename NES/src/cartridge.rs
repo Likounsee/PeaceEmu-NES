@@ -710,18 +710,18 @@ impl Mapper8 {
             nes2_ram_size(image[11] & 0x0F).saturating_add(nes2_ram_size(image[11] >> 4))
         } else { CHR_BANK_LEN };
         let chr_ram_len = declared_chr_ram_len.min(4 * CHR_BANK_LEN);
-        let chr_is_ram = chr_len == 0;
-        // The mapper's CHR register selects whole 8 KiB banks. Pad smaller
-        // NES 2.0 RAM declarations to one bank to avoid zero-bank indexing.
+        let chr_is_ram = chr_len == 0 && chr_ram_len != 0;
+        // Keep the declared physical RAM size: smaller chips mirror inside the
+        // mapper's 8 KiB window instead of exposing padded, nonexistent storage.
         let chr = if chr_len != 0 { image[chr_start..chr_start + chr_len].to_vec() }
-            else { vec![0; chr_ram_len.max(CHR_BANK_LEN)] };
+            else { vec![0; chr_ram_len] };
         let mirroring = if image[6] & 0x08 != 0 { Mirroring::FourScreen }
             else if image[6] & 0x01 != 0 { Mirroring::Vertical }
             else { Mirroring::Horizontal };
         Ok(Self {
             prg_rom: image[prg_start..chr_start].to_vec(),
             prg_ram,
-            chr_bank_count: chr.len() / CHR_BANK_LEN,
+            chr_bank_count: chr.len().div_ceil(CHR_BANK_LEN).max(1),
             chr,
             chr_is_ram,
             prg_bank_count: prg_len / (2 * PRG_BANK_LEN),
@@ -771,13 +771,15 @@ impl Mapper8 {
     pub fn ppu_read(&self, address: u16) -> Option<u8> {
         if address >= 0x2000 || self.chr.is_empty() { return None; }
         let bank = (self.selected as usize & 0x03) % self.chr_bank_count;
-        Some(self.chr[bank * CHR_BANK_LEN + address as usize])
+        let index = (bank * CHR_BANK_LEN + address as usize) % self.chr.len();
+        Some(self.chr[index])
     }
     /// Writes pattern memory only when the cartridge uses CHR-RAM.
     pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
         if address >= 0x2000 || !self.chr_is_ram || self.chr.is_empty() { return false; }
         let bank = (self.selected as usize & 0x03) % self.chr_bank_count;
-        self.chr[bank * CHR_BANK_LEN + address as usize] = value;
+        let index = (bank * CHR_BANK_LEN + address as usize) % self.chr.len();
+        self.chr[index] = value;
         true
     }
 }
@@ -4552,6 +4554,28 @@ mod mapper8_regressions {
         assert!(cart.cpu_write(0x7FFF, 0xA5));
         assert_eq!(cart.cpu_read(0x6000), Some(0x5A));
         assert_eq!(cart.cpu_read(0x7FFF), Some(0xA5));
+    }
+
+    #[test]
+    fn mapper8_nes2_chr_ram_size_is_not_padded_and_absent_ram_stays_unmapped() {
+        let mut no_ram = nes2_mapper8();
+        no_ram[10] = 7;
+        no_ram[11] = 0;
+        let mut cart = Cartridge::parse(&no_ram).unwrap();
+        assert!(!cart.chr_is_ram());
+        assert_eq!(cart.ppu_read(0x0000), None);
+        assert!(!cart.ppu_write(0x0000, 0xA5));
+
+        let mut small_ram = nes2_mapper8();
+        small_ram[11] = 5; // 64 << 5 = 2 KiB CHR-RAM.
+        let mut cart = Cartridge::parse(&small_ram).unwrap();
+        assert!(cart.chr_is_ram());
+        assert!(cart.ppu_write(0x0000, 0x5A));
+        assert_eq!(cart.ppu_read(0x0000), Some(0x5A));
+        assert_eq!(cart.ppu_read(0x0800), Some(0x5A),
+            "a 2 KiB physical chip mirrors across the 8 KiB pattern window");
+        assert!(cart.ppu_write(0x1FFF, 0xA5));
+        assert_eq!(cart.ppu_read(0x07FF), Some(0xA5));
     }
 
     #[test]
