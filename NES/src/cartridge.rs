@@ -733,7 +733,7 @@ impl Mapper8 {
     /// Reads PRG-RAM or the currently selected 32-KiB PRG-ROM bank.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
         match address {
-            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+            0x6000..=0x7FFF => self.prg_ram.get(address as usize - 0x6000).copied(),
             0x8000..=0xFFFF => {
                 let bank = ((self.selected >> 4) as usize & 0x03) % self.prg_bank_count;
                 let index = bank * 2 * PRG_BANK_LEN
@@ -744,12 +744,16 @@ impl Mapper8 {
         }
     }
 
-    /// Writes PRG-RAM or selects the PRG and CHR banks.
+    /// Writes PRG-RAM when the declared RAM window contains the address, or selects banks.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
             0x6000..=0x7FFF => {
-                self.prg_ram[address as usize - 0x6000] = value;
-                true
+                if let Some(byte) = self.prg_ram.get_mut(address as usize - 0x6000) {
+                    *byte = value;
+                    true
+                } else {
+                    false
+                }
             }
             0x8000..=0xFFFF => {
                 self.selected = value;
@@ -4528,6 +4532,26 @@ mod mapper8_regressions {
         assert!(cart.ppu_write(0x123, 0xA5));
         assert_eq!(cart.ppu_read(0x123), Some(0xA5));
         assert_eq!(cart.mirroring(), Mirroring::FourScreen);
+    }
+
+    #[test]
+    fn mapper8_nes2_prg_ram_window_respects_declared_size() {
+        let mut no_ram = image(2, 0, 0);
+        no_ram[7] = 0x08; // NES 2.0, mapper 8.
+        no_ram[10] = 0; // No volatile or non-volatile PRG-RAM.
+        let mut cart = Cartridge::parse(&no_ram).unwrap();
+        assert_eq!(cart.cpu_read(0x6000), None);
+        assert_eq!(cart.cpu_read(0x7FFF), None);
+        assert!(!cart.cpu_write(0x6000, 0xA5));
+
+        let mut small_ram = image(2, 0, 0);
+        small_ram[7] = 0x08;
+        small_ram[10] = 7; // 64 << 7 = 8 KiB (the full legacy window).
+        let mut cart = Cartridge::parse(&small_ram).unwrap();
+        assert!(cart.cpu_write(0x6000, 0x5A));
+        assert!(cart.cpu_write(0x7FFF, 0xA5));
+        assert_eq!(cart.cpu_read(0x6000), Some(0x5A));
+        assert_eq!(cart.cpu_read(0x7FFF), Some(0xA5));
     }
 
     #[test]
