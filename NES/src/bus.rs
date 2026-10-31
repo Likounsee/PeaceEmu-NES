@@ -110,6 +110,9 @@ impl CpuBus {
                 .unwrap_or(self.open_bus),
             _ => self.open_bus,
         };
+        // DMC reads use the same decoded CPU address space as ordinary reads.
+        // A DMA read targeting PPUDATA can therefore drive mapper-visible A12.
+        self.sync_mapper_bus_events();
         self.open_bus = value;
         value
     }
@@ -909,6 +912,17 @@ mod mmc3_ppu_irq_integration_regressions {
         bus.write(0xC001, 0); // Reload on the next qualified A12 edge.
         bus.write(0xE001, 0); // Enable mapper IRQ.
         bus
+    }
+
+    #[test]
+    fn dmc_dma_ppudata_reads_forward_mapper_a12_transitions() {
+        let mut bus = mmc3_bus();
+        bus.tick_ppu(9);
+        bus.write(0x2006, 0x10);
+        bus.write(0x2006, 0x00);
+        let _ = bus.read_dmc_dma_source(0x2007);
+        assert!(bus.irq_pending(),
+            "DMC reads from PPUDATA must reach the MMC3 A12 IRQ filter");
     }
 
     #[test]
