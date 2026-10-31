@@ -2249,7 +2249,7 @@ mod mapper87_nes2_tests {
     use super::*;
     fn image() -> Vec<u8> {
         let mut i=vec![0;INES_HEADER_LEN+2*PRG_BANK_LEN+4*CHR_BANK_LEN];
-        i[0..4].copy_from_slice(b"NES\x1A"); i[4]=2; i[5]=4; i[6]=0x70; i[7]=0x08;
+        i[0..4].copy_from_slice(b"NES\x1A"); i[4]=2; i[5]=4; i[6]=0x70; i[7]=0x58;
         for bank in 0..4 { let p=INES_HEADER_LEN+2*PRG_BANK_LEN+bank*CHR_BANK_LEN; i[p..p+CHR_BANK_LEN].fill(bank as u8); }
         i
     }
