@@ -3623,6 +3623,70 @@ mod beam_timed_sprite_zero_regressions {
 
 
 #[cfg(test)]
+mod sprite_priority_pipeline_regressions {
+    use super::*;
+
+    fn prepared_ppu() -> Ppu {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x14;
+        ppu.sprite_line = 0;
+        ppu.sprite_line_count = 2;
+        ppu.sprite_line_oam[0] = [0xFF, 0, 0, 0];
+        ppu.sprite_line_oam[1] = [0xFF, 1, 0, 0];
+        ppu.sprite_pattern_valid = [true; 8];
+        ppu.sprite_x_counter = [0; 8];
+        ppu.palette[0x11] = 0x12;
+        ppu.palette[0x15] = 0x23;
+        ppu
+    }
+
+    #[test]
+    fn transparent_higher_priority_sprite_does_not_hide_lower_slot() {
+        let mut ppu = prepared_ppu();
+        ppu.sprite_shift_low[0] = 0;
+        ppu.sprite_shift_high[0] = 0;
+        ppu.sprite_shift_low[1] = 0x80;
+        ppu.sprite_shift_high[1] = 0;
+
+        ppu.render_sprite_pixel(0, 0, None);
+
+        assert_eq!(ppu.framebuffer[0], ppu.output_color(0x23));
+    }
+
+    #[test]
+    fn opaque_behind_background_sprite_blocks_lower_priority_sprite() {
+        let mut ppu = prepared_ppu();
+        ppu.mask |= 0x08;
+        ppu.sprite_line_oam[0][2] = 0x20; // Behind background.
+        ppu.sprite_shift_low[0] = 0x80;
+        ppu.sprite_shift_high[0] = 0;
+        ppu.sprite_shift_low[1] = 0x80;
+        ppu.sprite_shift_high[1] = 0;
+        ppu.background_opaque[0] = true;
+        ppu.framebuffer[0] = ppu.output_color(0x2A);
+
+        ppu.render_sprite_pixel(0, 0, None);
+
+        assert_eq!(ppu.framebuffer[0], ppu.output_color(0x2A),
+            "the first opaque sprite owns priority even when hidden behind the background");
+    }
+
+    #[test]
+    fn first_opaque_oam_slot_wins_when_sprites_overlap() {
+        let mut ppu = prepared_ppu();
+        ppu.sprite_shift_low[0] = 0x80; // Pixel value 1, palette 0.
+        ppu.sprite_shift_high[0] = 0;
+        ppu.sprite_shift_low[1] = 0;
+        ppu.sprite_shift_high[1] = 0x80; // Pixel value 2, palette 1.
+        ppu.palette[0x12] = 0x31;
+
+        ppu.render_sprite_pixel(0, 0, None);
+
+        assert_eq!(ppu.framebuffer[0], ppu.output_color(0x12));
+    }
+}
+
+#[cfg(test)]
 mod cycle_sprite_evaluation_regressions {
     use super::*;
 
