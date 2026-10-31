@@ -51,6 +51,15 @@ pub struct Ppu {
     /// Completed 256x240 background image, stored as 6-bit NES palette indices.
     framebuffer: Vec<u8>,
     background_opaque: Vec<bool>,
+    /// Background fetch latches: tile and attribute data stay stable for the
+    /// eight output pixels sourced from the same fetched tile.
+    bg_tile_cache_valid: bool,
+    bg_tile_cache_tile_addr: u16,
+    bg_tile_cache_pattern_addr: u16,
+    bg_tile_cache_start_x: usize,
+    bg_tile_cache_low: u8,
+    bg_tile_cache_high: u8,
+    bg_tile_cache_palette_id: u8,
     ppu_cycle: u64,
     mapper_a12_high: bool,
     mapper_bus_initialized: bool,
@@ -72,6 +81,9 @@ impl Default for Ppu {
             frame_scroll_valid: false, line_scroll_v: 0, line_scroll_start_x: 0,
             nmi_pending: false, nmi_line: false, suppress_vblank: false,
             framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
+            bg_tile_cache_valid: false, bg_tile_cache_tile_addr: 0,
+            bg_tile_cache_pattern_addr: 0, bg_tile_cache_start_x: 0,
+            bg_tile_cache_low: 0, bg_tile_cache_high: 0, bg_tile_cache_palette_id: 0,
             ppu_cycle: 0, mapper_a12_high: false, mapper_bus_initialized: false, mapper_bus_events: Vec::new(),
         }
     }
@@ -313,6 +325,7 @@ impl Ppu {
             if self.dot == 1 && self.scanline < 240 {
                 self.line_scroll_v = self.v;
                 self.line_scroll_start_x = 0;
+                self.bg_tile_cache_valid = false;
             }
 
             // Emit the background pixel before testing sprite zero, so hit detection
@@ -580,6 +593,11 @@ impl Ppu {
             return;
         }
 
+        // Resolve the tile currently supplying this screen pixel. Pattern and
+        // attribute bytes are fetched once at the first pixel that consumes the
+        // tile, then held for the remainder of its eight-pixel span. This models
+        // the PPU's tile latches more closely than rereading CHR/nametable RAM for
+        // every pixel, and makes mid-tile writes affect subsequent fetches only.
         let scroll_v = self.line_scroll_v;
         let fine_x = self.fine_x as usize;
         let base_nt_x = ((scroll_v >> 10) & 1) as usize;
@@ -595,20 +613,34 @@ impl Ppu {
         let coarse_x = tile_x % 32;
         let tile_addr = nametable + (coarse_y * 32 + coarse_x) as u16;
         let tile = self.mem_read(tile_addr, cartridge) as u16;
-        let col = (scroll_x % 8) as u16;
         let pattern_addr = pattern_base + tile * 16 + fine_y as u16;
-        let low = self.mem_read(pattern_addr, cartridge);
-        let high = self.mem_read(pattern_addr + 8, cartridge);
-        let pixel = ((low >> (7 - col)) & 1) | (((high >> (7 - col)) & 1) << 1);
+
+        let cache_matches = self.bg_tile_cache_valid
+            && self.bg_tile_cache_tile_addr == tile_addr
+            && self.bg_tile_cache_pattern_addr == pattern_addr
+            && self.bg_tile_cache_start_x == self.line_scroll_start_x;
+        if !cache_matches {
+            self.bg_tile_cache_low = self.mem_read(pattern_addr, cartridge);
+            self.bg_tile_cache_high = self.mem_read(pattern_addr + 8, cartridge);
+            let attr_addr = nametable + 0x3C0 + ((coarse_y / 4) * 8 + coarse_x / 4) as u16;
+            let attr = self.mem_read(attr_addr, cartridge);
+            let shift = (((coarse_y % 4) / 2) * 4 + ((coarse_x % 4) / 2) * 2) as u8;
+            self.bg_tile_cache_palette_id = (attr >> shift) & 3;
+            self.bg_tile_cache_tile_addr = tile_addr;
+            self.bg_tile_cache_pattern_addr = pattern_addr;
+            self.bg_tile_cache_start_x = self.line_scroll_start_x;
+            self.bg_tile_cache_valid = true;
+        }
+
+        let col = (scroll_x % 8) as u16;
+        let pixel = ((self.bg_tile_cache_low >> (7 - col)) & 1)
+            | (((self.bg_tile_cache_high >> (7 - col)) & 1) << 1);
         self.background_opaque[index] = pixel != 0;
         if pixel == 0 {
             self.framebuffer[index] = self.output_color(self.palette[0]);
         } else {
-            let attr_addr = nametable + 0x3C0 + ((coarse_y / 4) * 8 + coarse_x / 4) as u16;
-            let attr = self.mem_read(attr_addr, cartridge);
-            let shift = (((coarse_y % 4) / 2) * 4 + ((coarse_x % 4) / 2) * 2) as u8;
-            let palette_id = (attr >> shift) & 3;
-            self.framebuffer[index] = self.output_color(self.palette[(palette_id * 4 + pixel) as usize]);
+            let palette_index = (self.bg_tile_cache_palette_id * 4 + pixel) as usize;
+            self.framebuffer[index] = self.output_color(self.palette[palette_index]);
         }
     }
 
