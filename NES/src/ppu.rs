@@ -4735,6 +4735,8 @@ mod background_tile_latch_regressions {
         assert_eq!(ppu.sprite_pattern_high[0], 0x40);
         assert!(ppu.sprite_pattern_valid[0]);
         assert_eq!(ppu.fetched_sprite_pixel(0, 0, 0), Some(1));
+        ppu.sprite_line_count = 1;
+        ppu.clock_sprite_output_pipeline();
         assert_eq!(ppu.fetched_sprite_pixel(0, 0, 1), Some(2));
     }
 
@@ -4759,7 +4761,58 @@ mod background_tile_latch_regressions {
         cartridge.ppu_write(0, 0);
         cartridge.ppu_write(8, 0);
         assert_eq!(ppu.fetched_sprite_pixel(0, 0, 0), Some(1));
+        ppu.sprite_line_count = 1;
+        ppu.clock_sprite_output_pipeline();
         assert_eq!(ppu.fetched_sprite_pixel(0, 0, 1), Some(2));
+    }
+
+    #[test]
+    fn sprite_x_counters_delay_and_gate_live_pattern_shifters() {
+        let mut ppu = Ppu::new();
+        ppu.sprite_line_count = 1;
+        ppu.sprite_pattern_valid[0] = true;
+        ppu.sprite_x_counter[0] = 2;
+        ppu.sprite_shift_low[0] = 0x80;
+        ppu.sprite_shift_high[0] = 0x40;
+
+        // Two leading transparent screen positions consume only the X counter.
+        ppu.clock_sprite_output_pipeline();
+        assert_eq!(ppu.sprite_x_counter[0], 1);
+        assert_eq!(ppu.sprite_shift_low[0], 0x80);
+        ppu.clock_sprite_output_pipeline();
+        assert_eq!(ppu.sprite_x_counter[0], 0);
+        assert_eq!(ppu.sprite_shift_low[0], 0x80);
+
+        // The next output position samples pixel 1, then advances to pixel 2.
+        assert_eq!(ppu.fetched_sprite_pixel(0, 0, 0), Some(1));
+        ppu.clock_sprite_output_pipeline();
+        assert_eq!(ppu.fetched_sprite_pixel(0, 0, 1), Some(2));
+    }
+
+    #[test]
+    fn horizontal_flip_reverses_sprite_planes_before_shifting() {
+        let mut image = vec![0; 16 + 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        image[16 + 16_384] = 0x80;
+        let cartridge = Cartridge::parse(&image).unwrap();
+
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.scanline = 261;
+        ppu.sprite_line_oam[0] = [0xFF, 0, 0x40, 0];
+        ppu.dot = 261;
+        ppu.clock_sprite_pattern_fetch(Some(&cartridge));
+        ppu.dot = 263;
+        ppu.clock_sprite_pattern_fetch(Some(&cartridge));
+
+        assert_eq!(ppu.sprite_shift_low[0], 0x01);
+        assert_eq!(ppu.fetched_sprite_pixel(0, 0x40, 0), Some(0));
+        for _ in 0..7 {
+            ppu.clock_sprite_output_pipeline();
+        }
+        assert_eq!(ppu.fetched_sprite_pixel(0, 0x40, 7), Some(1));
     }
 
     #[test]
