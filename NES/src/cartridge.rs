@@ -1073,32 +1073,58 @@ pub struct Mmc3 {
     a12_high: bool, a12_low_since: Option<u64>, last_ppu_cycle: Option<u64>,
 }
 impl Mmc3 {
-    /// Parses a legacy iNES mapper-4 image (MMC3/TxROM).
+    /// Parses an iNES or NES 2.0 mapper-4 image (MMC3/TxROM).
+    /// NES 2.0 submapper 0 is supported with declared PRG/CHR RAM sizes.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
         if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
-        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
-        let mapper = ((image[6] >> 4) as u16) | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        let nes2 = image[7] & 0x0C == 0x08;
+        let mapper = if nes2 {
+            ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
+                | (((image[8] & 0x0F) as u16) << 8)
+        } else {
+            ((image[6] >> 4) as u16)
+                | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
+        };
         if mapper != 4 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
-        let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if image[4] < 2 || image[4] % 2 != 0 || prg_len > 32 * PRG_BANK_LEN {
+        if nes2 && image[8] >> 4 != 0 { return Err(CartridgeError::Nes2NotSupported); }
+        let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
+            else { image[4] as usize * PRG_BANK_LEN };
+        if prg_len < 2 * PRG_BANK_LEN || prg_len % (2 * PRG_BANK_LEN) != 0
+            || prg_len > 32 * PRG_BANK_LEN {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
-        let chr_len = image[5] as usize * CHR_BANK_LEN;
+        let chr_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) }
+            else { image[5] as usize * CHR_BANK_LEN };
         if chr_len > 32 * CHR_BANK_LEN { return Err(CartridgeError::InvalidChrSize(chr_len)); }
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
         let expected = INES_HEADER_LEN + trainer_len + prg_len + chr_len;
         if image.len() < expected { return Err(CartridgeError::TruncatedImage { expected, actual: image.len() }); }
         let prg_start = INES_HEADER_LEN + trainer_len;
         let chr_start = prg_start + prg_len;
-        let chr_is_ram = chr_len == 0;
-        let chr = if chr_is_ram { vec![0; CHR_BANK_LEN] } else { image[chr_start..chr_start + chr_len].to_vec() };
-        let mut prg_ram = vec![0; PRG_RAM_LEN];
-        if trainer_len != 0 { prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]); }
-        let mirroring = if image[6] & 0x08 != 0 { Mirroring::FourScreen } else if image[6] & 1 != 0 { Mirroring::Vertical } else { Mirroring::Horizontal };
+        let declared_prg_ram_len = if nes2 {
+            nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4))
+        } else { PRG_RAM_LEN };
+        let prg_ram_len = declared_prg_ram_len.min(PRG_RAM_LEN)
+            .max(if trainer_len != 0 { PRG_RAM_LEN } else { 0 });
+        let mut prg_ram = vec![0; prg_ram_len];
+        if trainer_len != 0 {
+            prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
+        }
+        let declared_chr_ram_len = if nes2 {
+            nes2_ram_size(image[11] & 0x0F).saturating_add(nes2_ram_size(image[11] >> 4))
+        } else { CHR_BANK_LEN };
+        let chr_ram_len = declared_chr_ram_len.min(32 * CHR_BANK_LEN);
+        let chr_is_ram = chr_len == 0 && chr_ram_len > 0;
+        let chr = if chr_len != 0 { image[chr_start..chr_start + chr_len].to_vec() }
+            else { vec![0; chr_ram_len] };
+        let mirroring = if image[6] & 0x08 != 0 { Mirroring::FourScreen }
+            else if image[6] & 1 != 0 { Mirroring::Vertical } else { Mirroring::Horizontal };
         Ok(Self { prg_rom: image[prg_start..chr_start].to_vec(), prg_ram, chr, chr_is_ram,
             banks: [0, 2, 4, 5, 6, 7, 0, 1], bank_select: 0, mirroring, ram_enabled: true,
-            ram_write_protected: false, irq_latch: 0, irq_counter: 0, irq_reload: false, irq_enabled: false, irq_pending: false, a12_high: false, a12_low_since: None, last_ppu_cycle: None })
+            ram_write_protected: false, irq_latch: 0, irq_counter: 0, irq_reload: false,
+            irq_enabled: false, irq_pending: false, a12_high: false, a12_low_since: None,
+            last_ppu_cycle: None })
     }
     fn prg_index(&self, address: u16) -> usize {
         let count = self.prg_rom.len() / 0x2000;
@@ -1112,7 +1138,7 @@ impl Mmc3 {
         bank * 0x2000 + (address as usize & 0x1FFF)
     }
     fn chr_index(&self, address: u16) -> usize {
-        let count = (self.chr.len() / 0x400).max(1);
+        let count = self.chr.len().div_ceil(0x400).max(1);
         let r = self.banks; let slot = (address as usize >> 10) & 7;
         let bank = if self.bank_select & 0x80 == 0 {
             match slot { 0 => (r[0] & 0xFE) as usize, 1 => (r[0] | 1) as usize,
@@ -1121,17 +1147,19 @@ impl Mmc3 {
             match slot { 0..=3 => r[slot + 2] as usize, 4 => (r[0] & 0xFE) as usize,
                 5 => (r[0] | 1) as usize, 6 => (r[1] & 0xFE) as usize, 7 => (r[1] | 1) as usize, _ => 0 }
         };
-        (bank % count) * 0x400 + (address as usize & 0x3FF)
+        ((bank % count) * 0x400 + (address as usize & 0x3FF)) % self.chr.len().max(1)
     }
     /// Reads enabled PRG-RAM or one of the four 8 KiB PRG-ROM windows.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
-        match address { 0x6000..=0x7FFF if self.ram_enabled => Some(self.prg_ram[address as usize - 0x6000]),
+        match address { 0x6000..=0x7FFF if self.ram_enabled => self.prg_ram.get(address as usize - 0x6000).copied(),
             0x6000..=0x7FFF => None, 0x8000..=0xFFFF => Some(self.prg_rom[self.prg_index(address)]), _ => None }
     }
     /// Writes PRG-RAM or one of the MMC3 register pairs.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
-            0x6000..=0x7FFF if self.ram_enabled && !self.ram_write_protected => { self.prg_ram[address as usize - 0x6000] = value; true }
+            0x6000..=0x7FFF if self.ram_enabled && !self.ram_write_protected => {
+                if let Some(byte) = self.prg_ram.get_mut(address as usize - 0x6000) { *byte = value; true } else { false }
+            }
             0x6000..=0x7FFF => true,
             0x8000..=0x9FFF if address & 1 == 0 => { self.bank_select = value; true }
             0x8000..=0x9FFF => { let r = (self.bank_select & 7) as usize;
@@ -1151,10 +1179,12 @@ impl Mmc3 {
     /// Returns whether the pattern memory is CHR-RAM.
     pub fn chr_is_ram(&self) -> bool { self.chr_is_ram }
     /// Reads the selected 1 KiB/2 KiB CHR bank.
-    pub fn ppu_read(&self, address: u16) -> Option<u8> { if address >= 0x2000 { None } else { Some(self.chr[self.chr_index(address)]) } }
+    pub fn ppu_read(&self, address: u16) -> Option<u8> {
+        if address >= 0x2000 || self.chr.is_empty() { None } else { Some(self.chr[self.chr_index(address)]) }
+    }
     /// Writes pattern memory only for CHR-RAM.
     pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
-        if address >= 0x2000 || !self.chr_is_ram { return false; }
+        if address >= 0x2000 || !self.chr_is_ram || self.chr.is_empty() { return false; }
         let index = self.chr_index(address); self.chr[index] = value; true
     }
     /// Observes the PPU address bus for MMC3's filtered A12 rising-edge IRQ clock.
@@ -1979,7 +2009,7 @@ impl Cartridge {
             let mapper = ((image[6] >> 4) as u16)
                 | (image[7] & 0xF0) as u16
                 | (((image[8] & 0x0F) as u16) << 8);
-            if !matches!(mapper, 0 | 2 | 3 | 8 | 66 | 71) { return Err(CartridgeError::Nes2NotSupported); }
+            if !matches!(mapper, 0 | 2 | 3 | 4 | 8 | 66 | 71) { return Err(CartridgeError::Nes2NotSupported); }
         }
         let mapper = if nes2 {
             ((image[6] >> 4) as u16)
@@ -4632,6 +4662,73 @@ mod bus_conflict_regression_tests {
     }
 }
 
+
+#[cfg(test)]
+mod mmc3_nes2_tests {
+    use super::*;
+
+    fn nes2_mmc3() -> Vec<u8> {
+        let prg_len = 4 * PRG_BANK_LEN;
+        let mut image = vec![0; INES_HEADER_LEN + prg_len];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 4;
+        image[6] = 0x40;
+        image[7] = 0x08;
+        image[8] = 0;
+        image[9] = 0;
+        image[10] = 7; // 8 KiB PRG-RAM.
+        image[11] = 7; // 8 KiB CHR-RAM.
+        let start = INES_HEADER_LEN;
+        for bank in 0..8 {
+            image[start + bank * 0x2000..start + (bank + 1) * 0x2000].fill(bank as u8);
+        }
+        image
+    }
+
+    #[test]
+    fn nes2_mmc3_parses_declared_ram_and_retains_banking_and_irq() {
+        let mut cart = Cartridge::parse(&nes2_mmc3()).unwrap();
+        assert!(matches!(cart, Cartridge::Mmc3(_)));
+        assert_eq!(cart.cpu_read(0x8000), Some(0));
+        assert_eq!(cart.cpu_read(0xE000), Some(7));
+        assert!(cart.cpu_write(0x6000, 0x5A));
+        assert_eq!(cart.cpu_read(0x6000), Some(0x5A));
+        assert!(cart.chr_is_ram());
+        assert!(cart.ppu_write(0x0123, 0xA5));
+        assert_eq!(cart.ppu_read(0x0123), Some(0xA5));
+
+        cart.cpu_write(0xC000, 0);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+        cart.observe_ppu_address(0x0000, 10);
+        cart.observe_ppu_address(0x1000, 18);
+        assert!(cart.irq_pending());
+    }
+
+    #[test]
+    fn nes2_mmc3_without_ram_keeps_ram_windows_unmapped() {
+        let mut image = nes2_mmc3();
+        image[10] = 0;
+        image[11] = 0;
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.cpu_read(0x6000), None);
+        assert!(!cart.cpu_write(0x6000, 0xA5));
+        assert!(!cart.chr_is_ram());
+        assert_eq!(cart.ppu_read(0), None);
+        assert!(!cart.ppu_write(0, 0xA5));
+    }
+
+    #[test]
+    fn nes2_mmc3_rejects_unknown_submappers_and_truncated_roms() {
+        let mut unsupported = nes2_mmc3();
+        unsupported[8] = 0x10;
+        assert!(matches!(Cartridge::parse(&unsupported), Err(CartridgeError::Nes2NotSupported)));
+
+        let mut truncated = nes2_mmc3();
+        truncated.pop();
+        assert!(matches!(Cartridge::parse(&truncated), Err(CartridgeError::TruncatedImage { .. })));
+    }
+}
 
 #[cfg(test)]
 mod mapper8_nes2_tests {
