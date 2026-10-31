@@ -1603,7 +1603,7 @@ impl ColorDreams {
     /// Parses iNES or NES 2.0 mapper-11 images with banked PRG-ROM and CHR-ROM.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
         let nes2 = image[7] & 0x0C == 0x08;
         let mapper = if nes2 {
             ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
@@ -3300,7 +3300,7 @@ mod camerica_tests {
     #[test]
     fn mapper_71_nes2_parses_extended_header_and_maps_banks() {
         let mut image = camerica_image(4);
-        image[7] = 0x08; // NES 2.0 marker and mapper 71 high nibble.
+        image[7] = 0x48; // NES 2.0 marker and mapper 71 high nibble.
         image[8] = 0;
         image[9] = 0;
         image[10] = 7; // 8 KiB volatile PRG-RAM.
@@ -5590,6 +5590,7 @@ mod nes2_bnrom_cprom_tests {
         assert!(matches!(cart, Cartridge::Cprom(_)));
         assert_eq!(cart.cpu_read(0x8000), Some(0x35));
         assert!(cart.ppu_write(0x0000, 0x11));
+        assert!(cart.cpu_write(0x8000, 1));
         assert!(cart.ppu_write(0x1000, 0x22));
         assert!(cart.cpu_write(0x8000, 3));
         assert!(cart.ppu_write(0x1000, 0x33));
