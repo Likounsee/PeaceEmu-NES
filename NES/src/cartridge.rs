@@ -4985,7 +4985,6 @@ mod gxrom_nes2_tests {
         image[5] = 2;
         image[6] = 0x20;
         image[7] = 0x48;
-        image[11] = 7; // 8 KiB volatile CHR-RAM.
         image[8] = 0;
         image[9] = 0;
         image[10] = 7;
