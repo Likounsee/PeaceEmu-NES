@@ -1678,12 +1678,16 @@ impl ColorDreams {
             _ => false,
         }
     }
+    /// Returns fixed mirroring declared by the cartridge header.
     pub fn mirroring(&self) -> Mirroring { self.mirroring }
+    /// Color Dreams uses CHR-ROM rather than CHR-RAM.
     pub fn chr_is_ram(&self) -> bool { false }
+    /// Reads from the selected 8 KiB CHR-ROM bank.
     pub fn ppu_read(&self, address: u16) -> Option<u8> {
         if address >= 0x2000 { return None; }
         self.chr_rom.get(self.selected_chr_bank * CHR_BANK_LEN + address as usize).copied()
     }
+    /// Rejects writes because the selected pattern memory is CHR-ROM.
     pub fn ppu_write(&mut self, _address: u16, _value: u8) -> bool { false }
 }
 
