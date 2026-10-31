@@ -4412,11 +4412,11 @@ mod background_tile_latch_regressions {
 
     fn cartridge_with_two_background_tiles() -> Cartridge {
         let mut image = vec![0; 16 + 16_384 + 8_192];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[5] = 1;
-        image[16 + 0] = 0xFF; // Tile 0: opaque low plane.
-        image[16 + 16] = 0x00; // Tile 1: transparent.
+        image[16 + 16_384] = 0xFF; // Tile 0: opaque low plane.
+        image[16 + 16_384 + 16] = 0x00; // Tile 1: transparent.
         Cartridge::parse(&image).unwrap()
     }
 
@@ -4451,7 +4451,7 @@ mod background_tile_latch_regressions {
     #[test]
     fn current_tile_keeps_fetched_chr_bytes_until_the_next_tile() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1; // One PRG bank.
         // CHR bank count remains zero: the cartridge supplies writable CHR RAM.
         let mut cartridge = Cartridge::parse(&image).unwrap();
