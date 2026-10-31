@@ -4589,6 +4589,40 @@ mod background_tile_latch_regressions {
     }
 
     #[test]
+    fn horizontal_scroll_bits_reload_from_t_at_dot_257() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x08;
+        ppu.scanline = 20;
+        ppu.dot = 256;
+        ppu.v = 0x7BE0;
+        ppu.t = 0x0415;
+
+        ppu.tick(1);
+
+        assert_eq!(ppu.dot, 257);
+        assert_eq!(ppu.v & 0x041F, 0x0415);
+        assert_eq!(ppu.v & 0x7BE0, 0x7BE0,
+            "dot 257 reloads horizontal scroll without overwriting vertical fields");
+    }
+
+    #[test]
+    fn vertical_scroll_bits_reload_from_t_during_prerender_dots_280_to_304() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x08;
+        ppu.scanline = 261;
+        ppu.dot = 279;
+        ppu.v = 0x0415;
+        ppu.t = 0x7B20;
+
+        ppu.tick(1);
+
+        assert_eq!(ppu.dot, 280);
+        assert_eq!(ppu.v & 0x7BE0, 0x7B20);
+        assert_eq!(ppu.v & 0x041F, 0x0015,
+            "pre-render vertical reload preserves the horizontal scroll fields");
+    }
+
+    #[test]
     fn background_shifter_output_uses_fine_x_and_attribute_planes() {
         let mut ppu = Ppu::new();
         ppu.mask = 0x0A;
