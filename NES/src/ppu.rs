@@ -3623,6 +3623,75 @@ mod beam_timed_sprite_zero_regressions {
 
 
 #[cfg(test)]
+mod cycle_sprite_evaluation_regressions {
+    use super::*;
+
+    fn run_evaluation_line(ppu: &mut Ppu, scanline: u16) {
+        ppu.scanline = scanline;
+        ppu.mask = 0x18;
+        for dot in 1..=256 {
+            ppu.dot = dot;
+            ppu.clock_sprite_evaluator();
+        }
+    }
+
+    #[test]
+    fn cycle_evaluator_copies_exactly_eight_in_range_sprites_without_overflow() {
+        let mut ppu = Ppu::new();
+        for sprite in 0..64usize {
+            let y = if sprite < 8 { 0 } else { 20 };
+            ppu.oam[sprite * 4..sprite * 4 + 4]
+                .copy_from_slice(&[y, sprite as u8, 0, (sprite * 3) as u8]);
+        }
+
+        run_evaluation_line(&mut ppu, 0);
+
+        assert_eq!(ppu.sprite_line_count, 8);
+        assert_eq!(ppu.sprite_line_indices, [0, 1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(ppu.sprite_line_oam[7], [0, 7, 0, 21]);
+        assert_eq!(ppu.status & 0x20, 0);
+    }
+
+    #[test]
+    fn diagonal_overflow_scan_can_match_a_tile_byte_after_a_y_miss() {
+        let mut ppu = Ppu::new();
+        for sprite in 0..64usize {
+            ppu.oam[sprite * 4..sprite * 4 + 4]
+                .copy_from_slice(&[20, 20, 20, 200]);
+        }
+        // The first eight sprites qualify. Sprite 8's Y misses; the broken
+        // n/m walk then examines sprite 9's tile byte as a candidate Y.
+        for sprite in 0..8usize {
+            ppu.oam[sprite * 4] = 0;
+        }
+        ppu.oam[9 * 4 + 1] = 0;
+
+        run_evaluation_line(&mut ppu, 0);
+
+        assert_eq!(ppu.sprite_line_count, 8);
+        assert_ne!(ppu.status & 0x20, 0,
+            "diagonal n/m scanning must allow a false-positive overflow from a tile byte");
+    }
+
+    #[test]
+    fn diagonal_overflow_scan_does_not_flag_when_all_diagonal_bytes_miss() {
+        let mut ppu = Ppu::new();
+        for sprite in 0..64usize {
+            ppu.oam[sprite * 4..sprite * 4 + 4]
+                .copy_from_slice(&[20, 20, 20, 200]);
+        }
+        for sprite in 0..8usize {
+            ppu.oam[sprite * 4] = 0;
+        }
+
+        run_evaluation_line(&mut ppu, 0);
+
+        assert_eq!(ppu.sprite_line_count, 8);
+        assert_eq!(ppu.status & 0x20, 0);
+    }
+}
+
+#[cfg(test)]
 mod prerender_sprite_overflow_regressions {
     use super::*;
 
