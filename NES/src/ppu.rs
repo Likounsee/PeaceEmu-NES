@@ -350,7 +350,7 @@ impl Ppu {
             if (1..=256).contains(&self.dot) && self.scanline < 240 {
                 let x = (self.dot - 1) as usize;
                 let y = self.scanline as usize;
-                self.render_background_pixel(x, y, cartridge);
+                self.render_background_pixel_from_shifters(x, y);
                 if self.status & 0x40 == 0 && self.sprite_zero_hit_at(x, y, cartridge) {
                     self.status |= 0x40;
                 }
@@ -717,6 +717,34 @@ impl Ppu {
             let palette_index = (self.bg_tile_cache_palette_id * 4 + pixel) as usize;
             self.framebuffer[index] = self.output_color(self.palette[palette_index]);
         }
+    }
+
+    /// Emits the background pixel selected by the live 2C02 pattern/attribute shifters.
+    ///
+    /// The high bit of each 16-bit register is the pixel at the beam; fine-X selects
+    /// a subpixel offset into the fetched tile stream. This keeps output synchronized
+    /// with the dot-driven fetch pipeline rather than independently rereading VRAM.
+    fn render_background_pixel_from_shifters(&mut self, x: usize, y: usize) {
+        if x >= 256 || y >= 240 { return; }
+        let index = y * 256 + x;
+        if self.mask & 0x08 == 0 || (x < 8 && self.mask & 0x02 == 0) {
+            self.framebuffer[index] = self.output_color(self.palette[0]);
+            self.background_opaque[index] = false;
+            return;
+        }
+
+        let bit = 0x8000u16 >> self.fine_x;
+        let pixel = (((self.bg_pattern_shift_low & bit) != 0) as u8)
+            | ((((self.bg_pattern_shift_high & bit) != 0) as u8) << 1);
+        let palette_id = (((self.bg_attribute_shift_low & bit) != 0) as u8)
+            | ((((self.bg_attribute_shift_high & bit) != 0) as u8) << 1);
+        self.background_opaque[index] = pixel != 0;
+        let palette_index = if pixel == 0 {
+            0
+        } else {
+            (palette_id * 4 + pixel) as usize
+        };
+        self.framebuffer[index] = self.output_color(self.palette[palette_index]);
     }
 
     /// Draws the highest-priority opaque sprite pixel at the current beam position.
@@ -4547,6 +4575,28 @@ mod background_tile_latch_regressions {
         // The adjacent tile is fetched separately and sees the updated CHR RAM.
         ppu.render_background_pixel(8, 0, Some(&cartridge));
         assert_eq!(ppu.framebuffer[8], ppu.palette[0]);
+    }
+
+    #[test]
+    fn background_shifter_output_uses_fine_x_and_attribute_planes() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x0A;
+        ppu.fine_x = 2;
+        ppu.palette[0] = 0x01;
+        ppu.palette[1] = 0x11;
+        ppu.palette[5] = 0x25;
+        // Pixel value 1 at shifter bit 13, with attribute palette 1 at that bit.
+        ppu.bg_pattern_shift_low = 1 << 13;
+        ppu.bg_attribute_shift_low = 1 << 13;
+        ppu.render_background_pixel_from_shifters(0, 0);
+        assert_eq!(ppu.framebuffer[0], 0x25);
+        assert!(ppu.background_opaque[0]);
+
+        // Fine-X selects the next bit, which is transparent and therefore uses universal color.
+        ppu.fine_x = 1;
+        ppu.render_background_pixel_from_shifters(1, 0);
+        assert_eq!(ppu.framebuffer[1], 0x01);
+        assert!(!ppu.background_opaque[1]);
     }
 
     #[test]
