@@ -857,6 +857,28 @@ mod tests {
     }
 
     #[test]
+    fn oam_dma_keeps_ppu_nmi_edges_live_while_the_cpu_is_stalled() {
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
+
+        // Start at vblank dot 0 with NMI output enabled. The OAM DMA transfer
+        // must keep clocking the PPU, allowing the dot-1 edge to reach the CPU
+        // even though the CPU cannot execute an instruction during the transfer.
+        machine.bus.tick_ppu(242 * 341);
+        assert_eq!(machine.bus.ppu_position(), (241, 0));
+        machine.write_cpu(0x2000, 0x80);
+
+        let before = machine.total_cycles();
+        machine.perform_oam_dma(0x00);
+
+        assert!(machine.bus.take_nmi_request(),
+            "the vblank NMI edge must remain pending when OAM DMA releases the CPU");
+        assert!(machine.bus.read(0x2002) & 0x80 != 0,
+            "vblank status must be set while OAM DMA advances through scanline 241");
+        assert!(machine.total_cycles() - before >= 513,
+            "the CPU remains stalled for the full OAM DMA transfer");
+    }
+
+    #[test]
     fn dmc_dma_stalls_cpu_and_advances_ppu_time() {
         let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
         let before_cycles = machine.total_cycles();
