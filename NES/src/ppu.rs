@@ -3633,7 +3633,7 @@ mod sprite_priority_pipeline_regressions {
         ppu.sprite_line = 0;
         ppu.sprite_line_count = 2;
         ppu.sprite_line_oam[0] = [0xFF, 0, 0, 0];
-        ppu.sprite_line_oam[1] = [0xFF, 1, 0, 0];
+        ppu.sprite_line_oam[1] = [0xFF, 1, 1, 0]; // Use sprite palette 1 for the lower slot.
         ppu.sprite_pattern_valid = [true; 8];
         ppu.sprite_x_counter = [0; 8];
         ppu.palette[0x11] = 0x12;
