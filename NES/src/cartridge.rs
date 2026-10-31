@@ -1457,20 +1457,29 @@ pub struct ColorDreams {
 }
 
 impl ColorDreams {
-    /// Parses a legacy iNES mapper-11 image with switchable PRG-ROM and CHR-ROM.
+    /// Parses iNES or NES 2.0 mapper-11 images with banked PRG-ROM and CHR-ROM.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
-        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
-        let mapper = ((image[6] >> 4) as u16)
-            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        let nes2 = image[7] & 0x0C == 0x08;
+        let mapper = if nes2 {
+            ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
+                | (((image[8] & 0x0F) as u16) << 8)
+        } else {
+            ((image[6] >> 4) as u16)
+                | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
+        };
         if mapper != 11 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
-        let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if image[4] < 2 || image[4] % 2 != 0 || image[4] > 32 {
+        if nes2 && image[8] >> 4 != 0 { return Err(CartridgeError::Nes2NotSupported); }
+        let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
+            else { image[4] as usize * PRG_BANK_LEN };
+        if prg_len < 2 * PRG_BANK_LEN || prg_len % (2 * PRG_BANK_LEN) != 0
+            || prg_len > 32 * PRG_BANK_LEN {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
-        let chr_len = image[5] as usize * CHR_BANK_LEN;
-        if chr_len == 0 || chr_len > 16 * CHR_BANK_LEN {
+        let chr_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) }
+            else { image[5] as usize * CHR_BANK_LEN };
+        if chr_len == 0 || chr_len > 16 * CHR_BANK_LEN || chr_len % CHR_BANK_LEN != 0 {
             return Err(CartridgeError::InvalidChrSize(chr_len));
         }
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
@@ -1480,7 +1489,15 @@ impl ColorDreams {
         }
         let prg_start = INES_HEADER_LEN + trainer_len;
         let chr_start = prg_start + prg_len;
-        let mut prg_ram = vec![0; PRG_RAM_LEN];
+        let declared_ram_len = if nes2 {
+            nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4))
+        } else { PRG_RAM_LEN };
+        if declared_ram_len > PRG_RAM_LEN {
+            return Err(CartridgeError::Nes2NotSupported);
+        }
+        let mut prg_ram = vec![0; if trainer_len != 0 {
+            declared_ram_len.max(PRG_RAM_LEN)
+        } else { declared_ram_len }];
         if trainer_len != 0 {
             prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
         }
@@ -2009,7 +2026,7 @@ impl Cartridge {
             let mapper = ((image[6] >> 4) as u16)
                 | (image[7] & 0xF0) as u16
                 | (((image[8] & 0x0F) as u16) << 8);
-            if !matches!(mapper, 0 | 2 | 3 | 4 | 8 | 66 | 71) { return Err(CartridgeError::Nes2NotSupported); }
+            if !matches!(mapper, 0 | 2 | 3 | 4 | 8 | 11 | 66 | 71) { return Err(CartridgeError::Nes2NotSupported); }
         }
         let mapper = if nes2 {
             ((image[6] >> 4) as u16)
@@ -5324,3 +5341,69 @@ mod mmc1_cycle_write_regressions {
         assert_eq!(cartridge.cpu_read(0x6000), Some(0x5A));
     }
 }
+
+
+#[cfg(test)]
+mod color_dreams_nes2_tests {
+    use super::*;
+
+    fn nes2_color_dreams() -> Vec<u8> {
+        let prg_len = 4 * PRG_BANK_LEN;
+        let chr_len = 2 * CHR_BANK_LEN;
+        let mut image = vec![0; INES_HEADER_LEN + prg_len + chr_len];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 4;
+        image[5] = 2;
+        image[6] = 0xB0;
+        image[7] = 0x48;
+        image[8] = 0;
+        image[9] = 0;
+        image[10] = 7;
+        let prg_start = INES_HEADER_LEN;
+        for bank in 0..2 {
+            image[prg_start + bank * 2 * PRG_BANK_LEN
+                ..prg_start + (bank + 1) * 2 * PRG_BANK_LEN].fill(0x30 + bank as u8);
+        }
+        let chr_start = prg_start + prg_len;
+        for bank in 0..2 {
+            image[chr_start + bank * CHR_BANK_LEN
+                ..chr_start + (bank + 1) * CHR_BANK_LEN].fill(0x50 + bank as u8);
+        }
+        image
+    }
+
+    #[test]
+    fn color_dreams_nes2_decodes_prg_chr_banks_and_declared_ram() {
+        let mut cart = Cartridge::parse(&nes2_color_dreams()).unwrap();
+        assert!(matches!(cart, Cartridge::ColorDreams(_)));
+        assert_eq!(cart.cpu_read(0x8000), Some(0x30));
+        assert_eq!(cart.ppu_read(0), Some(0x50));
+        cart.cpu_write(0x8000, 0x11);
+        assert_eq!(cart.cpu_read(0x8000), Some(0x31));
+        assert_eq!(cart.ppu_read(0), Some(0x51));
+        cart.cpu_write(0x6000, 0xA7);
+        assert_eq!(cart.cpu_read(0x6000), Some(0xA7));
+    }
+
+    #[test]
+    fn color_dreams_nes2_without_prg_ram_keeps_ram_unmapped() {
+        let mut image = nes2_color_dreams();
+        image[10] = 0;
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.cpu_read(0x6000), None);
+        assert!(!cart.cpu_write(0x6000, 0xA7));
+        assert_eq!(cart.cpu_read(0x8000), Some(0x30));
+    }
+
+    #[test]
+    fn color_dreams_nes2_rejects_unknown_submappers_and_truncated_rom() {
+        let mut submapper = nes2_color_dreams();
+        submapper[8] = 0x10;
+        assert!(matches!(Cartridge::parse(&submapper), Err(CartridgeError::Nes2NotSupported)));
+
+        let mut truncated = nes2_color_dreams();
+        truncated.pop();
+        assert!(matches!(Cartridge::parse(&truncated), Err(CartridgeError::TruncatedImage { .. })));
+    }
+}
+
