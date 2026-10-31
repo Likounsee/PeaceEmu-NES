@@ -74,8 +74,23 @@ impl CpuBus {
             // $4017's delayed frame-counter reset must sample the current CPU parity,
             // not the stale parity left over from the previous instruction.
             self.tick_ppu(3);
-            self.instruction_dmc_stalls = self.instruction_dmc_stalls
-                .saturating_add(self.tick_apu_with_dma_access(1, dmc_dma_can_halt));
+            let dmc_stalls = self.tick_apu_with_dma_access(1, dmc_dma_can_halt);
+            self.instruction_dmc_stalls = self.instruction_dmc_stalls.saturating_add(dmc_stalls);
+
+            // A DMC halt suspends the CPU at this exact readable bus access.
+            // Advance the shared device timeline before the instruction can issue
+            // its next access; deferring these cycles to the instruction boundary
+            // makes later PPU register reads observe events too early.
+            let mut pending_stall_cycles = dmc_stalls;
+            while pending_stall_cycles != 0 {
+                pending_stall_cycles -= 1;
+                self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
+                self.tick_ppu(3);
+                let additional_stalls = self.tick_apu_with_dma_access(1, true);
+                self.instruction_dmc_stalls = self.instruction_dmc_stalls
+                    .saturating_add(additional_stalls);
+                pending_stall_cycles = pending_stall_cycles.saturating_add(additional_stalls);
+            }
         }
     }
 
