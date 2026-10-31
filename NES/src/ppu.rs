@@ -5237,10 +5237,11 @@ mod oam_rendering_boundary_regressions {
         ppu.mask = 0x18;
         ppu.scanline = 32;
         ppu.oam_addr = 0x40;
+        ppu.oam[0] = 0xA5;
 
         ppu.dot = 320;
         ppu.cpu_write_register(4, 0x33, None);
-        assert_eq!(ppu.oam[0], 0, "dot 320 remains inside sprite fetch");
+        assert_eq!(ppu.oam[0], 0xA5, "dot 320 remains inside sprite fetch");
         assert_eq!(ppu.oam_addr, 0);
 
         ppu.dot = 321;
