@@ -439,9 +439,10 @@ impl Uxrom {
                 | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
         };
         if mapper != 2 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
-        // This implementation models the standard UxROM board (submapper 0)
-        // and the bus-conflict variant (submapper 1) only.
-        if nes2 && image[8] >> 4 > 1 {
+        // UxROM submapper 0 has unspecified bus-conflict behavior,
+        // submapper 1 has bus conflicts, and submapper 2 has none.
+        // Other board variants are not implemented by this mapper core.
+        if nes2 && image[8] >> 4 > 2 {
             return Err(CartridgeError::Nes2NotSupported);
         }
 
@@ -4859,6 +4860,15 @@ mod bus_conflict_regression_tests {
         let mut no_conflict = Cartridge::parse(&nes2_uxrom(2)).unwrap();
         no_conflict.cpu_write(0x8000, 0x03);
         assert_eq!(no_conflict.cpu_read(0x8000), Some(0x30));
+    }
+
+    #[test]
+    fn nes2_uxrom_rejects_unsupported_submapper() {
+        let unsupported = nes2_uxrom(3);
+        assert!(matches!(
+            Cartridge::parse(&unsupported),
+            Err(CartridgeError::Nes2NotSupported)
+        ));
     }
 
     #[test]
