@@ -1935,7 +1935,7 @@ impl Mapper15 {
     /// Parses iNES or NES 2.0 mapper-15 images with 8 KiB CHR-RAM.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
         let nes2 = image[7] & 0x0C == 0x08;
         let mapper = if nes2 {
             ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16 | (((image[8] & 0x0F) as u16) << 8)
@@ -2291,7 +2291,7 @@ mod mapper15_nes2_tests {
     use super::*;
     fn image() -> Vec<u8> {
         let mut image=vec![0; INES_HEADER_LEN+4*PRG_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A"); image[4]=4; image[6]=0xF0; image[7]=0x08;
+        image[0..4].copy_from_slice(b"NES\x1A"); image[4]=4; image[6]=0xF0; image[7]=0x08;
         image[10]=7; image[11]=7;
         for bank in 0..4 { let p=INES_HEADER_LEN+bank*PRG_BANK_LEN; image[p..p+PRG_BANK_LEN].fill(bank as u8); }
         image
