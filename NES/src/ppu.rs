@@ -4674,12 +4674,12 @@ mod background_tile_latch_regressions {
     #[test]
     fn sprite_fetch_latches_both_pattern_planes_for_the_next_scanline() {
         let mut image = vec![0; 16 + 16_384 + 8_192];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[5] = 1;
-        let mut cartridge = Cartridge::parse(&image).unwrap();
-        cartridge.ppu_write(0, 0x80);
-        cartridge.ppu_write(8, 0x40);
+        image[16 + 16_384] = 0x80;
+        image[16 + 16_384 + 8] = 0x40;
+        let cartridge = Cartridge::parse(&image).unwrap();
 
         let mut ppu = Ppu::new();
         ppu.mask = 0x18;
