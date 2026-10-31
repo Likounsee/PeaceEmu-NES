@@ -4842,7 +4842,7 @@ mod background_tile_latch_regressions {
     #[test]
     fn sprite_fetch_uses_8x16_tile_bank_and_vertical_flip() {
         let mut image = vec![0; 16 + 16_384 + 8_192];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[5] = 1;
         // Sprite tile 3 selects pattern bank $1000 and tile pair 2/3.
