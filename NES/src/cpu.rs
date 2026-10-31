@@ -86,6 +86,8 @@ pub struct Cpu {
     // KIL/JAM unofficial opcodes halt the 2A03 until reset.
     jammed: bool,
     jam_opcode: u8,
+    // Power-on stack state is unspecified; the first reset sequence decrements it to $FD.
+    reset_seen: bool,
 }
 impl Default for Cpu {
     fn default() -> Self { Self::new() }
@@ -93,7 +95,7 @@ impl Default for Cpu {
 impl Cpu {
     /// Creates CPU state before reset-vector initialization.
     pub fn new() -> Self {
-        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED }, cycles: 0, irq_poll_delay: false, jammed: false, jam_opcode: 0x02 }
+        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED }, cycles: 0, irq_poll_delay: false, jammed: false, jam_opcode: 0x02, reset_seen: false }
     }
     /// Returns the current registers and flags.
     pub fn state(&self) -> CpuState { self.state }
@@ -108,12 +110,29 @@ impl Cpu {
         self.state.a = 0;
         self.state.x = 0;
         self.state.y = 0;
-        self.state.sp = 0xFD;
+        if !self.reset_seen {
+            self.state.sp = 0;
+            self.reset_seen = true;
+        }
         self.state.status = flags::INTERRUPT_DISABLE | flags::UNUSED;
         self.irq_poll_delay = false;
         self.jammed = false;
         self.jam_opcode = 0x02;
+
+        // The 2A03 reset sequence is seven bus cycles: two discarded reads,
+        // three stack-page reads/decrements, then the reset vector. On a
+        // power-on reset the initially unspecified SP is driven to $FD; later
+        // resets decrement the live stack pointer by three instead of reloading it.
+        bus.begin_cpu_instruction();
+        let _ = bus.read(self.state.pc);
+        let _ = bus.read(self.state.pc);
+        for _ in 0..3 {
+            let _ = bus.read(0x0100 | u16::from(self.state.sp));
+            self.state.sp = self.state.sp.wrapping_sub(1);
+        }
         self.state.pc = self.read_word(bus, 0xFFFC);
+        let bus_cycles = bus.end_cpu_instruction();
+        debug_assert_eq!(bus_cycles, 7, "reset must issue exactly seven bus cycles");
         self.cycles = self.cycles.saturating_add(7);
     }
 
@@ -1253,6 +1272,31 @@ mod tests {
         assert_eq!(cpu.state().sp, 0xFD);
         assert_eq!(cpu.total_cycles(), 7);
     }
+    #[test]
+    fn reset_runs_seven_bus_cycles_and_soft_reset_decrements_live_stack() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFC] = 0x34;
+        image[16 + 0x3FFD] = 0x12;
+        let cartridge = crate::cartridge::Cartridge::parse(&image).unwrap();
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(cartridge);
+        let mut cpu = Cpu::new();
+
+        cpu.reset(&mut bus);
+        assert_eq!(cpu.state().pc, 0x1234);
+        assert_eq!(cpu.state().sp, 0xFD);
+        assert_eq!(cpu.total_cycles(), 7);
+        assert_eq!(bus.ppu_position(), (261, 21));
+
+        cpu.state.sp = 0x80;
+        cpu.reset(&mut bus);
+        assert_eq!(cpu.state().sp, 0x7D, "soft reset must decrement the existing SP three times");
+        assert_eq!(cpu.total_cycles(), 14);
+        assert_eq!(bus.ppu_position(), (261, 42));
+    }
+
     #[test] fn indexed_zero_page_and_absolute_reads_work() {
         let (mut cpu, mut bus) = setup(&[0xA2, 0x01, 0xB5, 0x20, 0xBD, 0xFF, 0x02]);
         bus.write(0x0021, 0x35);
