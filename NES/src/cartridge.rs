@@ -4557,28 +4557,6 @@ mod mapper8_regressions {
     }
 
     #[test]
-    fn mapper8_nes2_chr_ram_size_is_not_padded_and_absent_ram_stays_unmapped() {
-        let mut no_ram = nes2_mapper8();
-        no_ram[10] = 7;
-        no_ram[11] = 0;
-        let mut cart = Cartridge::parse(&no_ram).unwrap();
-        assert!(!cart.chr_is_ram());
-        assert_eq!(cart.ppu_read(0x0000), None);
-        assert!(!cart.ppu_write(0x0000, 0xA5));
-
-        let mut small_ram = nes2_mapper8();
-        small_ram[11] = 5; // 64 << 5 = 2 KiB CHR-RAM.
-        let mut cart = Cartridge::parse(&small_ram).unwrap();
-        assert!(cart.chr_is_ram());
-        assert!(cart.ppu_write(0x0000, 0x5A));
-        assert_eq!(cart.ppu_read(0x0000), Some(0x5A));
-        assert_eq!(cart.ppu_read(0x0800), Some(0x5A),
-            "a 2 KiB physical chip mirrors across the 8 KiB pattern window");
-        assert!(cart.ppu_write(0x1FFF, 0xA5));
-        assert_eq!(cart.ppu_read(0x07FF), Some(0xA5));
-    }
-
-    #[test]
     fn mapper8_rejects_invalid_prg_sizes_and_truncated_roms() {
         let mut bad = image(2, 0, 0);
         bad[4] = 3;
@@ -4692,6 +4670,28 @@ mod mapper8_nes2_tests {
         cart.cpu_write(0x8000, 0x03);
         assert!(cart.ppu_write(0x123, 0xA5));
         assert_eq!(cart.ppu_read(0x123), Some(0xA5));
+    }
+
+    #[test]
+    fn mapper8_nes2_chr_ram_size_is_not_padded_and_absent_ram_stays_unmapped() {
+        let mut no_ram = nes2_mapper8();
+        no_ram[10] = 7;
+        no_ram[11] = 0;
+        let mut cart = Cartridge::parse(&no_ram).unwrap();
+        assert!(!cart.chr_is_ram());
+        assert_eq!(cart.ppu_read(0x0000), None);
+        assert!(!cart.ppu_write(0x0000, 0xA5));
+
+        let mut small_ram = nes2_mapper8();
+        small_ram[11] = 5; // 64 << 5 = 2 KiB CHR-RAM.
+        let mut cart = Cartridge::parse(&small_ram).unwrap();
+        assert!(cart.chr_is_ram());
+        assert!(cart.ppu_write(0x0000, 0x5A));
+        assert_eq!(cart.ppu_read(0x0000), Some(0x5A));
+        assert_eq!(cart.ppu_read(0x0800), Some(0x5A),
+            "a 2 KiB physical chip mirrors across the 8 KiB pattern window");
+        assert!(cart.ppu_write(0x1FFF, 0xA5));
+        assert_eq!(cart.ppu_read(0x07FF), Some(0xA5));
     }
 
     #[test]
