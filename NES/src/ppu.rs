@@ -4796,6 +4796,7 @@ mod background_tile_latch_regressions {
         ppu.dot = 0;
         ppu.mask = 0x14; // Sprites enabled, including the leftmost eight pixels.
         ppu.sprite_line_count = 1;
+        ppu.sprite_line = 0; // Mark the manually prepared secondary-OAM line as current.
         ppu.sprite_line_oam[0] = [0xFF, 0, 0, 2];
         ppu.sprite_pattern_valid[0] = true;
         ppu.sprite_shift_low[0] = 0x80;
