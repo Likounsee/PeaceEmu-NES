@@ -794,20 +794,29 @@ pub struct Mapper87 {
 }
 
 impl Mapper87 {
-    /// Parses a legacy iNES mapper-87 image with 32 KiB PRG and 32 KiB CHR-ROM.
+    /// Parses an iNES or NES 2.0 mapper-87 image with 32 KiB PRG and 32 KiB CHR-ROM.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
         if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
-        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
-        let mapper = ((image[6] >> 4) as u16)
-            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        let nes2 = image[7] & 0x0C == 0x08;
+        let mapper = if nes2 {
+            ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
+                | (((image[8] & 0x0F) as u16) << 8)
+        } else {
+            ((image[6] >> 4) as u16)
+                | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
+        };
         if mapper != 87 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
+        if nes2 && (image[8] >> 4 != 0 || image[10] != 0 || image[11] != 0) {
+            return Err(CartridgeError::Nes2NotSupported);
+        }
 
-        let prg_len = image[4] as usize * PRG_BANK_LEN;
+        let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
+            else { image[4] as usize * PRG_BANK_LEN };
         if prg_len != 2 * PRG_BANK_LEN {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
-        let chr_len = image[5] as usize * CHR_BANK_LEN;
+        let chr_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) } else { image[5] as usize * CHR_BANK_LEN };
         if chr_len != 4 * CHR_BANK_LEN {
             return Err(CartridgeError::InvalidChrSize(chr_len));
         }
@@ -2062,7 +2071,7 @@ impl Cartridge {
             let mapper = ((image[6] >> 4) as u16)
                 | (image[7] & 0xF0) as u16
                 | (((image[8] & 0x0F) as u16) << 8);
-            if !matches!(mapper, 0 | 2 | 3 | 4 | 7 | 8 | 11 | 13 | 15 | 34 | 66 | 71) { return Err(CartridgeError::Nes2NotSupported); }
+            if !matches!(mapper, 0 | 2 | 3 | 4 | 7 | 8 | 11 | 13 | 15 | 34 | 66 | 71 | 87) { return Err(CartridgeError::Nes2NotSupported); }
         }
         let mapper = if nes2 {
             ((image[6] >> 4) as u16)
@@ -2234,6 +2243,41 @@ impl Cartridge {
         assert_eq!(cart.cpu_read(0x8000), Some(16));
         assert_eq!(cart.cpu_read(0xC000), Some(17));
     }
+
+#[cfg(test)]
+mod mapper87_nes2_tests {
+    use super::*;
+    fn image() -> Vec<u8> {
+        let mut i=vec![0;INES_HEADER_LEN+2*PRG_BANK_LEN+4*CHR_BANK_LEN];
+        i[0..4].copy_from_slice(b"NES\\x1A"); i[4]=2; i[5]=4; i[6]=0x70; i[7]=0x08;
+        for bank in 0..4 { let p=INES_HEADER_LEN+2*PRG_BANK_LEN+bank*CHR_BANK_LEN; i[p..p+CHR_BANK_LEN].fill(bank as u8); }
+        i
+    }
+    #[test]
+    fn nes2_mapper87_selects_chr_banks_with_hardware_bit_swap() {
+        let mut c=Cartridge::parse(&image()).unwrap();
+        assert!(matches!(c,Cartridge::Mapper87(_)));
+        for (register,expected) in [(1,2),(2,1),(3,3),(0,0)] {
+            assert!(c.cpu_write(0x6000,register));
+            assert_eq!(c.ppu_read(0),Some(expected));
+            assert_eq!(c.ppu_read(0x1FFF),Some(expected));
+        }
+        assert_eq!(c.cpu_read(0x8000),Some(0));
+        assert!(!c.cpu_write(0x8000,1));
+    }
+    #[test]
+    fn nes2_mapper87_rejects_submapper_and_ram_declarations() {
+        let mut i=image(); i[8]=0x10; assert!(matches!(Cartridge::parse(&i),Err(CartridgeError::Nes2NotSupported)));
+        let mut i=image(); i[10]=7; assert!(matches!(Cartridge::parse(&i),Err(CartridgeError::Nes2NotSupported)));
+        let mut i=image(); i[11]=7; assert!(matches!(Cartridge::parse(&i),Err(CartridgeError::Nes2NotSupported)));
+    }
+    #[test]
+    fn nes2_mapper87_rejects_wrong_rom_sizes_and_truncation() {
+        let mut i=image(); i[4]=1; assert!(matches!(Cartridge::parse(&i),Err(CartridgeError::InvalidPrgSize(_))));
+        let mut i=image(); i[5]=3; assert!(matches!(Cartridge::parse(&i),Err(CartridgeError::InvalidChrSize(_))));
+        let mut i=image(); i.pop(); assert!(matches!(Cartridge::parse(&i),Err(CartridgeError::TruncatedImage{..})));
+    }
+}
 
 #[cfg(test)]
 mod mapper15_tests {
