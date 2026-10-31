@@ -5253,7 +5253,7 @@ mod color_dreams_nes2_tests {
         image[4] = 4;
         image[5] = 2;
         image[6] = 0xB0;
-        image[7] = 0x48;
+        image[7] = 0x08;
         image[8] = 0;
         image[9] = 0;
         image[10] = 7;
