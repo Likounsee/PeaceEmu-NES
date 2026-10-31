@@ -5204,3 +5204,49 @@ mod background_tile_latch_regressions {
 
 }
 
+#[cfg(test)]
+mod oam_rendering_boundary_regressions {
+    use super::*;
+
+    #[test]
+    fn oamdata_write_changes_behavior_at_the_evaluation_to_fetch_boundary() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.scanline = 32;
+        ppu.oam_addr = 0x20;
+        ppu.oam[0x20] = 0xA5;
+
+        // Dot 256 is still owned by sprite evaluation: writes are discarded
+        // and OAMADDR advances by four.
+        ppu.dot = 256;
+        ppu.cpu_write_register(4, 0x11, None);
+        assert_eq!(ppu.oam[0x20], 0xA5);
+        assert_eq!(ppu.oam_addr, 0x24);
+
+        // The first sprite-fetch dot pins OAMADDR to zero and rejects writes.
+        ppu.dot = 257;
+        ppu.cpu_write_register(3, 0x80, None);
+        ppu.cpu_write_register(4, 0x22, None);
+        assert_eq!(ppu.oam[0], 0);
+        assert_eq!(ppu.oam_addr, 0);
+    }
+
+    #[test]
+    fn oamdata_write_becomes_available_immediately_after_sprite_fetch() {
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x18;
+        ppu.scanline = 32;
+        ppu.oam_addr = 0x40;
+
+        ppu.dot = 320;
+        ppu.cpu_write_register(4, 0x33, None);
+        assert_eq!(ppu.oam[0], 0, "dot 320 remains inside sprite fetch");
+        assert_eq!(ppu.oam_addr, 0);
+
+        ppu.dot = 321;
+        ppu.cpu_write_register(3, 0x40, None);
+        ppu.cpu_write_register(4, 0x44, None);
+        assert_eq!(ppu.oam[0x40], 0x44, "primary OAM is writable again at dot 321");
+        assert_eq!(ppu.oam_addr, 0x41);
+    }
+}
