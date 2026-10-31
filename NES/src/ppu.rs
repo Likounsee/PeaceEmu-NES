@@ -4790,6 +4790,29 @@ mod background_tile_latch_regressions {
     }
 
     #[test]
+    fn beam_compositor_uses_sprite_x_counter_and_live_shift_registers() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x14; // Sprites enabled, including the leftmost eight pixels.
+        ppu.sprite_line_count = 1;
+        ppu.sprite_line_oam[0] = [0xFF, 0, 0, 2];
+        ppu.sprite_pattern_valid[0] = true;
+        ppu.sprite_shift_low[0] = 0x80;
+        ppu.sprite_shift_high[0] = 0;
+        ppu.palette[0x11] = 0x2A;
+
+        // Dots 1 and 2 consume the sprite's X delay; dot 3 emits its first pixel.
+        ppu.tick(3);
+
+        assert_eq!(ppu.sprite_x_counter[0], 0);
+        assert_eq!(ppu.framebuffer[0], ppu.output_color(ppu.palette[0]));
+        assert_eq!(ppu.framebuffer[1], ppu.output_color(ppu.palette[0]));
+        assert_eq!(ppu.framebuffer[2], ppu.output_color(0x2A));
+        assert_eq!(ppu.sprite_shift_low[0], 0);
+    }
+
+    #[test]
     fn horizontal_flip_reverses_sprite_planes_before_shifting() {
         let mut image = vec![0; 16 + 16_384 + 8_192];
         image[0..4].copy_from_slice(b"NES\x1A");
