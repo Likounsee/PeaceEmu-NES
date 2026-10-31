@@ -1932,93 +1932,81 @@ pub struct Mapper15 {
 }
 
 impl Mapper15 {
-    /// Parses a legacy iNES mapper-15 image with PRG-ROM and 8 KiB CHR-RAM.
+    /// Parses iNES or NES 2.0 mapper-15 images with 8 KiB CHR-RAM.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
-        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
-        let mapper = ((image[6] >> 4) as u16)
-            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        let nes2 = image[7] & 0x0C == 0x08;
+        let mapper = if nes2 {
+            ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16 | (((image[8] & 0x0F) as u16) << 8)
+        } else {
+            ((image[6] >> 4) as u16) | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
+        };
         if mapper != 15 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
-        let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if image[4] < 2 || image[4] % 2 != 0 || prg_len > 64 * PRG_BANK_LEN {
+        if nes2 && image[8] >> 4 != 0 { return Err(CartridgeError::Nes2NotSupported); }
+        let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) } else { image[4] as usize * PRG_BANK_LEN };
+        if prg_len < 2 * PRG_BANK_LEN || prg_len % (2 * PRG_BANK_LEN) != 0 || prg_len > 64 * PRG_BANK_LEN {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
-        if image[5] != 0 { return Err(CartridgeError::InvalidChrSize(image[5] as usize * CHR_BANK_LEN)); }
+        let chr_rom_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) } else { image[5] as usize * CHR_BANK_LEN };
+        if chr_rom_len != 0 { return Err(CartridgeError::InvalidChrSize(chr_rom_len)); }
+        let declared_chr_ram = if nes2 { nes2_ram_size(image[11] & 0x0F).saturating_add(nes2_ram_size(image[11] >> 4)) } else { CHR_BANK_LEN };
+        if declared_chr_ram != CHR_BANK_LEN { return Err(CartridgeError::Nes2NotSupported); }
+        let declared_prg_ram = if nes2 { nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4)) } else { PRG_RAM_LEN };
+        if declared_prg_ram > PRG_RAM_LEN { return Err(CartridgeError::Nes2NotSupported); }
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
         let expected = INES_HEADER_LEN + trainer_len + prg_len;
-        if image.len() < expected {
-            return Err(CartridgeError::TruncatedImage { expected, actual: image.len() });
-        }
+        if image.len() < expected { return Err(CartridgeError::TruncatedImage { expected, actual: image.len() }); }
         let prg_start = INES_HEADER_LEN + trainer_len;
-        let mut prg_ram = vec![0; PRG_RAM_LEN];
-        if trainer_len != 0 {
-            prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
-        }
+        let mut prg_ram = vec![0; declared_prg_ram.max(if trainer_len != 0 { PRG_RAM_LEN } else { 0 })];
+        if trainer_len != 0 { prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]); }
         Ok(Self {
-            prg_rom: image[prg_start..prg_start + prg_len].to_vec(),
-            prg_ram,
-            chr_ram: vec![0; CHR_BANK_LEN],
-            bank_register: 0,
-            mode: 0,
-            mirroring: Mirroring::Vertical,
+            prg_rom: image[prg_start..prg_start + prg_len].to_vec(), prg_ram,
+            chr_ram: vec![0; CHR_BANK_LEN], bank_register: 0, mode: 0,
+            mirroring: if image[6] & 0x08 != 0 { Mirroring::FourScreen } else { Mirroring::Vertical },
         })
     }
-
     fn bank8k(&self, address: u16) -> usize {
         let count = self.prg_rom.len() / 0x2000;
         let base = (usize::from(self.bank_register & 0x3F) * 2) % count;
         let slot = ((address - 0x8000) as usize) / 0x2000;
         let bank = match self.mode & 3 {
-            // NROM-256: two adjacent 16 KiB banks.
             0 => base + slot,
-            // UNROM: selected 16 KiB lower window and fixed final 16 KiB.
             1 => if slot < 2 { base + slot } else { count - 2 + (slot & 1) },
-            // NROM-64: a single selected 8 KiB bank mirrored across the CPU window.
             2 => (base + usize::from(self.bank_register >> 7)) % count,
-            // NROM-128: selected 16 KiB bank mirrored in both halves.
             _ => base + (slot & 1),
         };
         bank % count
     }
-
-    /// Reads PRG-RAM or the mapper-selected 8 KiB PRG-ROM bank.
+    /// Reads mapped PRG-RAM or the mapper-selected 8 KiB PRG-ROM bank.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
         match address {
-            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+            0x6000..=0x7FFF if !self.prg_ram.is_empty() => Some(self.prg_ram[(address as usize - 0x6000) % self.prg_ram.len()]),
+            0x6000..=0x7FFF => None,
             0x8000..=0xFFFF => Some(self.prg_rom[self.bank8k(address) * 0x2000 + (address as usize & 0x1FFF)]),
             _ => None,
         }
     }
-
     /// Selects mapper mode from address A1-A0 and PRG bank/mirroring from the data byte.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
-            0x6000..=0x7FFF => { self.prg_ram[address as usize - 0x6000] = value; true }
+            0x6000..=0x7FFF if !self.prg_ram.is_empty() => { let i=(address as usize-0x6000)%self.prg_ram.len(); self.prg_ram[i]=value; true }
+            0x6000..=0x7FFF => false,
             0x8000..=0xFFFF => {
-                self.mode = (address & 3) as u8;
-                self.bank_register = value;
-                self.mirroring = if value & 0x40 == 0 { Mirroring::Vertical } else { Mirroring::Horizontal };
-                true
+                self.mode=(address&3) as u8; self.bank_register=value;
+                self.mirroring=if value&0x40==0 { Mirroring::Vertical } else { Mirroring::Horizontal }; true
             }
             _ => false,
         }
     }
-
     /// Returns the currently selected nametable mirroring mode.
     pub fn mirroring(&self) -> Mirroring { self.mirroring }
     /// Mapper 15 uses 8 KiB of CHR-RAM.
     pub fn chr_is_ram(&self) -> bool { true }
     /// Reads from the 8 KiB CHR-RAM region.
-    pub fn ppu_read(&self, address: u16) -> Option<u8> {
-        if address >= 0x2000 { None } else { Some(self.chr_ram[address as usize]) }
-    }
+    pub fn ppu_read(&self, address: u16) -> Option<u8> { if address>=0x2000 {None} else {Some(self.chr_ram[address as usize])} }
     /// Writes to CHR-RAM (including mapper-hacked ROMs that expect writable CHR memory).
-    pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
-        if address >= 0x2000 { return false; }
-        self.chr_ram[address as usize] = value;
-        true
-    }
+    pub fn ppu_write(&mut self, address: u16, value: u8) -> bool { if address>=0x2000 {return false;} self.chr_ram[address as usize]=value; true }
 }
 
 fn copy_ram(target: &mut [u8], source: &[u8]) -> bool {
@@ -2074,7 +2062,7 @@ impl Cartridge {
             let mapper = ((image[6] >> 4) as u16)
                 | (image[7] & 0xF0) as u16
                 | (((image[8] & 0x0F) as u16) << 8);
-            if !matches!(mapper, 0 | 2 | 3 | 4 | 7 | 8 | 11 | 13 | 34 | 66 | 71) { return Err(CartridgeError::Nes2NotSupported); }
+            if !matches!(mapper, 0 | 2 | 3 | 4 | 7 | 8 | 11 | 13 | 15 | 34 | 66 | 71) { return Err(CartridgeError::Nes2NotSupported); }
         }
         let mapper = if nes2 {
             ((image[6] >> 4) as u16)
@@ -2295,6 +2283,46 @@ mod mapper15_tests {
         chr_rom[5] = 1;
         chr_rom.extend(vec![0; CHR_BANK_LEN]);
         assert!(matches!(Cartridge::parse(&chr_rom), Err(CartridgeError::InvalidChrSize(_))));
+    }
+}
+
+#[cfg(test)]
+mod mapper15_nes2_tests {
+    use super::*;
+    fn image() -> Vec<u8> {
+        let mut image=vec![0; INES_HEADER_LEN+4*PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A"); image[4]=4; image[6]=0xF0; image[7]=0x08;
+        image[10]=7; image[11]=7;
+        for bank in 0..4 { let p=INES_HEADER_LEN+bank*PRG_BANK_LEN; image[p..p+PRG_BANK_LEN].fill(bank as u8); }
+        image
+    }
+    #[test]
+    fn nes2_mapper15_parses_declared_ram_and_all_four_banking_modes() {
+        let mut c=Cartridge::parse(&image()).unwrap();
+        assert!(matches!(c,Cartridge::Mapper15(_)));
+        assert_eq!(c.cpu_read(0x8000),Some(0)); assert_eq!(c.cpu_read(0xC000),Some(1));
+        assert!(c.cpu_write(0x6000,0xA5)); assert_eq!(c.cpu_read(0x6000),Some(0xA5));
+        assert!(c.cpu_write(0x8000,2)); assert_eq!(c.cpu_read(0x8000),Some(2)); assert_eq!(c.cpu_read(0xC000),Some(3));
+        assert!(c.cpu_write(0x8001,2)); assert_eq!(c.cpu_read(0x8000),Some(2));
+        assert!(c.cpu_write(0x8002,2)); assert_eq!(c.cpu_read(0x8000),Some(2));
+        assert!(c.cpu_write(0x8003,2)); assert_eq!(c.cpu_read(0x8000),Some(2));
+        assert!(c.ppu_write(0x1FFF,0x5A)); assert_eq!(c.ppu_read(0x1FFF),Some(0x5A));
+    }
+    #[test]
+    fn nes2_mapper15_without_prg_ram_keeps_ram_unmapped() {
+        let mut i=image(); i[10]=0; let mut c=Cartridge::parse(&i).unwrap();
+        assert_eq!(c.cpu_read(0x6000),None); assert!(!c.cpu_write(0x6000,0xA5));
+    }
+    #[test]
+    fn nes2_mapper15_rejects_unknown_submapper_and_wrong_chr_ram_size() {
+        let mut i=image(); i[8]=0x10; assert!(matches!(Cartridge::parse(&i),Err(CartridgeError::Nes2NotSupported)));
+        let mut i=image(); i[11]=6; assert!(matches!(Cartridge::parse(&i),Err(CartridgeError::Nes2NotSupported)));
+    }
+    #[test]
+    fn nes2_mapper15_rejects_chr_rom_and_truncated_prg() {
+        let mut i=image(); i[5]=1; i.extend(vec![0;CHR_BANK_LEN]);
+        assert!(matches!(Cartridge::parse(&i),Err(CartridgeError::InvalidChrSize(_))));
+        let mut i=image(); i.pop(); assert!(matches!(Cartridge::parse(&i),Err(CartridgeError::TruncatedImage{..})));
     }
 }
 
