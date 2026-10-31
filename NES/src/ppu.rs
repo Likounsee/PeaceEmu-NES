@@ -4334,3 +4334,26 @@ mod palette_write_mapper_bus_regressions {
     }
 }
 
+
+
+#[cfg(test)]
+mod palette_read_mapper_bus_regressions {
+    use super::*;
+
+    #[test]
+    fn palette_reads_keep_the_hidden_nametable_refill_on_the_external_bus() {
+        let mut ppu = Ppu::new();
+        ppu.mapper_bus_initialized = true;
+        ppu.mapper_a12_high = true;
+        ppu.mapper_bus_events.clear();
+        ppu.v = 0x3F00;
+        ppu.palette[0] = 0x2A;
+        ppu.nametables[0x700] = 0x55;
+
+        assert_eq!(ppu.cpu_read_register(7, None), 0x2A);
+        assert_eq!(ppu.mapper_bus_events, vec![(0, 0)],
+            "palette reads must expose the hidden $2F00 refill, unlike palette writes");
+        assert_eq!(ppu.read_buffer, 0x55);
+    }
+}
+
