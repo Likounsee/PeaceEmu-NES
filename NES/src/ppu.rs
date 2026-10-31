@@ -22,6 +22,10 @@ pub struct Ppu {
     sprite_pattern_low: [u8; 8],
     sprite_pattern_high: [u8; 8],
     sprite_pattern_valid: [bool; 8],
+    /// Per-slot X countdowns and live pattern shifters for pixel composition.
+    sprite_x_counter: [u8; 8],
+    sprite_shift_low: [u8; 8],
+    sprite_shift_high: [u8; 8],
     sprite_line: u16,
     /// Sprite evaluation state: n selects the primary-OAM sprite and m its byte.
     eval_n: u8,
@@ -88,7 +92,9 @@ impl Default for Ppu {
             sprite_line_oam: [[0xFF; 4]; 8], sprite_line_indices: [0xFF; 8],
             sprite_line_count: 0,
             sprite_pattern_low: [0; 8], sprite_pattern_high: [0; 8],
-            sprite_pattern_valid: [false; 8], sprite_line: u16::MAX,
+            sprite_pattern_valid: [false; 8],
+            sprite_x_counter: [0; 8], sprite_shift_low: [0; 8], sprite_shift_high: [0; 8],
+            sprite_line: u16::MAX,
             eval_n: 0, eval_m: 0, eval_latch: 0xFF, eval_copying: false,
             eval_target_y: 0, eval_oam: [[0xFF; 4]; 8],
             eval_indices: [0xFF; 8], eval_count: 0,
@@ -342,6 +348,11 @@ impl Ppu {
             self.dot += 1;
             self.update_mapper_a12_bus(cartridge);
             self.clock_background_fetch_pipeline(cartridge);
+            if self.dot == 1 && self.scanline < 240 {
+                for slot in 0..8 {
+                    self.sprite_x_counter[slot] = self.sprite_line_oam[slot][3];
+                }
+            }
 
             // Latch the scroll address at the start of each visible scanline. The
             // live v register is changed by coarse-X fetches and the dot-256 Y increment,
@@ -372,6 +383,7 @@ impl Ppu {
                 // entire row at dot 256. Mid-scanline OAM, CHR-RAM and palette writes
                 // can then affect only pixels the PPU has not emitted yet.
                 self.render_sprite_pixel(x, y, cartridge);
+                self.clock_sprite_output_pipeline();
             }
             if self.dot == 256 && (self.scanline < 240 || self.scanline == 261) {
                 if self.mask & 0x18 != 0 {
@@ -661,10 +673,13 @@ impl Ppu {
 
         let attributes = sprite[2];
         let row_in_sprite = y - sprite_top;
-        self.fetched_sprite_pixel(sprite_zero_slot, attributes, x - sprite_left)
-            .unwrap_or_else(|| self.sprite_pixel(
-                sprite[1] as usize, attributes, row_in_sprite, x - sprite_left, cartridge
-            )) != 0
+        let pixel = if self.sprite_pattern_valid[sprite_zero_slot] {
+            if self.sprite_x_counter[sprite_zero_slot] != 0 { return false; }
+            self.fetched_sprite_pixel(sprite_zero_slot, attributes, x - sprite_left).unwrap_or(0)
+        } else {
+            self.sprite_pixel(sprite[1] as usize, attributes, row_in_sprite, x - sprite_left, cartridge)
+        };
+        pixel != 0
     }
 
     /// Renders one background pixel when the emulated beam reaches it.
@@ -782,13 +797,15 @@ impl Ppu {
             let sprite = self.sprite_line_oam[slot];
             let top = sprite_top(sprite[0]);
             let left = sprite[3] as usize;
-            if x < left || x >= left + 8 { continue; }
             let tile = sprite[1] as usize;
             let attributes = sprite[2];
-            let pixel = self.fetched_sprite_pixel(slot, attributes, x - left)
-                .unwrap_or_else(|| self.sprite_pixel(
-                    tile, attributes, y.saturating_sub(top), x - left, cartridge
-                ));
+            let pixel = if self.sprite_pattern_valid[slot] {
+                if self.sprite_x_counter[slot] != 0 { continue; }
+                self.fetched_sprite_pixel(slot, attributes, x.saturating_sub(left)).unwrap_or(0)
+            } else {
+                if x < left || x >= left + 8 { continue; }
+                self.sprite_pixel(tile, attributes, y.saturating_sub(top), x - left, cartridge)
+            };
             if pixel == 0 { continue; }
             // A hidden opaque sprite still blocks lower-priority sprites.
             if attributes & 0x20 == 0 || !self.background_opaque[y * 256 + x] {
@@ -828,18 +845,39 @@ impl Ppu {
         if phase == 4 {
             self.sprite_pattern_low[slot] = self.mem_read(address, cartridge);
         } else {
-            self.sprite_pattern_high[slot] = self.mem_read(address + 8, cartridge);
+            let high = self.mem_read(address + 8, cartridge);
+            self.sprite_pattern_high[slot] = high;
+            // Reverse flipped bytes at fetch time so output shifters always emit
+            // their most-significant bit from the sprite's left edge.
+            if sprite[2] & 0x40 != 0 {
+                self.sprite_shift_low[slot] = self.sprite_pattern_low[slot].reverse_bits();
+                self.sprite_shift_high[slot] = high.reverse_bits();
+            } else {
+                self.sprite_shift_low[slot] = self.sprite_pattern_low[slot];
+                self.sprite_shift_high[slot] = high;
+            }
             self.sprite_pattern_valid[slot] = true;
         }
     }
 
-    /// Reads one pixel from the fetched sprite planes, falling back only for
-    /// direct renderer/debug calls that did not advance through sprite fetch.
-    fn fetched_sprite_pixel(&self, slot: usize, attributes: u8, screen_x: usize) -> Option<u8> {
-        if screen_x >= 8 || !self.sprite_pattern_valid[slot] { return None; }
-        let bit = if attributes & 0x40 != 0 { screen_x } else { 7 - screen_x };
-        Some(((self.sprite_pattern_low[slot] >> bit) & 1)
-            | (((self.sprite_pattern_high[slot] >> bit) & 1) << 1))
+    /// Advances sprite X counters and pattern shifters after the current pixel.
+    fn clock_sprite_output_pipeline(&mut self) {
+        for slot in 0..self.sprite_line_count as usize {
+            if self.sprite_x_counter[slot] != 0 {
+                self.sprite_x_counter[slot] -= 1;
+            } else if self.sprite_pattern_valid[slot] {
+                self.sprite_shift_low[slot] <<= 1;
+                self.sprite_shift_high[slot] <<= 1;
+            }
+        }
+    }
+
+    /// Reads the current MSB of the fetched sprite shifters. Direct renderer/debug
+    /// calls retain coordinate-based sampling when the beam was not clocked.
+    fn fetched_sprite_pixel(&self, slot: usize, _attributes: u8, _screen_x: usize) -> Option<u8> {
+        if !self.sprite_pattern_valid[slot] { return None; }
+        Some(((self.sprite_shift_low[slot] >> 7) & 1)
+            | (((self.sprite_shift_high[slot] >> 7) & 1) << 1))
     }
 
     /// Advances the 2C02 sprite evaluator by one PPU dot.
