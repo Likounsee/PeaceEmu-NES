@@ -56,6 +56,8 @@ pub struct Ppu {
     bg_tile_cache_valid: bool,
     bg_tile_cache_tile_addr: u16,
     bg_tile_cache_pattern_addr: u16,
+    bg_tile_cache_pattern_base: u16,
+    bg_tile_cache_fine_y: u8,
     bg_tile_cache_start_x: usize,
     bg_tile_cache_low: u8,
     bg_tile_cache_high: u8,
@@ -82,7 +84,8 @@ impl Default for Ppu {
             nmi_pending: false, nmi_line: false, suppress_vblank: false,
             framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
             bg_tile_cache_valid: false, bg_tile_cache_tile_addr: 0,
-            bg_tile_cache_pattern_addr: 0, bg_tile_cache_start_x: 0,
+            bg_tile_cache_pattern_addr: 0, bg_tile_cache_pattern_base: 0,
+            bg_tile_cache_fine_y: 0, bg_tile_cache_start_x: 0,
             bg_tile_cache_low: 0, bg_tile_cache_high: 0, bg_tile_cache_palette_id: 0,
             ppu_cycle: 0, mapper_a12_high: false, mapper_bus_initialized: false, mapper_bus_events: Vec::new(),
         }
@@ -612,22 +615,24 @@ impl Ppu {
         let nametable = 0x2000u16 + ((nt_y * 2 + nt_x) as u16) * 0x400;
         let coarse_x = tile_x % 32;
         let tile_addr = nametable + (coarse_y * 32 + coarse_x) as u16;
-        let tile = self.mem_read(tile_addr, cartridge) as u16;
-        let pattern_addr = pattern_base + tile * 16 + fine_y as u16;
-
         let cache_matches = self.bg_tile_cache_valid
             && self.bg_tile_cache_tile_addr == tile_addr
-            && self.bg_tile_cache_pattern_addr == pattern_addr
+            && self.bg_tile_cache_pattern_base == pattern_base
+            && self.bg_tile_cache_fine_y == fine_y as u8
             && self.bg_tile_cache_start_x == self.line_scroll_start_x;
         if !cache_matches {
+            let tile = self.mem_read(tile_addr, cartridge) as u16;
+            let pattern_addr = pattern_base + tile * 16 + fine_y as u16;
             self.bg_tile_cache_low = self.mem_read(pattern_addr, cartridge);
             self.bg_tile_cache_high = self.mem_read(pattern_addr + 8, cartridge);
+            self.bg_tile_cache_pattern_addr = pattern_addr;
             let attr_addr = nametable + 0x3C0 + ((coarse_y / 4) * 8 + coarse_x / 4) as u16;
             let attr = self.mem_read(attr_addr, cartridge);
             let shift = (((coarse_y % 4) / 2) * 4 + ((coarse_x % 4) / 2) * 2) as u8;
             self.bg_tile_cache_palette_id = (attr >> shift) & 3;
             self.bg_tile_cache_tile_addr = tile_addr;
-            self.bg_tile_cache_pattern_addr = pattern_addr;
+            self.bg_tile_cache_pattern_base = pattern_base;
+            self.bg_tile_cache_fine_y = fine_y as u8;
             self.bg_tile_cache_start_x = self.line_scroll_start_x;
             self.bg_tile_cache_valid = true;
         }
