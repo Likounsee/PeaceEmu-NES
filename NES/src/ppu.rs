@@ -4807,6 +4807,7 @@ mod background_tile_latch_regressions {
         ppu.dot = 263;
         ppu.clock_sprite_pattern_fetch(Some(&cartridge));
 
+        ppu.sprite_line_count = 1;
         assert_eq!(ppu.sprite_shift_low[0], 0x01);
         assert_eq!(ppu.fetched_sprite_pixel(0, 0x40, 0), Some(0));
         for _ in 0..7 {
