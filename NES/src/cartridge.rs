@@ -1526,6 +1526,12 @@ impl Camerica {
         let chr_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) }
             else { image[5] as usize * CHR_BANK_LEN };
         if chr_len != 0 { return Err(CartridgeError::InvalidChrSize(chr_len)); }
+        if nes2 {
+            let chr_ram_len = nes2_ram_size(image[11] & 0x0F)
+                .saturating_add(nes2_ram_size(image[11] >> 4));
+            // Camerica boards handled here expose one 8 KiB CHR-RAM window.
+            if chr_ram_len != CHR_BANK_LEN { return Err(CartridgeError::Nes2NotSupported); }
+        }
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
         let expected = INES_HEADER_LEN + trainer_len + prg_len;
         if image.len() < expected {
@@ -3380,6 +3386,7 @@ mod camerica_tests {
     fn mapper_71_nes2_parses_extended_header_and_maps_banks() {
         let mut image = camerica_image(4);
         image[7] = 0x48; // NES 2.0 marker and mapper 71 high nibble.
+        image[11] = 7; // 8 KiB volatile CHR-RAM.
         image[8] = 0;
         image[9] = 0;
         image[10] = 7; // 8 KiB volatile PRG-RAM.
@@ -3397,6 +3404,7 @@ mod camerica_tests {
     fn mapper_71_nes2_without_ram_does_not_expose_ram_window() {
         let mut image = camerica_image(4);
         image[7] = 0x48;
+        image[11] = 7; // 8 KiB volatile CHR-RAM.
         image[8] = 0;
         image[9] = 0;
         image[10] = 0;
@@ -3410,6 +3418,7 @@ mod camerica_tests {
         let mut image = camerica_image(4);
         image[6] |= 0x04; // Trainer present.
         image[7] = 0x48;
+        image[11] = 7; // 8 KiB volatile CHR-RAM.
         image[8] = 0;
         image[9] = 0;
         image[10] = 0; // No RAM explicitly declared, trainer still needs backing storage.
@@ -3424,6 +3433,7 @@ mod camerica_tests {
     fn mapper_71_nes2_rejects_unsupported_submappers() {
         let mut image = camerica_image(4);
         image[7] = 0x48;
+        image[11] = 7; // 8 KiB volatile CHR-RAM.
         image[8] = 0x10; // Submapper 1 is not implemented.
         image[9] = 0;
         assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
@@ -3433,10 +3443,28 @@ mod camerica_tests {
     fn mapper_71_nes2_rejects_ram_larger_than_the_cpu_window() {
         let mut image = camerica_image(4);
         image[7] = 0x48;
+        image[11] = 7; // 8 KiB volatile CHR-RAM.
         image[8] = 0;
         image[9] = 0;
         image[10] = 8; // 16 KiB volatile RAM, beyond this board implementation.
         assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
+    }
+
+    #[test]
+    fn mapper_71_nes2_rejects_missing_or_mismatched_chr_ram_declarations() {
+        let mut no_chr_ram = camerica_image(4);
+        no_chr_ram[7] = 0x48;
+        assert!(matches!(Cartridge::parse(&no_chr_ram), Err(CartridgeError::Nes2NotSupported)));
+
+        let mut too_little_chr_ram = camerica_image(4);
+        too_little_chr_ram[7] = 0x48;
+        too_little_chr_ram[11] = 6; // 4 KiB, but the board maps 8 KiB.
+        assert!(matches!(Cartridge::parse(&too_little_chr_ram), Err(CartridgeError::Nes2NotSupported)));
+
+        let mut too_much_chr_ram = camerica_image(4);
+        too_much_chr_ram[7] = 0x48;
+        too_much_chr_ram[11] = 8; // 16 KiB, not represented by this board.
+        assert!(matches!(Cartridge::parse(&too_much_chr_ram), Err(CartridgeError::Nes2NotSupported)));
     }
 
     #[test]
@@ -4957,6 +4985,7 @@ mod gxrom_nes2_tests {
         image[5] = 2;
         image[6] = 0x20;
         image[7] = 0x48;
+        image[11] = 7; // 8 KiB volatile CHR-RAM.
         image[8] = 0;
         image[9] = 0;
         image[10] = 7;
