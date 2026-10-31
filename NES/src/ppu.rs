@@ -3641,14 +3641,14 @@ mod cycle_sprite_evaluation_regressions {
         for sprite in 0..64usize {
             let y = if sprite < 8 { 0 } else { 20 };
             ppu.oam[sprite * 4..sprite * 4 + 4]
-                .copy_from_slice(&[y, sprite as u8, 0, (sprite * 3) as u8]);
+                .copy_from_slice(&[y, sprite as u8, 20, (sprite * 3) as u8]);
         }
 
         run_evaluation_line(&mut ppu, 0);
 
         assert_eq!(ppu.sprite_line_count, 8);
         assert_eq!(ppu.sprite_line_indices, [0, 1, 2, 3, 4, 5, 6, 7]);
-        assert_eq!(ppu.sprite_line_oam[7], [0, 7, 0, 21]);
+        assert_eq!(ppu.sprite_line_oam[7], [0, 7, 20, 21]);
         assert_eq!(ppu.status & 0x20, 0);
     }
 
