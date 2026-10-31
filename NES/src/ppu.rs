@@ -61,6 +61,15 @@ pub struct Ppu {
     bg_tile_cache_low: u8,
     bg_tile_cache_high: u8,
     bg_tile_cache_palette_id: u8,
+    // Dot-clocked background fetch pipeline (2C02-style 16-bit shifters).
+    bg_pattern_shift_low: u16,
+    bg_pattern_shift_high: u16,
+    bg_attribute_shift_low: u16,
+    bg_attribute_shift_high: u16,
+    bg_next_tile_id: u8,
+    bg_next_attribute: u8,
+    bg_next_pattern_low: u8,
+    bg_next_pattern_high: u8,
     ppu_cycle: u64,
     mapper_a12_high: bool,
     mapper_bus_initialized: bool,
@@ -86,6 +95,10 @@ impl Default for Ppu {
             bg_tile_cache_pattern_base: 0,
             bg_tile_cache_fine_y: 0, bg_tile_cache_start_x: 0,
             bg_tile_cache_low: 0, bg_tile_cache_high: 0, bg_tile_cache_palette_id: 0,
+            bg_pattern_shift_low: 0, bg_pattern_shift_high: 0,
+            bg_attribute_shift_low: 0, bg_attribute_shift_high: 0,
+            bg_next_tile_id: 0, bg_next_attribute: 0,
+            bg_next_pattern_low: 0, bg_next_pattern_high: 0,
             ppu_cycle: 0, mapper_a12_high: false, mapper_bus_initialized: false, mapper_bus_events: Vec::new(),
         }
     }
@@ -320,6 +333,7 @@ impl Ppu {
             }
             self.dot += 1;
             self.update_mapper_a12_bus(cartridge);
+            self.clock_background_fetch_pipeline(cartridge);
 
             // Latch the scroll address at the start of each visible scanline. The
             // live v register is changed by coarse-X fetches and the dot-256 Y increment,
@@ -418,6 +432,64 @@ impl Ppu {
             }
         }
         crossed_scanlines
+    }
+
+    /// Clocks background tile fetches and the pattern/attribute shift registers.
+    ///
+    /// Fetch phases follow the eight-dot cadence: nametable at phase 1, attribute
+    /// at 3, pattern low/high at 5/7, then load the fetched bytes at phase 0.
+    /// The shifters are maintained alongside the existing pixel compositor; the
+    /// next stage can switch pixel selection to their fine-X-selected output.
+    fn clock_background_fetch_pipeline(&mut self, cartridge: Option<&Cartridge>) {
+        let rendering_line = self.scanline < 240 || self.scanline == 261;
+        let fetch_window = (1..=256).contains(&self.dot) || (321..=336).contains(&self.dot);
+        if !rendering_line || !fetch_window || self.mask & 0x08 == 0 {
+            return;
+        }
+
+        self.bg_pattern_shift_low <<= 1;
+        self.bg_pattern_shift_high <<= 1;
+        self.bg_attribute_shift_low <<= 1;
+        self.bg_attribute_shift_high <<= 1;
+
+        match self.dot & 7 {
+            1 => {
+                let address = 0x2000 | (self.v & 0x0FFF);
+                self.bg_next_tile_id = self.mem_read(address, cartridge);
+            }
+            3 => {
+                let address = 0x23C0
+                    | (self.v & 0x0C00)
+                    | ((self.v >> 4) & 0x38)
+                    | ((self.v >> 2) & 0x07);
+                let attribute = self.mem_read(address, cartridge);
+                let shift = (((self.v >> 4) & 4) | (self.v & 2)) as u8;
+                self.bg_next_attribute = (attribute >> shift) & 3;
+            }
+            5 => {
+                let table = if self.ctrl & 0x10 != 0 { 0x1000 } else { 0 };
+                let address = table + u16::from(self.bg_next_tile_id) * 16 + ((self.v >> 12) & 7);
+                self.bg_next_pattern_low = self.mem_read(address, cartridge);
+            }
+            7 => {
+                let table = if self.ctrl & 0x10 != 0 { 0x1000 } else { 0 };
+                let address = table + u16::from(self.bg_next_tile_id) * 16 + ((self.v >> 12) & 7) + 8;
+                self.bg_next_pattern_high = self.mem_read(address, cartridge);
+            }
+            0 => {
+                self.bg_pattern_shift_low =
+                    (self.bg_pattern_shift_low & 0xFF00) | u16::from(self.bg_next_pattern_low);
+                self.bg_pattern_shift_high =
+                    (self.bg_pattern_shift_high & 0xFF00) | u16::from(self.bg_next_pattern_high);
+                self.bg_attribute_shift_low =
+                    (self.bg_attribute_shift_low & 0xFF00)
+                        | if self.bg_next_attribute & 1 != 0 { 0x00FF } else { 0 };
+                self.bg_attribute_shift_high =
+                    (self.bg_attribute_shift_high & 0xFF00)
+                        | if self.bg_next_attribute & 2 != 0 { 0x00FF } else { 0 };
+            }
+            _ => {}
+        }
     }
 
     /// Tracks mapper-visible A12 transitions at scheduled pattern-fetch slots.
