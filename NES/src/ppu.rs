@@ -5239,12 +5239,17 @@ mod oam_rendering_boundary_regressions {
         ppu.oam_addr = 0x40;
         ppu.oam[0] = 0xA5;
 
-        ppu.dot = 320;
+        ppu.dot = 319;
+        ppu.tick(1);
+        assert_eq!(ppu.position(), (32, 320));
+        assert_eq!(ppu.oam_addr, 0, "the PPU pins OAMADDR through dot 320");
+
         ppu.cpu_write_register(4, 0x33, None);
         assert_eq!(ppu.oam[0], 0xA5, "dot 320 remains inside sprite fetch");
         assert_eq!(ppu.oam_addr, 0);
 
-        ppu.dot = 321;
+        ppu.tick(1);
+        assert_eq!(ppu.position(), (32, 321));
         ppu.cpu_write_register(3, 0x40, None);
         ppu.cpu_write_register(4, 0x44, None);
         assert_eq!(ppu.oam[0x40], 0x44, "primary OAM is writable again at dot 321");
