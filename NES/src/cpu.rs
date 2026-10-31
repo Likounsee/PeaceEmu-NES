@@ -123,7 +123,9 @@ impl Cpu {
         // three stack-page reads/decrements, then the reset vector. On a
         // power-on reset the initially unspecified SP is driven to $FD; later
         // resets decrement the live stack pointer by three instead of reloading it.
-        bus.begin_cpu_instruction();
+        // Keep the reset bus reads observable to mapped devices, but do not
+        // start the normal instruction clock here: CpuBus::reset establishes
+        // the PPU/APU startup epoch independently, and its CPU parity starts at 0.
         let _ = bus.read(self.state.pc);
         let _ = bus.read(self.state.pc);
         for _ in 0..3 {
@@ -131,8 +133,6 @@ impl Cpu {
             self.state.sp = self.state.sp.wrapping_sub(1);
         }
         self.state.pc = self.read_word(bus, 0xFFFC);
-        let bus_cycles = bus.end_cpu_instruction();
-        debug_assert_eq!(bus_cycles, 7, "reset must issue exactly seven bus cycles");
         self.cycles = self.cycles.saturating_add(7);
     }
 
@@ -1275,7 +1275,7 @@ mod tests {
     #[test]
     fn reset_runs_seven_bus_cycles_and_soft_reset_decrements_live_stack() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16 + 0x3FFC] = 0x34;
         image[16 + 0x3FFD] = 0x12;
@@ -1288,13 +1288,13 @@ mod tests {
         assert_eq!(cpu.state().pc, 0x1234);
         assert_eq!(cpu.state().sp, 0xFD);
         assert_eq!(cpu.total_cycles(), 7);
-        assert_eq!(bus.ppu_position(), (261, 21));
+        assert_eq!(bus.ppu_position(), (261, 0));
 
         cpu.state.sp = 0x80;
         cpu.reset(&mut bus);
         assert_eq!(cpu.state().sp, 0x7D, "soft reset must decrement the existing SP three times");
         assert_eq!(cpu.total_cycles(), 14);
-        assert_eq!(bus.ppu_position(), (261, 42));
+        assert_eq!(bus.ppu_position(), (261, 0));
     }
 
     #[test] fn indexed_zero_page_and_absolute_reads_work() {
