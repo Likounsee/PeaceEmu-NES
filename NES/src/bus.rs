@@ -1913,3 +1913,43 @@ mod dmc_register_conflict_regressions {
     }
 
 }
+
+#[cfg(test)]
+mod dmc_controller_read_conflict_regressions {
+    use super::*;
+
+    #[test]
+    fn dmc_halt_and_dummy_reads_shift_controller_before_cpu_read_resumes() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16] = 0xA5;
+
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.set_controller_state(0, 0b0000_0101);
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+
+        bus.write(0x4012, 0);
+        bus.write(0x4013, 0);
+        bus.write(0x4015, 0x10);
+
+        bus.begin_cpu_instruction();
+        let resumed_value = bus.read(0x4016);
+        assert_eq!(bus.take_instruction_dmc_stalls(), 3,
+            "the initial DMC fetch must hold the controller read for three cycles");
+        assert_eq!(bus.end_cpu_instruction(), 1);
+
+        let repeated_controller_reads: Vec<u8> = bus.bus_trace().iter()
+            .filter(|entry| entry.kind == CpuBusAccessKind::DmcRead && entry.address == 0x4016)
+            .map(|entry| entry.value & 1)
+            .collect();
+        assert_eq!(repeated_controller_reads, [1, 0],
+            "HALT and DUMMY must repeat the held controller read and its serial side effect");
+        assert_eq!(resumed_value & 1, 1,
+            "the CPU resumes at the third latched bit after the two DMA-held reads");
+        assert_eq!(bus.read(0x4016) & 1, 0,
+            "the next serial bit must remain correctly aligned after the repeated reads");
+    }
+}
