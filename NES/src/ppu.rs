@@ -830,13 +830,19 @@ impl Ppu {
     /// The eight slots occupy dots 257-320. Pattern planes are fetched on
     /// phases 4 and 6 of each eight-dot slot and retained for the following line.
     fn clock_sprite_pattern_fetch(&mut self, cartridge: Option<&Cartridge>) {
-        if !(self.scanline < 240 || self.scanline == 261) || self.mask & 0x18 == 0 {
+        let rendering_line = self.scanline < 240 || self.scanline == 261;
+        if !rendering_line {
             return;
         }
+
+        // A new sprite-fetch window invalidates the previous line's fetched
+        // pattern data even when rendering is disabled at dot 257. Otherwise,
+        // enabling sprites partway through the window can expose stale shifters
+        // from the preceding scanline before the current line has fetched them.
         if self.dot == 257 {
             self.sprite_pattern_valid = [false; 8];
         }
-        if !(257..=320).contains(&self.dot) {
+        if self.mask & 0x18 == 0 || !(257..=320).contains(&self.dot) {
             return;
         }
         let phase = (self.dot - 257) & 7;
@@ -5341,5 +5347,57 @@ mod oam_rendering_boundary_regressions {
         ppu.cpu_write_register(4, 0x44, None);
         assert_eq!(ppu.oam[0x40], 0x44, "primary OAM is writable again at dot 321");
         assert_eq!(ppu.oam_addr, 0x41);
+    }
+}
+
+
+#[cfg(test)]
+mod sprite_fetch_window_invalidation_regressions {
+    use super::*;
+
+    #[test]
+    fn disabled_rendering_still_invalidates_previous_scanline_sprite_patterns() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 12;
+        ppu.dot = 256;
+        ppu.mask = 0;
+        ppu.sprite_pattern_valid = [true; 8];
+        ppu.sprite_shift_low = [0xFF; 8];
+        ppu.sprite_shift_high = [0xFF; 8];
+
+        ppu.tick(1);
+
+        assert_eq!(ppu.position(), (12, 257));
+        assert_eq!(ppu.sprite_pattern_valid, [false; 8],
+            "a disabled fetch window must not leave the preceding line's fetched bytes eligible for output");
+    }
+
+    #[test]
+    fn pre_render_fetch_window_invalidates_stale_sprite_patterns_even_when_disabled() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 261;
+        ppu.dot = 256;
+        ppu.mask = 0;
+        ppu.sprite_pattern_valid = [true; 8];
+
+        ppu.tick(1);
+
+        assert_eq!(ppu.position(), (261, 257));
+        assert_eq!(ppu.sprite_pattern_valid, [false; 8],
+            "line-zero sprite output must never inherit stale fetch validity from an earlier frame");
+    }
+
+    #[test]
+    fn enabled_sprite_fetch_window_still_invalidates_before_fetching_each_slot() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 12;
+        ppu.dot = 256;
+        ppu.mask = 0x18;
+        ppu.sprite_pattern_valid = [true; 8];
+
+        ppu.tick(1);
+
+        assert_eq!(ppu.sprite_pattern_valid, [false; 8],
+            "the new line starts with no valid pattern slots; each becomes valid only after its high-plane fetch");
     }
 }
