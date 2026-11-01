@@ -762,10 +762,11 @@ mod tests {
         machine.write_cpu(0x4013, 0x00);
         machine.write_cpu(0x4015, 0x10);
         let before = machine.total_cycles();
+        let oam_base_cycles = if before & 1 == 0 { 513 } else { 514 };
         machine.perform_oam_dma(0x02);
 
-        assert_eq!(machine.total_cycles() - before, 513 + 3,
-            "the initial DMC fetch adds its three stolen phases to OAM DMA");
+        assert_eq!(machine.total_cycles() - before, oam_base_cycles + 3,
+            "the initial DMC fetch adds its three stolen phases to parity-sized OAM DMA");
         for offset in 0..=u8::MAX {
             machine.write_cpu(0x2003, offset);
             assert_eq!(
