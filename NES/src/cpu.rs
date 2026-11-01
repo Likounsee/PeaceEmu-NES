@@ -2082,6 +2082,61 @@ mod unofficial_rmw_addressing_matrix_regressions {
 }
 
 #[cfg(test)]
+mod indirect_addressing_bus_trace_regressions {
+    use super::*;
+    use crate::bus::CpuBusAccessKind;
+
+    fn reads(bus: &CpuBus) -> Vec<u16> {
+        bus.bus_trace()
+            .iter()
+            .filter(|entry| entry.kind == CpuBusAccessKind::Read)
+            .map(|entry| entry.address)
+            .collect()
+    }
+
+    #[test]
+    fn indexed_indirect_x_wraps_pointer_in_zero_page_and_keeps_dummy_read() {
+        let mut bus = CpuBus::new();
+        bus.write(0x0600, 0xA1); // LDA ($FF,X)
+        bus.write(0x0601, 0xFF);
+        bus.write(0x00FF, 0x34);
+        bus.write(0x0000, 0x12); // Pointer high byte wraps from $FF to $00.
+        bus.write(0x1234, 0xA7);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        cpu.state.x = 0;
+        bus.clear_bus_trace();
+
+        let result = cpu.step(&mut bus).unwrap();
+
+        assert_eq!(result.cycles, 6);
+        assert_eq!(cpu.state.a, 0xA7);
+        assert_eq!(reads(&bus), [0x0600, 0x0601, 0x00FF, 0x00FF, 0x0000, 0x1234]);
+    }
+
+    #[test]
+    fn indirect_indexed_y_reads_wrong_page_before_cross_page_data() {
+        let mut bus = CpuBus::new();
+        bus.write(0x0600, 0xB1); // LDA ($20),Y
+        bus.write(0x0601, 0x20);
+        bus.write(0x0020, 0xFF);
+        bus.write(0x0021, 0x06); // Base $06FF + Y=1 => $0700.
+        bus.write(0x0600, 0xB1); // Wrong-page read at $0600 is still observable.
+        bus.write(0x0700, 0x5C);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        cpu.state.y = 1;
+        bus.clear_bus_trace();
+
+        let result = cpu.step(&mut bus).unwrap();
+
+        assert_eq!(result.cycles, 6);
+        assert_eq!(cpu.state.a, 0x5C);
+        assert_eq!(reads(&bus), [0x0600, 0x0601, 0x0020, 0x0021, 0x0600, 0x0700]);
+    }
+}
+
+#[cfg(test)]
 mod stack_control_flow_bus_regressions {
     use super::*;
     use crate::bus::CpuBusAccessKind;
