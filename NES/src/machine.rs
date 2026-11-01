@@ -443,7 +443,7 @@ mod tests {
 
         // Reset starts on odd parity: base OAM DMA is 514 cycles. The pending
         // DMC fetch adds four stolen cycles without replacing any OAM transfer.
-        assert_eq!(machine.total_cycles() - before, 518);
+        assert_eq!(machine.total_cycles() - before, 517, "initial DMC load adds three cycles to the 514-cycle OAM transfer");
         assert_eq!(machine.bus.read(0x4015) & 0x10, 0,
             "the pending one-byte DMC sample must be fetched during OAM DMA");
 
@@ -473,10 +473,10 @@ mod tests {
         machine.perform_oam_dma(0x02);
         let elapsed = machine.total_cycles() - before;
 
-        assert!(elapsed >= 514 + 8,
-            "the initial DMC fetch and at least one subsequent refill should steal OAM get cycles; elapsed={elapsed}");
-        assert_eq!((elapsed - 514) % 4, 0,
-            "each serviced DMC fetch contributes four additional CPU cycles");
+        assert!(elapsed >= 514 + 7,
+            "the initial three-cycle DMC load and at least one four-cycle reload should steal OAM get cycles; elapsed={elapsed}");
+        assert_eq!((elapsed - 514 - 3) % 4, 0,
+            "the initial DMC load costs three cycles and each subsequent reload costs four");
 
         for offset in 0..=u8::MAX {
             machine.bus.write(0x2003, offset);
@@ -501,8 +501,8 @@ mod tests {
         // The next OAM get/read phase is a legal DMC halt point.
         let before = machine.cpu.total_cycles();
         machine.clock_devices_for_cpu_cycles_with_dmc_access(1, true);
-        assert_eq!(machine.cpu.total_cycles() - before, 4,
-            "the deferred DMC fetch must charge its four stolen cycles at the next get phase");
+        assert_eq!(machine.cpu.total_cycles() - before, 3,
+            "the deferred initial DMC load must charge three stolen cycles at the next get phase");
         assert_eq!(machine.bus.read(0x4015) & 0x10, 0,
             "the DMC sample must be fetched during the following OAM get phase");
     }
