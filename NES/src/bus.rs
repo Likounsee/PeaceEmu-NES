@@ -3,6 +3,31 @@
 use crate::apu::{Apu, DmcDmaPhase};
 use crate::cartridge::Cartridge;
 use crate::ppu::Ppu;
+use std::collections::VecDeque;
+
+/// Kind of decoded CPU-address-space transaction recorded by the optional bus trace.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CpuBusAccessKind {
+    /// Read initiated by the CPU or the OAM DMA source port.
+    Read,
+    /// Write initiated by the CPU.
+    Write,
+    /// Read initiated by the DMC sample DMA engine.
+    DmcRead,
+}
+
+/// One observable transaction on the NES CPU address bus.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CpuBusTraceEntry {
+    /// Absolute bus-cycle timestamp at which the access was observed.
+    pub cycle: u64,
+    /// CPU address driven for this transaction.
+    pub address: u16,
+    /// Data transferred on the CPU data bus.
+    pub value: u8,
+    /// Bus master and direction for this transaction.
+    pub kind: CpuBusAccessKind,
+}
 
 /// CPU bus with 2 KiB internal RAM and an optional mapper-backed cartridge.
 ///
@@ -29,9 +54,11 @@ pub struct CpuBus {
     cpu_bus_address: u16,
     /// DMC stalls discovered while the instruction's bus accesses clock the APU.
     instruction_dmc_stalls: u32,
+    /// Bounded diagnostic history; oldest entries are discarded when full.
+    bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0 } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, bus_trace: VecDeque::with_capacity(2048) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -56,6 +83,7 @@ impl CpuBus {
         self.instruction_timing = false;
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
+        self.bus_trace.clear();
         // Keep the absolute CPU timeline monotonic: MMC1 consecutive-write
         // suppression and delayed APU events compare absolute cycle numbers.
         self.cpu_bus_address = 0;
@@ -77,6 +105,29 @@ impl CpuBus {
     pub(crate) fn end_cpu_instruction(&mut self) -> u16 {
         self.instruction_timing = false;
         core::mem::take(&mut self.instruction_bus_cycles)
+    }
+
+    fn record_bus_access(&mut self, kind: CpuBusAccessKind, address: u16, value: u8) {
+        const TRACE_CAPACITY: usize = 2048;
+        if self.bus_trace.len() == TRACE_CAPACITY {
+            self.bus_trace.pop_front();
+        }
+        self.bus_trace.push_back(CpuBusTraceEntry {
+            cycle: self.cpu_cycle,
+            address,
+            value,
+            kind,
+        });
+    }
+
+    /// Returns the most recent decoded CPU-bus transactions, oldest first.
+    pub fn bus_trace(&self) -> Vec<CpuBusTraceEntry> {
+        self.bus_trace.iter().copied().collect()
+    }
+
+    /// Clears the diagnostic bus trace without changing emulated hardware state.
+    pub fn clear_bus_trace(&mut self) {
+        self.bus_trace.clear();
     }
 
     /// Advances the PPU to the sampling point of the current CPU bus access.
@@ -143,6 +194,7 @@ impl CpuBus {
         // A DMA read targeting PPUDATA can therefore drive mapper-visible A12.
         self.sync_mapper_bus_events();
         self.open_bus = value;
+        self.record_bus_access(CpuBusAccessKind::DmcRead, address, value);
         value
     }
 
@@ -162,6 +214,7 @@ impl CpuBus {
         };
         self.sync_mapper_bus_events();
         self.open_bus = value;
+        self.record_bus_access(CpuBusAccessKind::Read, address, value);
         value
     }
     /// Writes a byte to the CPU address space. Cartridge ROM is not writable.
@@ -202,6 +255,7 @@ impl CpuBus {
             _ => {}
         }
         self.sync_mapper_bus_events();
+        self.record_bus_access(CpuBusAccessKind::Write, address, value);
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
     /// The values are latched by the next strobe write to $4016.
@@ -366,6 +420,44 @@ impl CpuBus {
 mod tests {
     use super::*;
 
+
+    #[test]
+    fn bus_trace_records_cpu_and_dmc_transactions_in_cycle_order() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16] = 0xA5;
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+
+        bus.begin_cpu_instruction();
+        bus.write(0x0002, 0x37);
+        assert_eq!(bus.read(0x0002), 0x37);
+        bus.end_cpu_instruction();
+
+        let trace = bus.bus_trace();
+        assert_eq!(trace.len(), 2);
+        assert_eq!(trace[0].kind, CpuBusAccessKind::Write);
+        assert_eq!((trace[0].address, trace[0].value), (0x0002, 0x37));
+        assert_eq!(trace[1].kind, CpuBusAccessKind::Read);
+        assert_eq!((trace[1].address, trace[1].value), (0x0002, 0x37));
+        assert!(trace[0].cycle < trace[1].cycle);
+    }
+
+    #[test]
+    fn bus_trace_is_bounded_and_can_be_cleared_without_resetting_ram() {
+        let mut bus = CpuBus::new();
+        for value in 0..=255u8 {
+            bus.write(0x0000, value);
+            bus.read(0x0000);
+        }
+        let trace = bus.bus_trace();
+        assert_eq!(trace.len(), 2048);
+        assert_eq!(trace.last().unwrap().kind, CpuBusAccessKind::Read);
+        bus.clear_bus_trace();
+        assert!(bus.bus_trace().is_empty());
+        assert_eq!(bus.read(0x0000), 0xFF, "clearing diagnostics must not alter RAM");
+    }
 
     #[test]
     fn apu_status_read_preserves_open_bus_bit_five_and_clears_frame_irq() {
