@@ -41,8 +41,8 @@ pub struct CpuBusTraceEntry {
 /// CPU bus with 2 KiB internal RAM and an optional mapper-backed cartridge.
 ///
 /// PPU registers, frame rendering, NMI, OAM DMA and serial controller ports are routed.
-/// APU pulse/triangle/noise synthesis and an approximate DMC sample-fetch path are integrated;
-/// audio mixing, DMA stalls and interrupt timing are not cycle-accurate.
+/// APU pulse/triangle/noise synthesis and DMC sample fetching are integrated;
+/// audio mixing and some interrupt timing remain approximate.
 #[derive(Debug)]
 pub struct CpuBus {
     ram: [u8; 0x800],
@@ -327,8 +327,9 @@ impl CpuBus {
     pub fn ppu_position(&self) -> (u16, u16) { self.ppu.position() }
     /// Advances the APU by CPU cycles and services pending DMC sample reads.
     ///
-    /// Returns the CPU stall cycles caused by DMC DMA. Each sample-buffer refill
-    /// uses three cycles for the initial load and four for later reloads; alignment remains approximate.
+    /// Returns the CPU stall cycles caused by DMC DMA. Initial loads target GET,
+    /// later refills target PUT, and a failed halt on a CPU write retries on each
+    /// following cycle. The successful halt phase determines whether alignment is needed.
     pub fn tick_apu(&mut self, cycles: u32) -> u32 {
         // This convenience API owns the whole requested interval, including any
         // CPU cycles stolen by DMC. Keep servicing one DMA phase per cycle while
@@ -986,6 +987,37 @@ mod tests {
         assert_eq!(bus.read(0x4015) & 0x10, 0x10);
         bus.tick_apu(16 * 54);
         assert!(bus.apu_sample() > 0.0);
+    }
+
+    #[test]
+    fn dmc_load_waits_for_target_get_and_retries_halt_after_cpu_writes() {
+        let mut bus = CpuBus::new();
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16] = 0xA5;
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+
+        bus.begin_cpu_instruction();
+        bus.write(0x4012, 0x00);
+        bus.write(0x4013, 0x00);
+        bus.write(0x4015, 0x10);
+        // Keep the CPU writing across the load's target GET attempt. The DMC
+        // must retry rather than stealing a write, then halt on this read.
+        bus.write(0x0001, 0x11);
+        bus.write(0x0002, 0x22);
+        bus.write(0x0003, 0x33);
+        bus.read(0x0004);
+        bus.end_cpu_instruction();
+
+        let trace = bus.bus_trace();
+        let dmc_reads: Vec<_> = trace.iter().filter(|entry| entry.kind == CpuBusAccessKind::DmcRead).collect();
+        assert!(dmc_reads.len() == 3 || dmc_reads.len() == 4,
+            "the successful halt phase selects a three- or four-cycle sequence: {dmc_reads:?}");
+        assert_eq!(dmc_reads.last().unwrap().address, 0xC000,
+            "the final DMC bus transaction must fetch the programmed sample byte");
+        assert_eq!(bus.read(0x4015) & 0x10, 0,
+            "a completed one-byte sample clears the remaining-byte status");
     }
 
     #[test]
