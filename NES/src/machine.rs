@@ -136,8 +136,22 @@ impl NesMachine {
     /// The returned buffer is tightly packed as R, G, B, A bytes for each of 256x240 pixels.
     pub fn framebuffer_rgba(&self, palette: &[[u8; 4]; 64]) -> Vec<u8> {
         let mut rgba = Vec::with_capacity(self.bus.framebuffer().len() * 4);
+        let emphasis = self.bus.ppu_color_emphasis();
         for &index in self.bus.framebuffer() {
-            rgba.extend_from_slice(&palette[(index & 0x3F) as usize]);
+            let mut color = palette[(index & 0x3F) as usize];
+            // On NTSC hardware, emphasizing one primary attenuates the other two.
+            // Apply the output-stage effect here so the public indexed framebuffer
+            // remains a stable 6-bit palette format for existing frontends.
+            if emphasis & 0x06 != 0 {
+                color[0] = (u16::from(color[0]) * 3 / 4) as u8;
+            }
+            if emphasis & 0x05 != 0 {
+                color[1] = (u16::from(color[1]) * 3 / 4) as u8;
+            }
+            if emphasis & 0x03 != 0 {
+                color[2] = (u16::from(color[2]) * 3 / 4) as u8;
+            }
+            rgba.extend_from_slice(&color);
         }
         rgba
     }
@@ -1273,3 +1287,53 @@ mod dmc_clock_integration_regressions {
     }
 }
 
+
+
+#[cfg(test)]
+mod color_emphasis_output_regressions {
+    use super::*;
+
+    fn test_machine() -> NesMachine {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFC] = 0x00;
+        image[16 + 0x3FFD] = 0x80;
+        NesMachine::from_ines(&image).unwrap()
+    }
+
+    fn palette() -> [[u8; 4]; 64] {
+        let mut palette = [[0, 0, 0, 255]; 64];
+        palette[0] = [200, 160, 120, 255];
+        palette
+    }
+
+    #[test]
+    fn framebuffer_conversion_preserves_palette_without_emphasis() {
+        let machine = test_machine();
+        assert_eq!(&machine.framebuffer_rgba(&palette())[..4], &[200, 160, 120, 255]);
+    }
+
+    #[test]
+    fn red_emphasis_attenuates_green_and_blue_only() {
+        let mut machine = test_machine();
+        machine.write_cpu(0x2001, 0x20);
+        assert_eq!(&machine.framebuffer_rgba(&palette())[..4], &[200, 120, 90, 255]);
+    }
+
+    #[test]
+    fn combined_emphasis_attenuates_only_channels_without_an_emphasis_bit() {
+        let mut machine = test_machine();
+        machine.write_cpu(0x2001, 0x60); // Red + green emphasis.
+        assert_eq!(&machine.framebuffer_rgba(&palette())[..4], &[200, 160, 90, 255]);
+    }
+
+    #[test]
+    fn color_emphasis_does_not_change_the_indexed_framebuffer_contract() {
+        let mut machine = test_machine();
+        let before = machine.framebuffer().to_vec();
+        machine.write_cpu(0x2001, 0xE0);
+        assert_eq!(machine.framebuffer(), before,
+            "PPUMASK emphasis is a host RGB output effect, not a palette-index mutation");
+    }
+}
