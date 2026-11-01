@@ -1952,4 +1952,42 @@ mod dmc_controller_read_conflict_regressions {
         assert_eq!(bus.read(0x4016) & 1, 0,
             "the next serial bit must remain correctly aligned after the repeated reads");
     }
+    #[test]
+    fn dmc_dma_finishes_an_already_halted_transfer_after_channel_disable() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16] = 0xA5;
+
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0x4010, 0x00);
+        bus.write(0x4012, 0x00);
+        bus.write(0x4013, 0x00);
+        bus.write(0x4015, 0x10);
+        bus.apu.bypass_dmc_startup_delay_for_host_write();
+        let held_address = 0x4015;
+        bus.cpu_bus_address = held_address;
+        assert_eq!(bus.tick_apu_with_dma_access(1, true), 1,
+            "the readable HALT cycle must begin the in-flight DMA");
+
+        // Once HALT has succeeded, disabling DMC cancels future requests but
+        // cannot release the CPU before the already-started dummy and GET slots.
+        bus.write(0x4015, 0x00);
+        assert_eq!(bus.tick_apu_with_dma_access(1, true), 1,
+            "the in-flight dummy read still occupies the bus");
+        assert_eq!(bus.tick_apu_with_dma_access(1, true), 1,
+            "the in-flight sample GET still completes after channel disable");
+        assert!(bus.take_dmc_dma_get_occurred());
+        assert_eq!(bus.apu.read(0x4015) & 0x10, 0,
+            "disabling DMC clears the byte counter and the late GET must not resurrect it");
+
+        let dmc_reads: Vec<_> = bus.bus_trace().into_iter()
+            .filter(|entry| entry.kind == CpuBusAccessKind::DmcRead)
+            .collect();
+        assert_eq!(dmc_reads.len(), 3, "HALT, DUMMY and GET must all be visible");
+        assert_eq!(dmc_reads.iter().map(|entry| entry.address).collect::<Vec<_>>(),
+            [held_address, held_address, 0xC000]);
+    }
+
 }
