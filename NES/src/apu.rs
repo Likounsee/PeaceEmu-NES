@@ -866,7 +866,9 @@ mod tests {
         ]);
 
         apu.supply_dmc_byte(0xA5);
-        assert_eq!(Apu::dmc_dma_sequence(true), &[
+        assert!(!apu.dmc_dma_halt_target_is_get(),
+            "subsequent buffer refills target PUT rather than GET");
+        assert_eq!(Apu::dmc_dma_sequence(false), &[
             DmcDmaPhase::Halt,
             DmcDmaPhase::Dummy,
             DmcDmaPhase::Align,
@@ -882,12 +884,16 @@ mod tests {
         apu.write(0x4015, 0x10);
 
         assert_eq!(apu.take_dmc_dma_request(), Some(0xC000));
-        assert_eq!(Apu::dmc_dma_sequence(true).len() as u32, 3,
-            "the first sample-buffer load uses the three-cycle load sequence");
+        assert!(apu.dmc_dma_halt_target_is_get());
+        assert_eq!(Apu::dmc_dma_sequence(true).len() as u32, 3);
+        assert_eq!(Apu::dmc_dma_sequence(false).len() as u32, 4);
         apu.supply_dmc_byte(0xA5);
 
-        assert_eq!(Apu::dmc_dma_sequence(true).len() as u32, 4,
-            "subsequent sample-buffer refills use the four-cycle reload sequence");
+        assert!(!apu.dmc_dma_halt_target_is_get());
+        assert_eq!(Apu::dmc_dma_sequence(true).len() as u32, 3,
+            "a reload halted on GET does not need alignment");
+        assert_eq!(Apu::dmc_dma_sequence(false).len() as u32, 4,
+            "a reload halted on PUT needs alignment");
     }
 
     #[test]
@@ -987,20 +993,20 @@ mod tests {
         apu.write(0x4015, 0x10);
 
         assert_eq!(apu.take_dmc_dma_request(), Some(0xC080));
-        assert_eq!(Apu::dmc_dma_sequence(true).len() as u32, 3);
+        assert!(apu.dmc_dma_halt_target_is_get());
         apu.supply_dmc_byte(0x5A);
-        assert_eq!(Apu::dmc_dma_sequence(true).len() as u32, 4,
+        assert!(!apu.dmc_dma_halt_target_is_get(),
             "the looped sample's next fetch is a reload, not a power-on load");
 
         apu.tick_cpu_cycles(4_000);
         assert_eq!(apu.take_dmc_dma_request(), Some(0xC080));
-        assert_eq!(Apu::dmc_dma_sequence(true).len() as u32, 4,
-            "loop restart must preserve the reload classification");
+        assert!(!apu.dmc_dma_halt_target_is_get(),
+            "loop restart must preserve the reload halt target");
 
         apu.write(0x4015, 0x00);
         apu.write(0x4015, 0x10);
         assert_eq!(apu.take_dmc_dma_request(), Some(0xC080));
-        assert_eq!(Apu::dmc_dma_sequence(true).len() as u32, 3,
+        assert!(apu.dmc_dma_halt_target_is_get(),
             "disabling and enabling DMC starts a new initial load");
     }
 
