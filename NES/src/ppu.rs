@@ -353,7 +353,6 @@ impl Ppu {
             }
             self.dot += 1;
             self.update_mapper_a12_bus(cartridge);
-            self.clock_background_fetch_pipeline(cartridge);
             if self.dot == 1 && self.scanline < 240 {
                 for slot in 0..8 {
                     self.sprite_x_counter[slot] = self.sprite_line_oam[slot][3];
@@ -391,6 +390,13 @@ impl Ppu {
                 self.render_sprite_pixel(x, y, cartridge);
                 self.clock_sprite_output_pipeline();
             }
+
+            // The pixel mux samples the current shifter MSBs for this beam dot.
+            // Advance/reload the background shifters only after that pixel has
+            // been emitted; doing it before composition drops the leftmost bit
+            // of every fetched tile and advances tile boundaries one pixel early.
+            self.clock_background_fetch_pipeline(cartridge);
+
             if self.dot == 256 && (self.scanline < 240 || self.scanline == 261) {
                 if self.scanline == 261 {
                     // Sprite evaluation is disabled on the pre-render line. The
@@ -5399,5 +5405,50 @@ mod sprite_fetch_window_invalidation_regressions {
 
         assert_eq!(ppu.sprite_pattern_valid, [false; 8],
             "the new line starts with no valid pattern slots; each becomes valid only after its high-plane fetch");
+    }
+}
+
+
+#[cfg(test)]
+mod background_beam_shifter_order_regressions {
+    use super::*;
+
+    #[test]
+    fn first_pixel_samples_the_shifter_msb_before_the_dot_clock_shift() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x08;
+        ppu.bg_pipeline_primed = true;
+        ppu.bg_pattern_shift_low = 0x8000;
+        ppu.palette[1] = 0x2A;
+
+        ppu.tick(1);
+
+        assert_eq!(ppu.position(), (0, 1));
+        assert_eq!(ppu.framebuffer[0], 0x2A,
+            "screen pixel zero must consume bit 7 before the background shifter advances");
+        assert!(ppu.background_opaque[0]);
+        assert_eq!(ppu.bg_pattern_shift_low & 0x8000, 0,
+            "the fetched pattern shifter advances after the beam has sampled its current MSB");
+    }
+
+    #[test]
+    fn eight_pixels_consume_a_tile_from_msb_to_lsb_before_the_next_fetch_load() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x08;
+        ppu.bg_pipeline_primed = true;
+        ppu.bg_pattern_shift_low = 0x8100;
+        ppu.palette[0] = 0x01;
+        ppu.palette[1] = 0x11;
+
+        for _ in 0..8 {
+            ppu.tick(1);
+        }
+
+        assert_eq!(&ppu.framebuffer[..8], &[0x11, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x11],
+            "the first and last pattern bits belong to the same eight-pixel tile");
     }
 }
