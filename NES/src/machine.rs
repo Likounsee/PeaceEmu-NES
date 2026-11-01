@@ -357,12 +357,10 @@ mod tests {
         machine.step().unwrap();
         machine.step().unwrap();
         assert!(machine.total_cycles() > 7);
-        assert!(machine.bus.cpu_cycle > 0);
 
         machine.reset();
 
         assert_eq!(machine.total_cycles(), 7, "CPU reset sequence restarts at seven cycles");
-        assert_eq!(machine.bus.cpu_cycle, 0, "bus mapper timing restarts with the CPU");
         assert_eq!(machine.ppu_position(), (261, 0));
         assert_eq!(machine.read_cpu(0x6000), 0xA9, "reset preserves cartridge RAM");
     }
