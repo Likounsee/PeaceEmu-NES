@@ -550,11 +550,18 @@ impl Apu {
 
     /// Returns a pending DMC sample-memory read address, if the sample buffer needs data.
     pub fn take_dmc_dma_request(&mut self) -> Option<u16> {
-        if self.dmc_request_delay == 0
-            && self.dmc_sample_buffer.is_none()
-            && self.dmc_bytes_remaining > 0 {
+        if self.dmc_sample_buffer.is_none() && self.dmc_bytes_remaining > 0 {
             Some(self.dmc_current_address)
         } else { None }
+    }
+
+    /// Takes a request only after its hardware scheduling delay has elapsed.
+    pub(crate) fn take_dmc_dma_request_for_bus(&mut self) -> Option<u16> {
+        if self.dmc_request_delay == 0 {
+            self.take_dmc_dma_request()
+        } else {
+            None
+        }
     }
 
     /// Returns whether the CPU cycle just clocked is a GET phase.
@@ -906,12 +913,12 @@ mod tests {
         apu.write(0x4013, 0x01);
         apu.write(0x4015, 0x10);
 
-        assert_eq!(apu.take_dmc_dma_request(), None,
+        assert_eq!(apu.take_dmc_dma_request_for_bus(), None,
             "the initial load must not halt immediately after $4015");
         apu.tick_cpu_cycles(1);
-        assert_eq!(apu.take_dmc_dma_request(), None);
+        assert_eq!(apu.take_dmc_dma_request_for_bus(), None);
         apu.tick_cpu_cycles(1);
-        assert_eq!(apu.take_dmc_dma_request(), Some(0xC000));
+        assert_eq!(apu.take_dmc_dma_request_for_bus(), Some(0xC000));
         assert!(apu.dmc_dma_halt_target_is_get());
 
         apu.supply_dmc_byte(0xA5);
