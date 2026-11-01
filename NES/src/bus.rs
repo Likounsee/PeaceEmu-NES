@@ -241,7 +241,7 @@ impl CpuBus {
     /// Advances the APU by CPU cycles and services pending DMC sample reads.
     ///
     /// Returns the CPU stall cycles caused by DMC DMA. Each sample-buffer refill
-    /// occupies four CPU cycles; alignment-specific details remain approximate.
+    /// uses three cycles for the initial load and four for later reloads; alignment remains approximate.
     pub fn tick_apu(&mut self, cycles: u32) -> u32 {
         self.tick_apu_with_dma_access(cycles, true)
     }
@@ -264,9 +264,10 @@ impl CpuBus {
             self.apu.tick_cpu_cycles(1);
             if dma_can_halt {
                 if let Some(address) = self.apu.take_dmc_dma_request() {
+                    let dma_cycles = self.apu.dmc_dma_stall_cycles();
                     let value = self.read_dmc_dma_source(address);
                     self.apu.supply_dmc_byte(value);
-                    stall_cycles = stall_cycles.saturating_add(4);
+                    stall_cycles = stall_cycles.saturating_add(dma_cycles);
                 }
             }
         }
@@ -362,7 +363,7 @@ mod tests {
 
         let before = bus.ppu_position();
         bus.begin_cpu_instruction();
-        assert_eq!(bus.tick_apu(1), 4);
+        assert_eq!(bus.tick_apu(1), 3);
         let bus_cycles = bus.end_cpu_instruction();
 
         assert_eq!(bus_cycles, 0, "DMC internal DMA read is not an opcode/data bus access");
@@ -390,7 +391,7 @@ mod tests {
         assert_eq!(bus.take_instruction_dmc_stalls(), 0,
             "DMC must not halt the CPU in the middle of a write cycle");
         assert_eq!(bus.read(0x0000), 0x55);
-        assert_eq!(bus.take_instruction_dmc_stalls(), 4,
+        assert_eq!(bus.take_instruction_dmc_stalls(), 3,
             "the pending sample fetch should be serviced on the following read cycle");
         assert_eq!(bus.end_cpu_instruction(), 2);
         assert_eq!(bus.read(0x4015) & 0x10, 0,
@@ -439,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn dmc_sample_fetch_reports_four_cpu_stall_cycles() {
+    fn initial_dmc_sample_fetch_reports_three_cpu_stall_cycles() {
         let mut bus = CpuBus::new();
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
@@ -468,8 +469,8 @@ mod tests {
         bus.write(0x4015, 0x10);
 
         let stalls = bus.tick_apu(4_000);
-        assert!(stalls >= 8, "multiple sample-buffer refills should each charge a four-cycle stall; got {stalls}");
-        assert_eq!(stalls % 4, 0, "each current-model DMC fetch costs four CPU cycles");
+        assert!(stalls >= 7, "initial load plus at least one four-cycle reload should be charged; got {stalls}");
+        assert_eq!((stalls - 3) % 4, 0, "initial load costs three cycles and each reload costs four");
     }
 
     #[test]
@@ -1257,7 +1258,7 @@ mod dma_and_irq_interaction_regressions {
         bus.write(0x4013, 1); // 17-byte sample.
         bus.write(0x4015, 0x10);
 
-        assert_eq!(bus.tick_apu(1), 4, "the first buffer refill incurs a DMA stall");
+        assert_eq!(bus.tick_apu(1), 3, "the initial buffer load incurs a three-cycle DMA stall");
         assert_eq!(bus.tick_apu(1), 0,
             "a full sample buffer must not request another byte or incur another stall");
     }
