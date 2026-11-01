@@ -1638,12 +1638,12 @@ impl Camerica {
     /// Writes PRG-RAM or selects the PRG bank; $9000 writes select one-screen mirroring.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
-            0x6000..=0x7FFF => {
-                if let Some(byte) = self.prg_ram.get_mut(address as usize - 0x6000) {
-                    *byte = value;
-                    true
-                } else { false }
+            0x6000..=0x7FFF if !self.prg_ram.is_empty() => {
+                let index = (address as usize - 0x6000) % self.prg_ram.len();
+                self.prg_ram[index] = value;
+                true
             }
+            0x6000..=0x7FFF => false
             0x9000..=0x9FFF => {
                 self.selected_prg_bank = (value & 0x0F) as usize % (self.prg_rom.len() / PRG_BANK_LEN - 1);
                 self.mirroring = if value & 0x10 != 0 { Mirroring::OneScreenUpper } else { Mirroring::OneScreenLower };
@@ -1865,7 +1865,10 @@ impl Mmc2 {
             let bank_len = 0x4000;
             let bank_count = self.prg_rom.len() / bank_len;
             return match address {
-                0x6000..=0x7FFF => self.prg_ram.get(address as usize - 0x6000).copied(),
+                0x6000..=0x7FFF if !self.prg_ram.is_empty() => {
+                    Some(self.prg_ram[(address as usize - 0x6000) % self.prg_ram.len()])
+                }
+                0x6000..=0x7FFF => None,
                 0x8000..=0xBFFF => {
                     let bank = self.prg_bank % bank_count;
                     Some(self.prg_rom[bank * bank_len + address as usize - 0x8000])
@@ -6144,6 +6147,19 @@ mod nes2_mmc2_mmc4_regressions {
         let mut cart = Cartridge::parse(&image).unwrap();
         assert_eq!(cart.cpu_read(0x6000), None);
         assert!(!cart.cpu_write(0x6000, 0x5A));
+
+        let mut small_ram = nes2_mmc_image(9, 8, 1);
+        small_ram[10] = 5; // 2 KiB of volatile PRG-RAM.
+        let mut cart = Cartridge::parse(&small_ram).unwrap();
+        assert!(cart.cpu_write(0x6000, 0x6B));
+        assert_eq!(cart.cpu_read(0x6800), Some(0x6B), "small PRG-RAM mirrors through the 8 KiB CPU window");
+
+        let mut chr_latches = Cartridge::parse(&nes2_mmc_image(9, 8, 1)).unwrap();
+        assert!(chr_latches.cpu_write(0xB000, 1)); // FD0 bank 1.
+        assert!(chr_latches.cpu_write(0xC000, 0)); // FE0 bank 0.
+        assert_eq!(chr_latches.ppu_read(0x0000), Some(4));
+        let _ = chr_latches.ppu_read(0x0FD8); // Switch latch 0 back to FD.
+        assert_eq!(chr_latches.ppu_read(0x0000), Some(0));
 
         let mut trainer = vec![0; image.len() + TRAINER_LEN];
         trainer[..INES_HEADER_LEN].copy_from_slice(&image[..INES_HEADER_LEN]);
