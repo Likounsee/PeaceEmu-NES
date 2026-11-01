@@ -2196,3 +2196,56 @@ mod exact_frame_sequence_timing_regressions {
     }
 
 }
+
+
+#[cfg(test)]
+mod dmc_disable_output_regressions {
+    use super::*;
+
+    #[test]
+    fn disabling_dmc_does_not_discard_a_byte_already_owned_by_the_output_unit() {
+        let mut apu = Apu::new();
+        apu.write(0x4010, 0x0F); // Fastest DMC rate.
+        apu.write(0x4011, 64);
+        apu.write(0x4013, 0x00);
+        apu.write(0x4015, 0x10);
+        apu.dmc_sample_buffer = Some(0xFF);
+        apu.dmc_shift_register = 0;
+        apu.dmc_bits_remaining = 1;
+        apu.dmc_silence = false;
+
+        apu.write(0x4015, 0x00);
+        assert_eq!(apu.dmc_bytes_remaining, 0);
+        assert_eq!(apu.dmc_sample_buffer, Some(0xFF),
+            "channel disable must not erase a byte already fetched into the sample buffer");
+        assert_eq!(apu.take_dmc_dma_request(), None,
+            "no further memory reads may be requested after disable");
+
+        apu.tick_cpu_cycles(54);
+        assert_eq!(apu.dmc_sample_buffer, None,
+            "the output unit must still consume its already-buffered byte");
+        assert_eq!(apu.dmc_shift_register, 0xFF);
+        assert!(!apu.dmc_silence);
+        assert_eq!(apu.dmc_output_level, 64,
+            "the first loaded one-bit has not been clocked into the DAC yet");
+        apu.tick_cpu_cycles(54);
+        assert_eq!(apu.dmc_output_level, 66,
+            "the output unit continues clocking a buffered sample after $4015 disables new fetches");
+    }
+
+    #[test]
+    fn disabling_dmc_before_a_fetch_leaves_the_sample_buffer_empty() {
+        let mut apu = Apu::new();
+        apu.write(0x4012, 0x03);
+        apu.write(0x4013, 0x02);
+        apu.write(0x4015, 0x10);
+        apu.write(0x4015, 0x00);
+
+        assert_eq!(apu.dmc_bytes_remaining, 0);
+        assert_eq!(apu.dmc_sample_buffer, None);
+        assert_eq!(apu.take_dmc_dma_request_for_bus(), None);
+        apu.tick_cpu_cycles(8);
+        assert_eq!(apu.take_dmc_dma_request_for_bus(), None,
+            "a cancelled startup request must not reappear after its original delay");
+    }
+}
