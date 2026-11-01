@@ -1387,7 +1387,7 @@ mod color_emphasis_output_regressions {
     #[test]
     fn dmc_irq_raised_during_stolen_cycles_is_polled_at_the_next_instruction_boundary() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16..19].copy_from_slice(&[0x58, 0xEA, 0xEA]); // CLI; NOP; NOP.
         image[16 + 0x3FFC] = 0x00;
