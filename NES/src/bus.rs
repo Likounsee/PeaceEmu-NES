@@ -692,7 +692,8 @@ mod tests {
         bus.write(0x4015, 0x10);
         assert_eq!(bus.tick_apu(1), 3);
         assert_eq!(bus.tick_apu(1), 0, "a filled sample buffer must not repeatedly stall the CPU");
-        let phases: Vec<_> = bus.bus_trace().iter()
+        let trace = bus.bus_trace();
+        let phases: Vec<_> = trace.iter()
             .filter(|entry| entry.kind == CpuBusAccessKind::DmcRead)
             .collect();
         assert_eq!(phases.iter().map(|entry| entry.address).collect::<Vec<_>>(),
