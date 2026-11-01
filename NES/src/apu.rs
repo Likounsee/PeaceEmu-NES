@@ -809,6 +809,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn dmc_initial_load_and_later_reload_have_distinct_dma_costs() {
+        let mut apu = Apu::new();
+        apu.write(0x4012, 0x00);
+        apu.write(0x4013, 0x01); // Multi-byte sample so a later refill is possible.
+        apu.write(0x4015, 0x10);
+
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xC000));
+        assert_eq!(apu.dmc_dma_stall_cycles(), 3,
+            "the first sample-buffer load uses the three-cycle load sequence");
+        apu.supply_dmc_byte(0xA5);
+
+        assert_eq!(apu.dmc_dma_stall_cycles(), 4,
+            "subsequent sample-buffer refills use the four-cycle reload sequence");
+    }
+
+    #[test]
     fn dmc_registers_control_sample_address_length_and_irq() {
         let mut apu = Apu::new();
         apu.write(0x4010, 0x80);
