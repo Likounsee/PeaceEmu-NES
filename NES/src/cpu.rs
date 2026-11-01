@@ -264,7 +264,9 @@ impl Cpu {
             0xBB => { // LAS: A, X and SP share memory & stack pointer.
                 let base = self.fetch_word(bus);
                 let address = base.wrapping_add(self.state.y as u16);
-                let value = bus.read(address) & self.state.sp;
+                // LAS is an indexed read: on a page crossing the 2A03
+                // performs the wrong-page dummy access before the final read.
+                let value = Self::read_indexed(bus, base, address) & self.state.sp;
                 self.state.a = value;
                 self.state.x = value;
                 self.state.sp = value;
@@ -750,10 +752,19 @@ mod tests {
         let (mut cpu, mut bus) = setup(&[0xBB, 0xFF, 0x02]);
         cpu.state.y = 1;
         cpu.state.sp = 0xF3;
+        bus.write(0x0200, 0x11); // Wrong-page dummy read must not supply the result.
         bus.write(0x0300, 0x8F);
+        bus.clear_bus_trace();
+        bus.begin_cpu_instruction();
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 5);
+        assert_eq!(bus.end_cpu_instruction(), 5);
         assert_eq!((cpu.state.a, cpu.state.x, cpu.state.sp), (0x83, 0x83, 0x83));
         assert_ne!(cpu.state.status & flags::NEGATIVE, 0);
+        assert_eq!(
+            bus.bus_trace().iter().map(|entry| entry.address).collect::<Vec<_>>(),
+            [0x0600, 0x0601, 0x0602, 0x0200, 0x0300],
+            "LAS must issue the wrong-page dummy read before its effective-address read"
+        );
 
         cpu.state.y = 0;
         cpu.state.sp = 0xFF;
@@ -762,8 +773,16 @@ mod tests {
         bus.write(0x0601, 0x00);
         bus.write(0x0602, 0x03);
         bus.write(0x0300, 0x42);
+        bus.clear_bus_trace();
+        bus.begin_cpu_instruction();
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 4);
+        assert_eq!(bus.end_cpu_instruction(), 4);
         assert_eq!((cpu.state.a, cpu.state.x, cpu.state.sp), (0x42, 0x42, 0x42));
+        assert_eq!(
+            bus.bus_trace().iter().map(|entry| entry.address).collect::<Vec<_>>(),
+            [0x0600, 0x0601, 0x0602, 0x0300],
+            "LAS must not add a wrong-page read when the indexed address stays in-page"
+        );
     }
 
     #[test]
