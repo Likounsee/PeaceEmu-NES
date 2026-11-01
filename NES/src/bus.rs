@@ -50,6 +50,14 @@ impl CpuBus {
         self.pending_oam_dma = None;
         self.controller_shift = [0; 2];
         self.controller_strobe = false;
+        // Reset the bus-side clock domain together with the APU. Keeping the
+        // previous cycle count would make timed mapper writes observe a stale
+        // timeline after the CPU has restarted from its reset vector.
+        self.instruction_timing = false;
+        self.instruction_bus_cycles = 0;
+        self.instruction_dmc_stalls = 0;
+        self.cpu_cycle = 0;
+        self.cpu_bus_address = 0;
     }
     /// Attaches a parsed cartridge.
     pub fn insert_cartridge(&mut self, cartridge: Cartridge) { self.cartridge = Some(cartridge); }
@@ -936,6 +944,11 @@ mod tests {
         assert_eq!(bus.audio_sample_rate(), 48_000, "reset must preserve the host audio format");
         assert_eq!(bus.take_oam_dma_request(), None, "reset must discard pending DMA");
         assert_eq!(bus.ppu_position(), (261, 0), "PPU timing returns to pre-render");
+        assert_eq!(bus.cpu_cycle, 0, "mapper-visible CPU timing restarts from a clean epoch");
+        assert_eq!(bus.cpu_bus_address, 0, "the held DMA address is cleared");
+        assert_eq!(bus.instruction_bus_cycles, 0, "partial instruction timing is discarded");
+        assert_eq!(bus.instruction_dmc_stalls, 0, "stale DMC stall accounting is discarded");
+        assert!(!bus.instruction_timing, "reset exits any active instruction timing scope");
         bus.write(0x4016, 1);
         bus.write(0x4016, 0);
         assert_eq!(bus.read(0x4016) & 1, 1, "live controller button levels survive reset");
