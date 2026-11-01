@@ -377,7 +377,7 @@ impl CpuBus {
             // Capture a ready request independently of the current CPU access.
             // Initial loads first target GET; later refills first target PUT.
             if self.pending_dmc_dma.is_none() {
-                if let Some(sample_address) = self.apu.take_dmc_dma_request() {
+                if let Some(sample_address) = self.apu.take_dmc_dma_request_for_bus() {
                     self.pending_dmc_dma = Some(PendingDmcDma {
                         sample_address,
                         halt_target_is_get: self.apu.dmc_dma_halt_target_is_get(),
