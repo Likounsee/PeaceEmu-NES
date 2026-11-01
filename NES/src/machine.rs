@@ -793,7 +793,7 @@ mod tests {
         // its NMI edge. OAM DMA advances the PPU through that edge while the
         // CPU is stalled, so the request must remain pending until step().
         machine.write_cpu(0x2000, 0x80);
-        machine.bus.tick_ppu(21 * 341);
+        machine.bus.tick_ppu(242 * 341);
         assert_eq!(machine.ppu_position(), (241, 0));
         machine.perform_oam_dma(0x02);
 
