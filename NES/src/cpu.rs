@@ -148,6 +148,11 @@ impl Cpu {
             return Ok(StepResult { pc, opcode: self.jam_opcode, cycles: 1 });
         }
         if bus.take_nmi_request() {
+            // NMI supersedes the pending maskable-IRQ poll. In particular, do not
+            // carry CLI/PLP's one-instruction delay or SEI's pre-update I sample
+            // into the NMI handler, where I is set by interrupt entry.
+            self.irq_poll_delay = false;
+            self.irq_poll_i_override = None;
             // Interrupt entry spends two cycles reading the next opcode address
             // before the stack writes. These reads matter for memory-mapped I/O.
             let _ = bus.read(self.state.pc);
@@ -2420,5 +2425,48 @@ mod sei_irq_poll_regressions {
         let next = cpu.step(&mut bus).unwrap();
         assert_eq!(next.opcode, 0xEA);
         assert_eq!(next.cycles, 2);
+    }
+}
+
+
+#[cfg(test)]
+mod nmi_irq_poll_priority_regressions {
+    use super::*;
+    use crate::cartridge::Cartridge;
+
+    #[test]
+    fn nmi_discards_sei_pre_update_irq_sample_before_entering_handler() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 1;
+        image[16 + 0x1000] = 0xEA; // NOP at NMI vector $9000.
+        image[16 + 0x3FFA] = 0x00;
+        image[16 + 0x3FFB] = 0x90;
+
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0x4017, 0x00);
+        bus.tick_apu(14_919);
+        assert!(bus.irq_pending(), "fixture must keep a maskable IRQ asserted");
+
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        cpu.state.status &= !flags::INTERRUPT_DISABLE;
+        bus.write(0x0600, 0x78); // SEI samples I=0, then sets I=1.
+        assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0x78);
+        assert_ne!(cpu.state.status & flags::INTERRUPT_DISABLE, 0);
+
+        // Raise NMI before the next instruction boundary. NMI must win, and
+        // the old SEI poll sample must not leak into the handler's first step.
+        bus.tick_ppu(243 * 341 + 1);
+        bus.write(0x2000, 0x80);
+        assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0xFF);
+        assert_eq!(cpu.state().pc, 0x9000);
+
+        let handler = cpu.step(&mut bus).unwrap();
+        assert_eq!(handler.opcode, 0xEA,
+            "the NMI handler's first instruction must execute while I remains set");
+        assert_eq!(handler.pc, 0x9000);
+        assert_ne!(cpu.state.status & flags::INTERRUPT_DISABLE, 0);
     }
 }
