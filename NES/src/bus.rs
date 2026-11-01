@@ -365,7 +365,7 @@ impl CpuBus {
             // or PUT, not on whether this is the first load or a later refill.
             if self.pending_dmc_dma.is_none() && dma_can_halt {
                 if let Some(sample_address) = self.apu.take_dmc_dma_request() {
-                    let halt_cycle_is_get = self.cpu_cycle & 1 == 0;
+                    let halt_cycle_is_get = self.cpu_cycle & 1 != 0;
                     let phases = Apu::dmc_dma_sequence(halt_cycle_is_get)
                         .iter().copied().collect();
                     self.pending_dmc_dma = Some(PendingDmcDma { sample_address, phases });
