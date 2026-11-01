@@ -355,22 +355,18 @@ impl CpuBus {
             // Never collapse the halt/dummy/alignment/GET sequence into one host
             // callback: each phase consumes exactly one elapsed CPU cycle and
             // produces its I/O side effects at that phase's timestamp.
-            if let Some(pending) = self.pending_dmc_dma.as_mut() {
-                if let Some(phase) = pending.phases.pop_front() {
-                    let address = match phase {
-                        DmcDmaPhase::Halt | DmcDmaPhase::Dummy | DmcDmaPhase::Align => {
-                            self.cpu_bus_address
-                        }
-                        DmcDmaPhase::Get => pending.sample_address,
-                    };
-                    let is_get = phase == DmcDmaPhase::Get;
-                    let value = self.read_dmc_dma_source(address);
-                    if is_get {
-                        self.apu.supply_dmc_byte(value);
-                    }
-                    stall_cycles = stall_cycles.saturating_add(1);
+            let next_phase = self.pending_dmc_dma.as_mut().and_then(|pending| {
+                pending.phases.pop_front().map(|phase| (phase, pending.sample_address))
+            });
+            if let Some((phase, sample_address)) = next_phase {
+                let is_get = phase == DmcDmaPhase::Get;
+                let address = if is_get { sample_address } else { self.cpu_bus_address };
+                let value = self.read_dmc_dma_source(address);
+                if is_get {
+                    self.apu.supply_dmc_byte(value);
                 }
-                if pending.phases.is_empty() {
+                stall_cycles = stall_cycles.saturating_add(1);
+                if self.pending_dmc_dma.as_ref().is_some_and(|pending| pending.phases.is_empty()) {
                     self.pending_dmc_dma = None;
                 }
             }
