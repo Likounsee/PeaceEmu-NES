@@ -708,7 +708,8 @@ mod tests {
             .filter(|entry| entry.kind == CpuBusAccessKind::DmcRead)
             .collect();
         assert_eq!(phases.iter().map(|entry| entry.address).collect::<Vec<_>>(),
-            [0, 0, 0xC000], "the initial transfer must issue two held-address reads and one sample GET");
+            [0x4015, 0x4015, 0xC000],
+            "the initial transfer must repeat the held $4015 address before the sample GET");
     }
 
     #[test]
