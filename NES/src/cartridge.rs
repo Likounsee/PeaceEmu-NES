@@ -2149,13 +2149,12 @@ impl Cartridge {
             let mapper = ((image[6] >> 4) as u16)
                 | (image[7] & 0xF0) as u16
                 | (((image[8] & 0x0F) as u16) << 8);
-            // Keep the error distinction useful to callers: an unknown mapper
-            // is not the same thing as a known board whose NES 2.0 variant is
-            // not implemented. MMC2/MMC4 (9/10) and UNROM-512 (30) are known
-            // legacy-only implementations and their parsers return
-            // Nes2NotSupported themselves.
+            // These mapper numbers have implementations for legacy iNES,
+            // but their NES 2.0 board variants are not supported yet. Let their
+            // parsers return the same format-specific error as other unsupported
+            // NES 2.0 boards instead of rejecting them as unknown mapper IDs.
             if !matches!(mapper, 0 | 1 | 2 | 3 | 4 | 7 | 8 | 9 | 10 | 11 | 13 | 15 | 30 | 34 | 66 | 71 | 87) {
-                return Err(CartridgeError::UnsupportedMapper(mapper));
+                return Err(CartridgeError::Nes2NotSupported);
             }
         }
         let mapper = if nes2 {
@@ -6026,7 +6025,7 @@ mod nes2_mapper_error_classification_regressions {
     #[test]
     fn unknown_nes2_mapper_reports_its_mapper_number() {
         let image = nes2_header(5);
-        assert_eq!(Cartridge::parse(&image), Err(CartridgeError::UnsupportedMapper(5)));
+        assert_eq!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported));
     }
 
     #[test]
