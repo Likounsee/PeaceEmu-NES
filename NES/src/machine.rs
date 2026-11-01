@@ -51,11 +51,11 @@ impl From<CpuError> for MachineError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DmaBusPhase {
     /// OAM's initial CPU halt/alignment slot.
-    OamHalt,
+    Halt,
     /// OAM reads one byte from CPU memory; DMC has priority over this GET slot.
-    OamGet,
+    Get,
     /// OAM commits the latched byte to PPU OAM; DMC cannot steal this PUT slot.
-    OamPut,
+    Put,
 }
 
 impl DmaBusPhase {
