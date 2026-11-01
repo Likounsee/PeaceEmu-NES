@@ -422,9 +422,9 @@ mod tests {
 
 
     #[test]
-    fn bus_trace_records_cpu_and_dmc_transactions_in_cycle_order() {
+    fn bus_trace_records_cpu_transactions_in_cycle_order() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16] = 0xA5;
         let mut bus = CpuBus::new();
@@ -442,6 +442,27 @@ mod tests {
         assert_eq!(trace[1].kind, CpuBusAccessKind::Read);
         assert_eq!((trace[1].address, trace[1].value), (0x0002, 0x37));
         assert!(trace[0].cycle < trace[1].cycle);
+    }
+
+    #[test]
+    fn bus_trace_identifies_dmc_dummy_and_sample_reads() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16] = 0xA5;
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0x4012, 0);
+        bus.write(0x4013, 0);
+        bus.write(0x4015, 0x10);
+
+        assert_eq!(bus.tick_apu(1), 3);
+        let trace = bus.bus_trace();
+        let dmc: Vec<_> = trace.iter().filter(|entry| entry.kind == CpuBusAccessKind::DmcRead).collect();
+        assert_eq!(dmc.len(), 3, "initial DMC DMA exposes halt, dummy and sample GET reads");
+        assert_eq!(dmc[0].address, 0, "halt/dummy reads use the held CPU address");
+        assert_eq!(dmc[1].address, 0, "dummy reads use the held CPU address");
+        assert_eq!(dmc[2].address, 0xC000, "the final GET reads the sample address");
     }
 
     #[test]
