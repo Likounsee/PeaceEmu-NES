@@ -81,6 +81,8 @@ pub struct Apu {
     dmc_bytes_remaining: u16,
     // The first fetch after $4015/restart uses the shorter DMC load sequence.
     dmc_initial_fetch: bool,
+    /// CPU cycles remaining before a newly scheduled DMC request may attempt HALT.
+    dmc_request_delay: u8,
     dmc_current_address: u16,
     dmc_sample_buffer: Option<u8>,
     dmc_shift_register: u8,
@@ -132,6 +134,7 @@ impl Default for Apu {
             dmc_enabled: false,
             dmc_bytes_remaining: 0,
             dmc_initial_fetch: false,
+            dmc_request_delay: 0,
             dmc_current_address: 0,
             dmc_sample_buffer: None,
             dmc_shift_register: 0,
@@ -189,8 +192,12 @@ impl Apu {
             self.enabled_channels = value & 0x0F;
             self.dmc_irq = false;
             self.dmc_enabled = value & 0x10 != 0;
-            if !self.dmc_enabled { self.dmc_bytes_remaining = 0; }
-            else if self.dmc_bytes_remaining == 0 { self.restart_dmc_sample(); }
+            if !self.dmc_enabled {
+                self.dmc_bytes_remaining = 0;
+                self.dmc_request_delay = 0;
+            } else if self.dmc_bytes_remaining == 0 {
+                self.restart_dmc_sample();
+            }
             for channel in 0..4 {
                 if self.enabled_channels & (1 << channel) == 0 {
                     self.length_counters[channel] = 0;
@@ -259,6 +266,7 @@ impl Apu {
         const DMC_PERIODS: [u16; 16] = [428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106,  85,  72,  54];
         if self.noise_shift == 0 { self.noise_shift = 1; }
         for _ in 0..cycles {
+            self.dmc_request_delay = self.dmc_request_delay.saturating_sub(1);
             // Pulse/noise timers are clocked on alternating CPU cycles; triangle runs each cycle.
             if !self.cpu_cycle_odd {
                 for channel in 0..2 {
@@ -304,6 +312,11 @@ impl Apu {
                     if let Some(sample) = self.dmc_sample_buffer.take() {
                         self.dmc_shift_register = sample;
                         self.dmc_silence = false;
+                        // A refill is scheduled for the next PUT phase, not the
+                        // same cycle that the output unit consumes this byte.
+                        if self.dmc_bytes_remaining > 0 {
+                            self.dmc_request_delay = 1;
+                        }
                     } else { self.dmc_silence = true; }
                 }
             } else { self.dmc_timer_counter -= 1; }
@@ -537,17 +550,23 @@ impl Apu {
 
     /// Returns a pending DMC sample-memory read address, if the sample buffer needs data.
     pub fn take_dmc_dma_request(&mut self) -> Option<u16> {
-        if self.dmc_sample_buffer.is_none() && self.dmc_bytes_remaining > 0 {
+        if self.dmc_request_delay == 0
+            && self.dmc_sample_buffer.is_none()
+            && self.dmc_bytes_remaining > 0 {
             Some(self.dmc_current_address)
         } else { None }
     }
 
-    /// Returns the modeled bus phases for the currently pending sample fetch.
-    ///
-    /// The initial load is represented by Halt, Dummy, Get. Subsequent refills
-    /// add an Align slot: Halt, Dummy, Align, Get. The exact hardware alignment
-    /// still depends on the CPU's live GET/PUT phase and is not yet cycle-exact.
-    pub(crate) const fn dmc_dma_sequence(&self) -> &'static [DmcDmaPhase] {
+    /// Returns whether this request initially targets a GET or PUT cycle.
+    /// Initial loads target GET; later buffer refills target PUT. If a write
+    /// prevents the halt, the bus retries on every following CPU cycle.
+    pub(crate) const fn dmc_dma_halt_target_is_get(&self) -> bool {
+        self.dmc_initial_fetch
+    }
+
+    /// Returns the bus phases after a successful halt on the supplied CPU phase.
+    /// A halt on GET needs no alignment; a halt on PUT needs one extra cycle.
+    pub(crate) const fn dmc_dma_sequence(halt_cycle_is_get: bool) -> &'static [DmcDmaPhase] {
         const INITIAL: &[DmcDmaPhase] = &[
             DmcDmaPhase::Halt,
             DmcDmaPhase::Dummy,
@@ -559,7 +578,7 @@ impl Apu {
             DmcDmaPhase::Align,
             DmcDmaPhase::Get,
         ];
-        if self.dmc_initial_fetch { INITIAL } else { RELOAD }
+        if halt_cycle_is_get { INITIAL } else { RELOAD }
     }
 
 
@@ -584,6 +603,9 @@ impl Apu {
     fn restart_dmc_sample(&mut self) {
         self.restart_dmc_loop();
         self.dmc_initial_fetch = true;
+        // $4015 schedules the initial load for the GET phase in the second
+        // following APU cycle (the third or fourth CPU cycle after the write).
+        self.dmc_request_delay = 2;
     }
 
     /// Restarts the programmed sample address and length without changing DMA
@@ -852,35 +874,41 @@ mod tests {
         apu.write(0x4013, 0x01);
         apu.write(0x4015, 0x10);
 
-        assert_eq!(apu.dmc_dma_sequence(), &[
+        assert_eq!(apu.dmc_dma_halt_target_is_get(), true);
+        assert_eq!(Apu::dmc_dma_sequence(true), &[
             DmcDmaPhase::Halt,
             DmcDmaPhase::Dummy,
             DmcDmaPhase::Get,
         ]);
-
-        apu.supply_dmc_byte(0xA5);
-        assert_eq!(apu.dmc_dma_sequence(), &[
+        assert_eq!(Apu::dmc_dma_sequence(false), &[
             DmcDmaPhase::Halt,
             DmcDmaPhase::Dummy,
             DmcDmaPhase::Align,
             DmcDmaPhase::Get,
         ]);
+
+        apu.supply_dmc_byte(0xA5);
+        assert_eq!(apu.dmc_dma_halt_target_is_get(), false);
     }
 
     #[test]
-    fn dmc_initial_load_and_later_reload_have_distinct_dma_costs() {
+    fn dmc_initial_load_waits_two_cycles_and_targets_get_while_refills_target_put() {
         let mut apu = Apu::new();
         apu.write(0x4012, 0x00);
-        apu.write(0x4013, 0x01); // Multi-byte sample so a later refill is possible.
+        apu.write(0x4013, 0x01);
         apu.write(0x4015, 0x10);
 
+        assert_eq!(apu.take_dmc_dma_request(), None,
+            "the initial load must not halt immediately after $4015");
+        apu.tick_cpu_cycles(1);
+        assert_eq!(apu.take_dmc_dma_request(), None);
+        apu.tick_cpu_cycles(1);
         assert_eq!(apu.take_dmc_dma_request(), Some(0xC000));
-        assert_eq!(apu.dmc_dma_sequence().len() as u32, 3,
-            "the first sample-buffer load uses the three-cycle load sequence");
-        apu.supply_dmc_byte(0xA5);
+        assert!(apu.dmc_dma_halt_target_is_get());
 
-        assert_eq!(apu.dmc_dma_sequence().len() as u32, 4,
-            "subsequent sample-buffer refills use the four-cycle reload sequence");
+        apu.supply_dmc_byte(0xA5);
+        assert!(!apu.dmc_dma_halt_target_is_get(),
+            "subsequent sample-buffer refills target PUT rather than GET");
     }
 
     #[test]
