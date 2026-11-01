@@ -4,12 +4,12 @@ Cœur matériel Nintendo Entertainment System en Rust. Le but est de fournir à 
 
 ## État en un coup d'œil
 
-**Avancement estimé : 72 %.** Cette estimation porte sur le travail d'ingénierie du cœur ; elle ne mesure ni la couverture des lignes, ni le taux de jeux compatibles.
+**Avancement estimé : 73 %.** Cette estimation porte sur le travail d'ingénierie du cœur ; elle ne mesure ni la couverture des lignes, ni le taux de jeux compatibles.
 
 | Domaine | Estimation | Résumé |
 |---|---:|---|
 | CPU Ricoh 2A03 | 74 % | Instructions officielles courantes, opcodes non officiels sélectionnés, interruptions ; timing incomplet |
-| PPU | 74 % | Registres, mémoire vidéo, VBlank/NMI, rendu 256×240 ; pipeline par dot incomplète |
+| PPU | 75 % | Registres, mémoire vidéo, VBlank/NMI, rendu 256×240 ; pipeline par dot incomplète |
 | APU | 64 % | Pulse/triangle/bruit, séquenceur et DMC initial ; mixage et DMA approximatifs |
 | Bus et manettes | 76 % | RAM miroir, registres, ports série, DMA OAM, premiers accès DMC |
 | Cartouches/mappers | 86 % | Nombreuses cartes iNES legacy ; variantes et NES 2.0 non générales |
@@ -21,6 +21,7 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 
 ## Dernière itération
 
+- **PPU/OAM ring** : le compteur `n` est maintenant un véritable compteur 6 bits ; il reboucle de l'entrée 63 à 0 et un compteur de progression distinct garantit que l'évaluation s'arrête après 64 avances, y compris lorsque OAMADDR commence en fin de mémoire. Une régression vérifie le parcours 62 → 63 → 0.
 - **PPU/OAMADDR** : l'évaluateur initialise ses compteurs n/m depuis OAMADDR au dot 65 et copie les quatre octets sélectionnés de manière séquentielle, même si la copie traverse la frontière entre deux entrées OAM ; un test couvre le démarrage sur l'octet tile et la copie décalée.
 - **PPU/sprites** : correction du début de trame : la pré-scanline ne lance plus l'initialisation/évaluation OAM, la ligne visible 0 n'hérite donc plus d'une liste de sprites calculée trop tôt ; les tests de débordement ont été déplacés sur une ligne visible et la CI confirme le comportement sur stable, Rust 1.78 et Windows.
 - **CPU/bus** : les instructions implicites de deux cycles (transferts, flags, shifts accumulateur, NOPs implicites et KIL) effectuent maintenant leur lecture factice pendant le bon ordre de bus, plutôt que de laisser ce cycle à la fin de l'instruction. Tests ajoutés pour toutes les opcodes concernées.
