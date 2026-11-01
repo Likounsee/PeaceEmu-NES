@@ -12,7 +12,7 @@ Cœur d'émulation Nintendo Entertainment System (NES) écrit en Rust pour le pr
 
 Le dépôt contient un cœur Rust fonctionnel en cours de développement : CPU Ricoh 2A03, bus mémoire, cartouches et plusieurs mappers iNES, PPU, APU, contrôleurs, machine et API de session. Un exécutable de test Windows est également présent dans `NES/src/bin/peaceemu-nes-desktop.rs`.
 
-**Avancement estimé du cœur : 71 %.** Il s'agit d'une estimation d'ingénierie, pas d'un pourcentage de jeux compatibles ni d'une couverture de tests. Les limites principales restent la précision cycle par cycle, le pipeline PPU par dot, l'arbitrage DMC, la validation avec des ROM de diagnostic et la preuve de l'intégration complète avec le dépôt PeaceEmu.
+**Avancement estimé du cœur : 72 %.** Il s'agit d'une estimation d'ingénierie, pas d'un pourcentage de jeux compatibles ni d'une couverture de tests. Les limites principales restent la précision cycle par cycle, le pipeline PPU par dot, l'arbitrage DMC, la validation avec des ROM de diagnostic et la preuve de l'intégration complète avec le dépôt PeaceEmu.
 
 ### Capacités actuelles (résumé)
 
@@ -21,6 +21,7 @@ Le dépôt contient un cœur Rust fonctionnel en cours de développement : CPU R
 - Parseur iNES legacy et implémentations locales de NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 (4), AxROM (7), MMC2 (9), MMC4 (10), Color Dreams (11), CPROM (13), Mapper 15, BNROM (34), GxROM (66), Camerica (71) et UNROM-512 (30). Les variantes de chaque carte ne sont pas toutes prises en charge.
 - PPU avec registres, mémoire vidéo, timing de balayage et rendu 256×240 par ligne/snapshot ; ce n'est pas une pipeline pixel-par-pixel complète.
 - L'évaluation des sprites est désactivée sur la pré-scanline 2C02 ; la première ligne visible commence sans sprites, puis l'évaluation dot-par-dot reprend sur les lignes visibles.
+- L'évaluation OAM démarre maintenant à l'adresse exacte indiquée par OAMADDR au dot 65, y compris les démarrages au milieu d'un sprite et la copie qui traverse une frontière d'entrée OAM.
 - APU avec génération audio approximative, séquenceur de frame et premier DMC.
 - Machine/session exposant frames, PCM, entrées et accès à la RAM batterie.
 
