@@ -32,6 +32,9 @@ pub struct Ppu {
     eval_m: u8,
     eval_latch: u8,
     eval_copying: bool,
+    /// Destination byte within the current secondary-OAM sprite while the
+    /// primary OAM walk may be misaligned by a nonzero OAMADDR.
+    eval_copy_byte: u8,
     eval_target_y: u8,
     eval_oam: [[u8; 4]; 8],
     eval_indices: [u8; 8],
@@ -95,7 +98,7 @@ impl Default for Ppu {
             sprite_pattern_valid: [false; 8],
             sprite_x_counter: [0; 8], sprite_shift_low: [0; 8], sprite_shift_high: [0; 8],
             sprite_line: u16::MAX,
-            eval_n: 0, eval_m: 0, eval_latch: 0xFF, eval_copying: false,
+            eval_n: 0, eval_m: 0, eval_latch: 0xFF, eval_copying: false, eval_copy_byte: 0,
             eval_target_y: 0, eval_oam: [[0xFF; 4]; 8],
             eval_indices: [0xFF; 8], eval_count: 0,
             nametables: [0; 4096], palette: [0; 32], v: 0, t: 0,
@@ -909,6 +912,7 @@ impl Ppu {
             self.eval_m = 0;
             self.eval_latch = 0xFF;
             self.eval_copying = false;
+            self.eval_copy_byte = 0;
             self.eval_count = 0;
         }
         if !rendering_line || self.mask & 0x18 == 0 {
@@ -929,6 +933,15 @@ impl Ppu {
             }
             return;
         }
+        // OAMADDR seeds the primary-OAM evaluator at the beginning of dot 65.
+        // Its high six bits select n and its low two bits select m, so a nonzero
+        // low field makes the first Y comparison consume a tile/attribute/X byte.
+        if self.dot == 65 {
+            self.eval_n = (self.oam_addr >> 2) & 0x3F;
+            self.eval_m = self.oam_addr & 3;
+            self.eval_copy_byte = 0;
+        }
+
         // Some callers (debug views and timing-focused tests) can place the beam
         // directly at dot 255 instead of advancing through dots 1-255. In that
         // case no evaluator state exists yet; synthesize the line once rather than
@@ -977,20 +990,28 @@ impl Ppu {
                     let slot = self.eval_count as usize;
                     self.eval_oam[slot][0] = value;
                     self.eval_indices[slot] = self.eval_n;
-                    self.eval_m = 1;
+                    self.eval_copy_byte = 1;
+                    self.eval_m = (self.eval_m + 1) & 3;
+                    if self.eval_m == 0 {
+                        self.eval_n = self.eval_n.saturating_add(1);
+                    }
                     self.eval_copying = true;
                 } else {
+                    // A failed Y comparison advances n but leaves the byte
+                    // offset m intact; misaligned OAMADDR walks stay misaligned.
                     self.eval_n = self.eval_n.saturating_add(1);
-                    self.eval_m = 0;
                 }
             } else {
                 let slot = self.eval_count as usize;
-                let byte = usize::from(self.eval_m);
+                let byte = usize::from(self.eval_copy_byte);
                 self.eval_oam[slot][byte] = value;
-                self.eval_m += 1;
-                if self.eval_m >= 4 {
-                    self.eval_m = 0;
+                self.eval_copy_byte += 1;
+                self.eval_m = (self.eval_m + 1) & 3;
+                if self.eval_m == 0 {
                     self.eval_n = self.eval_n.saturating_add(1);
+                }
+                if self.eval_copy_byte >= 4 {
+                    self.eval_copy_byte = 0;
                     self.eval_count += 1;
                     self.eval_copying = false;
                 }
@@ -4741,6 +4762,22 @@ mod oam_bus_timing_regressions {
 #[cfg(test)]
 mod cycle_sprite_evaluator_regressions {
     use super::*;
+
+    #[test]
+    fn oamaddr_low_bits_seed_a_misaligned_sprite_copy() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.mask = 0x18;
+        ppu.oam_addr = 1;
+        // Evaluation begins at OAM[0][1], which is treated as a Y byte.
+        ppu.oam[0..8].copy_from_slice(&[0x20, 0xFF, 0xA5, 0x10, 0xFF, 0x33, 0x44, 0x55]);
+
+        ppu.tick(72);
+
+        assert_eq!(ppu.sprite_line_count, 1);
+        assert_eq!(ppu.sprite_line_oam[0], [0xFF, 0xA5, 0x10, 0xFF]);
+        assert_eq!(ppu.sprite_line_indices[0], 0);
+    }
 
     #[test]
     fn pre_render_dots_do_not_evaluate_secondary_oam_for_scanline_zero() {
