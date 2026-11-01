@@ -2446,8 +2446,8 @@ mod nmi_irq_poll_priority_regressions {
         let mut bus = CpuBus::new();
         bus.insert_cartridge(Cartridge::parse(&image).unwrap());
         bus.write(0x4017, 0x00);
-        bus.tick_apu(14_919);
-        assert!(bus.irq_pending(), "fixture must keep a maskable IRQ asserted");
+        bus.tick_apu(14_917);
+        assert!(!bus.irq_pending(), "fixture must begin just before frame IRQ assertion");
 
         let mut cpu = Cpu::new();
         cpu.set_pc(0x0600);
@@ -2455,6 +2455,8 @@ mod nmi_irq_poll_priority_regressions {
         bus.write(0x0600, 0x78); // SEI samples I=0, then sets I=1.
         assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0x78);
         assert_ne!(cpu.state.status & flags::INTERRUPT_DISABLE, 0);
+        bus.tick_apu(2); // IRQ asserts during SEI's cycles, after its poll.
+        assert!(bus.irq_pending());
 
         // Raise NMI before the next instruction boundary. NMI must win, and
         // the old SEI poll sample must not leak into the handler's first step.
