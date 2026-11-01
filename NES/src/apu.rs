@@ -1008,29 +1008,33 @@ mod tests {
     }
 
     #[test]
-    fn dmc_loop_refill_uses_reload_cost_but_reenable_uses_initial_load_cost() {
+    fn dmc_loop_refill_targets_put_and_reenable_schedules_a_new_initial_load() {
         let mut apu = Apu::new();
         apu.write(0x4010, 0x40); // Loop, IRQ disabled.
         apu.write(0x4012, 0x02);
         apu.write(0x4013, 0x00); // One-byte sample.
         apu.write(0x4015, 0x10);
 
+        assert_eq!(apu.take_dmc_dma_request(), None);
+        apu.tick_cpu_cycles(2);
         assert_eq!(apu.take_dmc_dma_request(), Some(0xC080));
-        assert_eq!(apu.dmc_dma_sequence().len() as u32, 3);
+        assert!(apu.dmc_dma_halt_target_is_get());
         apu.supply_dmc_byte(0x5A);
-        assert_eq!(apu.dmc_dma_sequence().len() as u32, 4,
-            "the looped sample's next fetch is a reload, not a power-on load");
+        assert!(!apu.dmc_dma_halt_target_is_get(),
+            "the looped sample's next fetch targets PUT, not the initial GET phase");
 
         apu.tick_cpu_cycles(4_000);
         assert_eq!(apu.take_dmc_dma_request(), Some(0xC080));
-        assert_eq!(apu.dmc_dma_sequence().len() as u32, 4,
+        assert!(!apu.dmc_dma_halt_target_is_get(),
             "loop restart must preserve the reload classification");
 
         apu.write(0x4015, 0x00);
         apu.write(0x4015, 0x10);
+        assert_eq!(apu.take_dmc_dma_request(), None);
+        apu.tick_cpu_cycles(2);
         assert_eq!(apu.take_dmc_dma_request(), Some(0xC080));
-        assert_eq!(apu.dmc_dma_sequence().len() as u32, 3,
-            "disabling and enabling DMC starts a new initial load");
+        assert!(apu.dmc_dma_halt_target_is_get(),
+            "disabling and enabling DMC starts a new delayed initial load");
     }
 
     #[test]
