@@ -4758,6 +4758,7 @@ mod cycle_sprite_evaluator_regressions {
     #[test]
     fn overflow_is_raised_on_the_even_dot_that_consumes_the_ninth_sprite_y() {
         let mut ppu = Ppu::new();
+        ppu.scanline = 0;
         ppu.mask = 0x18;
         for sprite in 0..9usize {
             ppu.oam[sprite * 4] = 0xFF;
@@ -4776,6 +4777,7 @@ mod cycle_sprite_evaluator_regressions {
     #[test]
     fn overflow_scan_continues_after_an_out_of_range_ninth_sprite() {
         let mut ppu = Ppu::new();
+        ppu.scanline = 0;
         ppu.mask = 0x18;
         for sprite in 0..8usize {
             ppu.oam[sprite * 4] = 0xFF;
@@ -4792,6 +4794,7 @@ mod cycle_sprite_evaluator_regressions {
     #[test]
     fn sprites_outside_the_evaluated_range_are_not_copied() {
         let mut ppu = Ppu::new();
+        ppu.scanline = 0;
         ppu.mask = 0x18;
         ppu.oam[0..4].copy_from_slice(&[20, 3, 0, 16]);
         ppu.oam[4..8].copy_from_slice(&[0xFF, 7, 0, 24]);
