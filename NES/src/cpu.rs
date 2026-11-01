@@ -2374,17 +2374,24 @@ mod stack_control_flow_bus_regressions {
 mod sei_irq_poll_regressions {
     use super::*;
 
-    fn pending_frame_irq() -> CpuBus {
+    fn frame_irq_near_assertion() -> CpuBus {
         let mut bus = CpuBus::new();
         bus.write(0x4017, 0x00);
-        bus.tick_apu(14_919);
+        bus.tick_apu(14_917);
+        assert!(!bus.irq_pending(), "fixture must begin just before frame IRQ assertion");
+        bus
+    }
+
+    fn pending_frame_irq() -> CpuBus {
+        let mut bus = frame_irq_near_assertion();
+        bus.tick_apu(2);
         assert!(bus.irq_pending(), "fixture must assert the frame IRQ");
         bus
     }
 
     #[test]
     fn sei_does_not_mask_an_irq_sampled_with_the_old_clear_i_flag() {
-        let mut bus = pending_frame_irq();
+        let mut bus = frame_irq_near_assertion();
         let mut cpu = Cpu::new();
         cpu.set_pc(0x0600);
         cpu.state.status &= !flags::INTERRUPT_DISABLE;
@@ -2393,6 +2400,8 @@ mod sei_irq_poll_regressions {
 
         assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0x78);
         assert_ne!(cpu.state.status & flags::INTERRUPT_DISABLE, 0);
+        bus.tick_apu(2); // IRQ asserts during SEI's elapsed cycles, after its poll.
+        assert!(bus.irq_pending());
         let irq = cpu.step(&mut bus).unwrap();
         assert_eq!(irq.opcode, 0xFE);
         assert_eq!(irq.cycles, 7);
