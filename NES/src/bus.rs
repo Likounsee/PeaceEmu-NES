@@ -345,7 +345,10 @@ impl CpuBus {
     pub(crate) fn tick_apu_with_dma_access(&mut self, cycles: u32, dma_can_halt: bool) -> u32 {
         // Most games do not use DMC. Advance their APU cycles in a single batch
         // instead of checking the CPU bus for DMA on every cycle.
-        if !self.apu.needs_dmc_bus_service() {
+        // Once the CPU has been halted, the in-flight DMA owns the bus until
+        // its GET phase completes. Disabling the DMC channel may cancel future
+        // requests, but must not strand a transfer whose HALT phase already ran.
+        if !self.apu.needs_dmc_bus_service() && self.pending_dmc_dma.is_none() {
             self.apu.tick_cpu_cycles(cycles);
             return 0;
         }
@@ -1700,3 +1703,39 @@ mod mmc3_ppudata_write_bus_regressions {
     }
 }
 
+
+
+#[cfg(test)]
+mod dmc_in_flight_disable_regressions {
+    use super::*;
+
+    #[test]
+    fn disabling_dmc_after_halt_does_not_abandon_the_active_dma_transfer() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 1;
+        image[16] = 0xA5;
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+
+        bus.write(0x4012, 0x00);
+        bus.write(0x4013, 0x01);
+        bus.write(0x4015, 0x10);
+        assert_eq!(bus.tick_apu_with_dma_access(1, true), 1,
+            "the first eligible read slot starts the DMC halt");
+
+        // The request is already in flight. A channel disable prevents later
+        // refills, but the bus transaction must still reach its sample GET.
+        bus.write(0x4015, 0x00);
+        assert_eq!(bus.tick_apu_with_dma_access(1, true), 1,
+            "the pending dummy phase must still consume a bus cycle");
+        assert_eq!(bus.tick_apu_with_dma_access(1, true), 1,
+            "the pending GET must complete even though the channel was disabled");
+        assert!(bus.pending_dmc_dma.is_none(), "completed DMA must release the bus");
+        assert!(bus.bus_trace().iter().any(|entry| {
+            entry.kind == CpuBusAccessKind::DmcRead && entry.address == 0xC000
+        }), "the in-flight sample GET must remain observable in the bus trace");
+        assert_eq!(bus.tick_apu_with_dma_access(1, true), 0,
+            "disabling DMC must prevent a new transfer from starting");
+    }
+}
