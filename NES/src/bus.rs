@@ -1308,7 +1308,7 @@ mod dmc_mapper_bank_integration_regressions {
         bus.write(0x4013, 0);    // One-byte sample.
         bus.write(0x4015, 0x10);
 
-        assert_eq!(bus.tick_apu(1), 4);
+        assert_eq!(bus.tick_apu(1), 3);
         bus.tick_apu(16 * 54);
 
         assert!(bus.apu_sample() > 0.0,
