@@ -491,6 +491,36 @@ mod tests {
     }
 
     #[test]
+    fn looping_dmc_refill_steals_a_four_cycle_oam_get_window() {
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
+        for offset in 0..=u8::MAX {
+            machine.bus.write(0x0200 | u16::from(offset), offset.wrapping_mul(19) ^ 0x73);
+        }
+
+        // A one-byte looping sample refills the buffer again during the OAM
+        // transfer. The first fetch costs three cycles; the loop refill costs four.
+        machine.bus.write(0x4010, 0x4F); // Loop + fastest DMC rate.
+        machine.bus.write(0x4012, 0x00);
+        machine.bus.write(0x4013, 0x00);
+        machine.bus.write(0x4015, 0x10);
+        machine.bus.tick_apu_with_dma_access(1, false);
+
+        let before = machine.total_cycles();
+        machine.perform_oam_dma(0x02);
+        let elapsed = machine.total_cycles() - before;
+        assert!(elapsed >= 514 + 3 + 4,
+            "the looped sample must perform an initial load and a later reload; elapsed={elapsed}");
+        assert_eq!((elapsed - 514 - 3) % 4, 0,
+            "every post-initial loop refill must use the four-cycle reload cost");
+
+        for offset in 0..=u8::MAX {
+            machine.bus.write(0x2003, offset);
+            assert_eq!(machine.bus.read(0x2004), offset.wrapping_mul(19) ^ 0x73,
+                "looped DMC arbitration must preserve OAM byte {offset}");
+        }
+    }
+
+    #[test]
     fn dmc_dma_waits_for_oam_put_phase_to_finish_before_stealing_a_get_phase() {
         let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
         machine.bus.write(0x4010, 0x00);
