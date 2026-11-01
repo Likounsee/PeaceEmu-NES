@@ -14,7 +14,7 @@ Cœur matériel Nintendo Entertainment System en Rust. Le but est de fournir à 
 | Bus et manettes | 76 % | RAM miroir, registres, ports série, DMA OAM, premiers accès DMC |
 | Cartouches/mappers | 86 % | Nombreuses cartes iNES legacy ; variantes et NES 2.0 non générales |
 | Machine/session | 77 % | Chargement, reset, frames, PCM, entrées et RAM batterie |
-| Tests et robustesse | 94 % | Régressions unitaires et d'intégration ; validation ROM réelle à élargir |
+| Tests et robustesse | 95 % | Régressions unitaires et d'intégration ; validation ROM réelle à élargir |
 | Intégration hôte | 45 % | L'adaptateur et le parcours complet doivent être validés avec le dépôt principal |
 
 Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas être moyennées comme une métrique de compatibilité.
@@ -31,6 +31,7 @@ Les valeurs par domaine sont des estimations indicatives ; elles ne doivent pas 
 - **PPU/PPUDATA** : test supplémentaire de l'alias palette `$3F10` → `$3F00` et du rechargement du buffer différé depuis l'adresse nametable correspondante `$2F10`.
 - **MMC3/PRG-RAM** : le test d'activation/protection démarre désormais avec un état explicite (RAM activée et inscriptible), puis vérifie désactivation, protection et réactivation sans dépendre implicitement des valeurs de démarrage.
 - **APU/DMC** : les tests couvrent le buffer d'échantillon, les stalls DMA, l'indépendance entre IRQ frame/DMC/mapper et la lecture DMC à travers une banque PRG MMC3 sélectionnée.
+- **Arbitrage OAM/DMC** : une régression lance un échantillon DMC multi-octets au débit maximal pendant un transfert OAM complet ; elle vérifie plusieurs steals de quatre cycles et l'intégrité de chacun des 256 octets transférés.
 - **MMC3/NES 2.0** : le parseur rejette maintenant les déclarations PRG-RAM supérieures aux 8 Kio câblés et les CHR-RAM au-delà des 256 Kio adressables, au lieu de tronquer silencieusement les capacités annoncées ; des tests couvrent les deux cas.
 - **Session audio** : la documentation précise désormais que changer réellement de fréquence réinitialise la file PCM, tandis que réappliquer la fréquence courante est un no-op ; un test vérifie le contrat de configuration côté hôte.
 - **PPU/sprite-zero** : les tests couvrent la limite du dernier pixel visible (hit autorisé à X=254, interdit à X=255), l'indépendance vis-à-vis de la priorité visuelle et l'alignement du hit avec le retournement horizontal du motif du sprite.
