@@ -2064,9 +2064,10 @@ mod stack_control_flow_bus_regressions {
 
         assert_eq!(result.cycles, 6);
         assert_eq!(cpu.state().pc, 0x1234);
+        let trace = trace_pairs(&bus);
         assert_eq!(bus.read(0x01FD), 0x06);
         assert_eq!(bus.read(0x01FC), 0x02);
-        assert_eq!(trace_pairs(&bus), vec![
+        assert_eq!(trace, vec![
             (CpuBusAccessKind::Read, 0x0600),
             (CpuBusAccessKind::Read, 0x0601),
             (CpuBusAccessKind::Read, 0x01FD),
