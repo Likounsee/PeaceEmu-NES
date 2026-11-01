@@ -25,11 +25,13 @@ pub struct CpuBus {
     instruction_bus_cycles: u16,
     /// Absolute CPU-cycle timeline shared with cycle-sensitive cartridge mappers.
     cpu_cycle: u64,
+    /// Address retained on the CPU bus while DMA suspends the processor.
+    cpu_bus_address: u16, 
     /// DMC stalls discovered while the instruction's bus accesses clock the APU.
     instruction_dmc_stalls: u32,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, instruction_dmc_stalls: 0 } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0 } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -134,6 +136,7 @@ impl CpuBus {
 
     /// Reads a byte from the CPU address space.
     pub fn read(&mut self, address: u16) -> u8 {
+        self.cpu_bus_address = address;
         self.clock_instruction_bus_access(true);
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
@@ -151,6 +154,7 @@ impl CpuBus {
     }
     /// Writes a byte to the CPU address space. Cartridge ROM is not writable.
     pub fn write(&mut self, address: u16, value: u8) {
+        self.cpu_bus_address = address;
         self.clock_instruction_bus_access(false);
         self.open_bus = value;
         match address {
@@ -265,6 +269,13 @@ impl CpuBus {
             if dma_can_halt {
                 if let Some(address) = self.apu.take_dmc_dma_request() {
                     let dma_cycles = self.apu.dmc_dma_stall_cycles();
+                    // During the halt/dummy portion, the CPU keeps presenting its
+                    // current read address. These reads are observable on $2007,
+                    // $4015 and controller ports, so route them through the same
+                    // side-effectful decoder before the DMC sample GET.
+                    for _ in 1..dma_cycles {
+                        let _ = self.read_dmc_dma_source(self.cpu_bus_address);
+                    }
                     let value = self.read_dmc_dma_source(address);
                     self.apu.supply_dmc_byte(value);
                     stall_cycles = stall_cycles.saturating_add(dma_cycles);
@@ -371,6 +382,37 @@ mod tests {
             "DMC sample fetch must not advance the PPU a second time; stolen cycles are clocked by the machine");
         assert_eq!(bus.open_bus, 0xA5,
             "the sample fetch must still drive the CPU data bus with the fetched byte");
+    }
+
+    #[test]
+    fn dmc_halt_repeats_the_current_controller_read_address_before_sample_get() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16] = 0xA5;
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.set_controller_state(0, 0b0000_1010); // A=0, B=1, Select=0, Start=1.
+        bus.write(0x4016, 1);
+        bus.write(0x4016, 0);
+        assert_eq!(bus.read(0x4016) & 1, 0, "consume A before arming DMC");
+
+        bus.write(0x4010, 0x00);
+        bus.write(0x4012, 0x00);
+        bus.write(0x4013, 0x00);
+        bus.write(0x4015, 0x10);
+
+        bus.begin_cpu_instruction();
+        let resumed_read = bus.read(0x4016);
+        let dmc_stalls = bus.take_instruction_dmc_stalls();
+        let bus_cycles = bus.end_cpu_instruction();
+
+        assert_eq!(dmc_stalls, 3, "the initial DMC halt/dummy/GET sequence is charged");
+        assert_eq!(bus_cycles, 1, "dummy DMA reads do not become CPU instruction accesses");
+        assert_eq!(resumed_read & 1, 1,
+            "two side-effectful held-address reads consume B and Select before the resumed Start read");
+        assert_eq!(bus.read(0x4016) & 1, 0,
+            "the controller serial position must reflect both DMC dummy reads");
     }
 
     #[test]
