@@ -1815,13 +1815,13 @@ impl Mmc2 {
         let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
             else { image[4] as usize * PRG_BANK_LEN };
         let minimum_prg = if mmc4 { 2 * PRG_BANK_LEN } else { 8 * PRG_BANK_LEN };
-        let maximum_prg = if mmc4 { 16 * PRG_BANK_LEN } else { 32 * PRG_BANK_LEN };
+        let maximum_prg = if mmc4 { 16 * PRG_BANK_LEN } else { 8 * PRG_BANK_LEN };
         if prg_len < minimum_prg || prg_len > maximum_prg || prg_len % PRG_BANK_LEN != 0 {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         let chr_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) }
             else { image[5] as usize * CHR_BANK_LEN };
-        if chr_len == 0 || chr_len % 0x1000 != 0 || chr_len > 64 * CHR_BANK_LEN {
+        if chr_len == 0 || chr_len % 0x1000 != 0 || chr_len > 16 * CHR_BANK_LEN {
             return Err(CartridgeError::InvalidChrSize(chr_len));
         }
         let declared_prg_ram_len = if nes2 {
@@ -1902,11 +1902,11 @@ impl Mmc2 {
                 true
             }
             0x6000..=0x7FFF => false,
-            0xA000..=0xAFFF => { self.prg_bank = value as usize; true }
-            0xB000..=0xBFFF => { self.chr_fd0 = value as usize; true }
-            0xC000..=0xCFFF => { self.chr_fe0 = value as usize; true }
-            0xD000..=0xDFFF => { self.chr_fd1 = value as usize; true }
-            0xE000..=0xEFFF => { self.chr_fe1 = value as usize; true }
+            0xA000..=0xAFFF => { self.prg_bank = (value & 0x0F) as usize; true }
+            0xB000..=0xBFFF => { self.chr_fd0 = (value & 0x1F) as usize; true }
+            0xC000..=0xCFFF => { self.chr_fe0 = (value & 0x1F) as usize; true }
+            0xD000..=0xDFFF => { self.chr_fd1 = (value & 0x1F) as usize; true }
+            0xE000..=0xEFFF => { self.chr_fe1 = (value & 0x1F) as usize; true }
             0xF000..=0xFFFF => {
                 if self.mirroring != Mirroring::FourScreen {
                     self.mirroring = if value & 1 == 0 { Mirroring::Vertical } else { Mirroring::Horizontal };
@@ -6086,9 +6086,9 @@ mod nes2_mmc2_mmc4_regressions {
         image[6] = (mapper & 0x0F) << 4;
         image[7] = 0x08 | (mapper & 0xF0);
         let prg_start = INES_HEADER_LEN;
-        for bank in 0..prg_banks as usize {
-            let start = prg_start + bank * PRG_BANK_LEN;
-            image[start..start + PRG_BANK_LEN].fill(bank as u8);
+        for bank in 0..prg_banks as usize * 2 {
+            let start = prg_start + bank * 0x2000;
+            image[start..start + 0x2000].fill(bank as u8);
         }
         let chr_start = prg_start + prg_banks as usize * PRG_BANK_LEN;
         for bank in 0..chr_banks as usize * 8 {
@@ -6103,12 +6103,12 @@ mod nes2_mmc2_mmc4_regressions {
         let image = nes2_mmc_image(9, 8, 1);
         let mut cart = Cartridge::parse(&image).unwrap();
         assert_eq!(cart.cpu_read(0x8000), Some(0));
-        assert_eq!(cart.cpu_read(0xA000), Some(6));
-        assert_eq!(cart.cpu_read(0xC000), Some(7));
-        assert_eq!(cart.cpu_read(0xE000), Some(7));
+        assert_eq!(cart.cpu_read(0xA000), Some(13));
+        assert_eq!(cart.cpu_read(0xC000), Some(14));
+        assert_eq!(cart.cpu_read(0xE000), Some(15));
         assert!(cart.cpu_write(0xA000, 6));
-        assert_eq!(cart.cpu_read(0x8000), Some(3));
-        assert_eq!(cart.cpu_read(0xA000), Some(6));
+        assert_eq!(cart.cpu_read(0x8000), Some(6));
+        assert_eq!(cart.cpu_read(0xA000), Some(13));
     }
 
     #[test]
@@ -6116,10 +6116,37 @@ mod nes2_mmc2_mmc4_regressions {
         let image = nes2_mmc_image(10, 2, 1);
         let mut cart = Cartridge::parse(&image).unwrap();
         assert_eq!(cart.cpu_read(0x8000), Some(0));
-        assert_eq!(cart.cpu_read(0xC000), Some(1));
+        assert_eq!(cart.cpu_read(0xC000), Some(2));
         assert!(cart.cpu_write(0xA000, 1));
-        assert_eq!(cart.cpu_read(0x8000), Some(1));
-        assert_eq!(cart.cpu_read(0xC000), Some(1));
+        assert_eq!(cart.cpu_read(0x8000), Some(2));
+        assert_eq!(cart.cpu_read(0xC000), Some(2));
+    }
+
+    #[test]
+    fn nes2_mmc2_mmc4_mask_bank_registers_and_reject_unaddressable_rom_sizes() {
+        let mut mmc2 = Cartridge::parse(&nes2_mmc_image(9, 8, 16)).unwrap();
+        assert!(mmc2.cpu_write(0xA000, 0x10));
+        assert_eq!(mmc2.cpu_read(0x8000), Some(0), "MMC2 PRG register only drives four bank bits");
+        assert!(mmc2.cpu_write(0xA000, 0x1F));
+        assert_eq!(mmc2.cpu_read(0x8000), Some(15));
+        assert!(mmc2.cpu_write(0xB000, 0x20));
+        assert_eq!(mmc2.ppu_read(0x0000), Some(0), "CHR register bit 5 is not connected");
+        assert!(mmc2.cpu_write(0xC000, 0x3F));
+        let _ = mmc2.ppu_read(0x0FE8);
+        assert_eq!(mmc2.ppu_read(0x0000), Some(124), "CHR bank register drives five bits");
+
+        let mut mmc4 = Cartridge::parse(&nes2_mmc_image(10, 16, 16)).unwrap();
+        assert!(mmc4.cpu_write(0xA000, 0x10));
+        assert_eq!(mmc4.cpu_read(0x8000), Some(0), "MMC4 PRG register only drives four bank bits");
+        assert!(mmc4.cpu_write(0xA000, 0x0F));
+        assert_eq!(mmc4.cpu_read(0x8000), Some(30));
+
+        let oversized_mmc2_prg = nes2_mmc_image(9, 16, 1);
+        assert!(matches!(Cartridge::parse(&oversized_mmc2_prg), Err(CartridgeError::InvalidPrgSize(_))));
+        let oversized_mmc2_chr = nes2_mmc_image(9, 8, 17);
+        assert!(matches!(Cartridge::parse(&oversized_mmc2_chr), Err(CartridgeError::InvalidChrSize(_))));
+        let oversized_mmc4_prg = nes2_mmc_image(10, 32, 1);
+        assert!(matches!(Cartridge::parse(&oversized_mmc4_prg), Err(CartridgeError::InvalidPrgSize(_))));
     }
 
     #[test]
