@@ -1,6 +1,6 @@
 //! Small top-level NES machine wrapper for loading and stepping cartridge programs.
 
-use crate::bus::CpuBus;
+use crate::bus::{CpuBus, CpuBusTraceEntry};
 use crate::cartridge::{Cartridge, CartridgeError};
 use crate::cpu::{Cpu, CpuError, CpuState, StepResult};
 use core::fmt;
@@ -95,6 +95,21 @@ impl NesMachine {
     pub fn reset(&mut self) {
         self.bus.reset();
         self.cpu.reset(&mut self.bus);
+    }
+
+    /// Returns the bounded CPU-bus transaction history, oldest entry first.
+    ///
+    /// The trace includes CPU reads/writes and DMC DMA reads. DMC's internal
+    /// halt/dummy/alignment phases are visible as transactions, but the current
+    /// instruction-granular CPU core does not yet assign each phase an independent
+    /// scheduler callback.
+    pub fn bus_trace(&self) -> Vec<CpuBusTraceEntry> {
+        self.bus.bus_trace()
+    }
+
+    /// Clears diagnostic bus history without changing emulated machine state.
+    pub fn clear_bus_trace(&mut self) {
+        self.bus.clear_bus_trace();
     }
 
     /// Updates controller 1 or 2 button state.
