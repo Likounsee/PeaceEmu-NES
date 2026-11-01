@@ -5418,7 +5418,7 @@ mod background_beam_shifter_order_regressions {
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
         ppu.dot = 0;
-        ppu.mask = 0x08;
+        ppu.mask = 0x0A;
         ppu.bg_pipeline_primed = true;
         ppu.bg_pattern_shift_low = 0x8000;
         ppu.palette[1] = 0x2A;
@@ -5438,7 +5438,7 @@ mod background_beam_shifter_order_regressions {
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
         ppu.dot = 0;
-        ppu.mask = 0x08;
+        ppu.mask = 0x0A;
         ppu.bg_pipeline_primed = true;
         ppu.bg_pattern_shift_low = 0x8100;
         ppu.palette[0] = 0x01;
