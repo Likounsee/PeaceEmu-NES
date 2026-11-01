@@ -421,6 +421,37 @@ mod tests {
     }
 
     #[test]
+    fn repeated_dmc_refills_during_oam_dma_preserve_all_256_transferred_bytes() {
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
+        for offset in 0..=u8::MAX {
+            machine.bus.write(0x0200 | u16::from(offset), offset.wrapping_mul(37) ^ 0xA6);
+        }
+
+        // Use the fastest DMC rate and a multi-byte sample so another refill
+        // can become pending while the 256-byte OAM transfer is in progress.
+        machine.bus.write(0x4010, 0x0F);
+        machine.bus.write(0x4012, 0x00);
+        machine.bus.write(0x4013, 0x01); // 17-byte sample.
+        machine.bus.write(0x4015, 0x10);
+        machine.bus.tick_apu_with_dma_access(1, false);
+
+        let before = machine.total_cycles();
+        machine.perform_oam_dma(0x02);
+        let elapsed = machine.total_cycles() - before;
+
+        assert!(elapsed >= 514 + 8,
+            "the initial DMC fetch and at least one subsequent refill should steal OAM get cycles; elapsed={elapsed}");
+        assert_eq!((elapsed - 514) % 4, 0,
+            "each serviced DMC fetch contributes four additional CPU cycles");
+
+        for offset in 0..=u8::MAX {
+            machine.bus.write(0x2003, offset);
+            assert_eq!(machine.bus.read(0x2004), offset.wrapping_mul(37) ^ 0xA6,
+                "repeated DMC arbitration must not drop, duplicate, or shift OAM byte {offset}");
+        }
+    }
+
+    #[test]
     fn dmc_dma_waits_for_oam_put_phase_to_finish_before_stealing_a_get_phase() {
         let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
         machine.bus.write(0x4010, 0x00);
