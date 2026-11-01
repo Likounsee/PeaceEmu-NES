@@ -356,8 +356,8 @@ impl Mmc1 {
     /// Reads PRG-RAM unless disabled, or the selected 16-KiB PRG-ROM window.
     pub fn cpu_read(&self, address: u16) -> Option<u8> {
         match address {
-            0x6000..=0x7FFF if self.prg_bank & 0x10 == 0 =>
-                Some(self.prg_ram[address as usize - 0x6000]),
+            0x6000..=0x7FFF if self.prg_bank & 0x10 == 0 && !self.prg_ram.is_empty() =>
+                Some(self.prg_ram[(address as usize - 0x6000) % self.prg_ram.len()]),
             0x6000..=0x7FFF => None,
             0x8000..=0xFFFF => Some(self.prg_rom[self.prg_index(address)]),
             _ => None,
@@ -367,8 +367,9 @@ impl Mmc1 {
     /// Writes PRG-RAM or shifts one bit into the MMC1 serial register.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
-            0x6000..=0x7FFF if self.prg_bank & 0x10 == 0 => {
-                self.prg_ram[address as usize - 0x6000] = value;
+            0x6000..=0x7FFF if self.prg_bank & 0x10 == 0 && !self.prg_ram.is_empty() => {
+                let index = (address as usize - 0x6000) % self.prg_ram.len();
+                self.prg_ram[index] = value;
                 true
             }
             0x6000..=0x7FFF => false,
@@ -2811,11 +2812,32 @@ mod mmc1_tests {
         assert_eq!(cart.cpu_read(0x8000), Some(0));
         assert!(cart.cpu_write(0x6000, 0xA5));
         assert_eq!(cart.cpu_read(0x6000), Some(0xA5));
+        serial_write(&mut cart, 0x8000, 0x1C); // Independent 4-KiB CHR banks.
+        serial_write(&mut cart, 0xA000, 0x01);
         assert!(cart.ppu_write(0x0000, 0x51));
         assert_eq!(cart.ppu_read(0x0000), Some(0x51));
-        serial_write(&mut cart, 0x8000, 0x1C);
-        serial_write(&mut cart, 0xA000, 0x1F);
+        serial_write(&mut cart, 0xA000, 0x00);
+        assert_eq!(cart.ppu_read(0x0000), Some(0), "the other CHR-RAM bank must remain untouched");
+        serial_write(&mut cart, 0xA000, 0x01);
         assert_eq!(cart.ppu_read(0x0000), Some(0x51));
+    }
+
+    #[test]
+    fn nes2_mmc1_maps_small_prg_ram_by_mirroring_and_handles_absent_ram() {
+        let mut small = nes2_mmc1(2, 0);
+        small[10] = 1; // 128 bytes of PRG-RAM.
+        small[11] = 7;
+        let mut cart = Cartridge::parse(&small).unwrap();
+        assert!(cart.cpu_write(0x6000, 0xA6));
+        assert_eq!(cart.cpu_read(0x6080), Some(0xA6));
+        assert_eq!(cart.cpu_read(0x7FFF), Some(0xA6));
+
+        let mut absent = nes2_mmc1(2, 0);
+        absent[11] = 7;
+        let mut cart = Cartridge::parse(&absent).unwrap();
+        assert_eq!(cart.cpu_read(0x6000), None);
+        assert!(!cart.cpu_write(0x6000, 0x5A));
+        assert_eq!(cart.cpu_read(0x8000), Some(0));
     }
 
     #[test]
@@ -4069,8 +4091,8 @@ mod nes2_nrom_tests {
 
     #[test]
     fn nes2_non_nrom_mappers_remain_explicitly_unsupported() {
-        let mut image = nes2_nrom(1, 0);
-        image[6] = 0x10;
+        let mut image = nes2_nrom(2, 0);
+        image[6] = 0x50; // Mapper 5 remains outside the implemented NES 2.0 set.
         assert_eq!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported));
     }
 }
