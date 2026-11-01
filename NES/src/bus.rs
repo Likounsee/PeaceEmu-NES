@@ -937,6 +937,10 @@ mod tests {
         bus.set_controller_state(0, 0x01);
         bus.write(0x4014, 0x03);
         assert!(bus.set_audio_sample_rate(48_000));
+        bus.begin_cpu_instruction();
+        let _ = bus.read(0x0000);
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        assert!(bus.cpu_cycle > 0, "fixture must advance the bus clock before reset");
 
         bus.reset();
 
