@@ -241,7 +241,7 @@ impl Mmc1 {
     /// NES 2.0 submapper 0 is supported; unsupported board-specific variants are rejected.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
         let nes2 = image[7] & 0x0C == 0x08;
         let mapper = if nes2 {
             ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
@@ -273,7 +273,7 @@ impl Mmc1 {
         let declared_chr_ram_len = if nes2 {
             nes2_ram_size(image[11] & 0x0F).saturating_add(nes2_ram_size(image[11] >> 4))
         } else if chr_len == 0 { CHR_BANK_LEN } else { 0 };
-        if nes2 && (declared_chr_ram_len > 16 * CHR_BANK_LEN
+        if nes2 && (declared_chr_ram_len > CHR_BANK_LEN
             || (chr_len != 0 && declared_chr_ram_len != 0)) {
             return Err(CartridgeError::Nes2NotSupported);
         }
@@ -2790,7 +2790,7 @@ mod mmc1_tests {
 
     fn nes2_mmc1(prg_banks: u8, chr_banks: u8) -> Vec<u8> {
         let mut image = vec![0; INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN + chr_banks as usize * CHR_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = prg_banks;
         image[5] = chr_banks;
         image[6] = 0x10;
@@ -2805,7 +2805,7 @@ mod mmc1_tests {
     fn nes2_mmc1_supports_declared_prg_ram_and_chr_ram() {
         let mut image = nes2_mmc1(4, 0);
         image[10] = 7;
-        image[11] = 11;
+        image[11] = 7; // 8 KiB CHR-RAM.
         let mut cart = Cartridge::parse(&image).unwrap();
         assert!(matches!(cart, Cartridge::Mmc1(_)));
         assert_eq!(cart.cpu_read(0x8000), Some(0));
