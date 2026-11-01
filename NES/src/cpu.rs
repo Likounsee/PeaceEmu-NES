@@ -83,6 +83,8 @@ pub struct Cpu {
     cycles: u64,
     // CLI and PLP defer maskable IRQ recognition for one instruction on the 2A03.
     irq_poll_delay: bool,
+    // SEI changes I after the 2A03 has sampled the IRQ mask for this boundary.
+    irq_poll_i_override: Option<bool>,
     // KIL/JAM unofficial opcodes halt the 2A03 until reset.
     jammed: bool,
     jam_opcode: u8,
@@ -95,7 +97,7 @@ impl Default for Cpu {
 impl Cpu {
     /// Creates CPU state before reset-vector initialization.
     pub fn new() -> Self {
-        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED }, cycles: 0, irq_poll_delay: false, jammed: false, jam_opcode: 0x02, reset_seen: false }
+        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED }, cycles: 0, irq_poll_delay: false, irq_poll_i_override: None, jammed: false, jam_opcode: 0x02, reset_seen: false }
     }
     /// Returns the current registers and flags.
     pub fn state(&self) -> CpuState { self.state }
@@ -116,6 +118,7 @@ impl Cpu {
         }
         self.state.status = flags::INTERRUPT_DISABLE | flags::UNUSED;
         self.irq_poll_delay = false;
+        self.irq_poll_i_override = None;
         self.jammed = false;
         self.jam_opcode = 0x02;
 
@@ -160,7 +163,10 @@ impl Cpu {
         }
         let defer_irq_poll = self.irq_poll_delay;
         self.irq_poll_delay = false;
-        if bus.irq_pending() && !self.flag(flags::INTERRUPT_DISABLE) && !defer_irq_poll {
+        let irq_disabled_at_poll = self.irq_poll_i_override
+            .take()
+            .unwrap_or_else(|| self.flag(flags::INTERRUPT_DISABLE));
+        if bus.irq_pending() && !irq_disabled_at_poll && !defer_irq_poll {
             // IRQ/NMI entry has two discarded reads before pushing the return state.
             let _ = bus.read(self.state.pc);
             let _ = bus.read(self.state.pc);
@@ -491,7 +497,11 @@ impl Cpu {
             0x18 => { self.set_flag(flags::CARRY, false); 2 }
             0x38 => { self.set_flag(flags::CARRY, true); 2 }
             0x58 => { self.set_flag(flags::INTERRUPT_DISABLE, false); self.irq_poll_delay = true; 2 }
-            0x78 => { self.set_flag(flags::INTERRUPT_DISABLE, true); 2 }
+            0x78 => {
+                self.irq_poll_i_override = Some(self.flag(flags::INTERRUPT_DISABLE));
+                self.set_flag(flags::INTERRUPT_DISABLE, true);
+                2
+            }
             0xD8 => { self.set_flag(flags::DECIMAL, false); 2 }
             0xF8 => { self.set_flag(flags::DECIMAL, true); 2 }
             0xB8 => { self.set_flag(flags::OVERFLOW, false); 2 }
@@ -2358,3 +2368,48 @@ mod stack_control_flow_bus_regressions {
     }
 }
 
+
+
+#[cfg(test)]
+mod sei_irq_poll_regressions {
+    use super::*;
+
+    fn pending_frame_irq() -> CpuBus {
+        let mut bus = CpuBus::new();
+        bus.write(0x4017, 0x00);
+        bus.tick_apu(14_919);
+        assert!(bus.irq_pending(), "fixture must assert the frame IRQ");
+        bus
+    }
+
+    #[test]
+    fn sei_does_not_mask_an_irq_sampled_with_the_old_clear_i_flag() {
+        let mut bus = pending_frame_irq();
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        cpu.state.status &= !flags::INTERRUPT_DISABLE;
+        bus.write(0x0600, 0x78);
+        bus.write(0x0601, 0xEA);
+
+        assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0x78);
+        assert_ne!(cpu.state.status & flags::INTERRUPT_DISABLE, 0);
+        let irq = cpu.step(&mut bus).unwrap();
+        assert_eq!(irq.opcode, 0xFE);
+        assert_eq!(irq.cycles, 7);
+        assert_eq!(bus.read(0x01FB) & flags::INTERRUPT_DISABLE, flags::INTERRUPT_DISABLE);
+    }
+
+    #[test]
+    fn sei_keeps_irq_masked_when_i_was_already_set_at_the_poll() {
+        let mut bus = pending_frame_irq();
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        bus.write(0x0600, 0x78);
+        bus.write(0x0601, 0xEA);
+
+        assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0x78);
+        let next = cpu.step(&mut bus).unwrap();
+        assert_eq!(next.opcode, 0xEA);
+        assert_eq!(next.cycles, 2);
+    }
+}
