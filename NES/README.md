@@ -123,3 +123,30 @@ Consultez [Architecture](docs/ARCHITECTURE.md), [Références et réutilisation]
 - Ne pas supprimer une régression pour faire passer la CI.
 - Ne pas ajouter de ROM commerciale ni de contenu dont la redistribution n'est pas autorisée.
 - Ne pas reprendre de code tiers sans provenance, licence et notices vérifiées.
+
+
+## Validation et compatibilité observée — mise à jour du 1 novembre 2026
+
+Les estimations ci-dessous remplacent la photographie plus ancienne indiquée au début de ce README. Elles mesurent l'avancement de l'ingénierie, pas le taux de compatibilité des ROM.
+
+| Domaine | Estimation |
+|---|---:|
+| CPU Ricoh 2A03 | 78 % |
+| PPU | 80 % |
+| APU | 70 % |
+| Bus, manettes et DMA | 93 % |
+| Cartouches et mappers | 91 % |
+| Machine et session | 88 % |
+| Tests et robustesse | 99 % |
+| Intégration PeaceEmu | 47 % |
+| **Cœur global** | **82 %** |
+
+### Essai manuel rapporté
+
+- **Super Mario Bros. (SMB)** : le 1 novembre 2026, l'utilisateur a signalé qu'un nouvel essai ne reproduisait plus le problème rencontré auparavant. C'est un résultat manuel encourageant, pas un test automatisé CI ni une certification de compatibilité générale.
+
+### Régressions DMC ajoutées
+
+- Un transfert DMC qui a déjà réussi son cycle HALT doit terminer ses phases DUMMY/GET même si le canal est désactivé entre-temps ; le GET tardif ne doit pas réactiver le compteur d'octets.
+- La désactivation empêche les nouveaux fetchs, mais ne doit pas jeter un octet déjà présent dans le sample buffer : l'unité de sortie continue à le consommer.
+- Une désactivation avant le fetch doit annuler la demande de démarrage différée.
