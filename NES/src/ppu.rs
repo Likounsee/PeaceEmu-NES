@@ -29,6 +29,9 @@ pub struct Ppu {
     sprite_line: u16,
     /// Sprite evaluation state: n selects the primary-OAM sprite and m its byte.
     eval_n: u8,
+    /// Number of primary-OAM sprite-index advances since evaluation began.
+    /// The 6-bit n counter wraps, but evaluation ends only after a full 64-entry walk.
+    eval_n_steps: u8,
     eval_m: u8,
     eval_latch: u8,
     eval_copying: bool,
@@ -98,7 +101,7 @@ impl Default for Ppu {
             sprite_pattern_valid: [false; 8],
             sprite_x_counter: [0; 8], sprite_shift_low: [0; 8], sprite_shift_high: [0; 8],
             sprite_line: u16::MAX,
-            eval_n: 0, eval_m: 0, eval_latch: 0xFF, eval_copying: false, eval_copy_byte: 0,
+            eval_n: 0, eval_n_steps: 0, eval_m: 0, eval_latch: 0xFF, eval_copying: false, eval_copy_byte: 0,
             eval_target_y: 0, eval_oam: [[0xFF; 4]; 8],
             eval_indices: [0xFF; 8], eval_count: 0,
             nametables: [0; 4096], palette: [0; 32], v: 0, t: 0,
@@ -891,6 +894,14 @@ impl Ppu {
             | (((self.sprite_shift_high[slot] >> 7) & 1) << 1))
     }
 
+    /// Advances the 6-bit primary-OAM sprite index and ends evaluation only
+    /// after all 64 entries have been visited from the OAMADDR-selected start.
+    #[inline]
+    fn advance_sprite_eval_n(&mut self) {
+        self.eval_n = self.eval_n.wrapping_add(1) & 0x3F;
+        self.eval_n_steps = self.eval_n_steps.saturating_add(1);
+    }
+
     /// Advances the 2C02 sprite evaluator by one PPU dot.
     ///
     /// Dots 1-64 clear secondary OAM. Dots 65-256 scan primary OAM using
@@ -909,6 +920,7 @@ impl Ppu {
             // scanline's successor rather than a stale target from the prior line.
             self.eval_target_y = if self.scanline == 261 { 0 } else { (self.scanline + 1) as u8 };
             self.eval_n = 0;
+            self.eval_n_steps = 0;
             self.eval_m = 0;
             self.eval_latch = 0xFF;
             self.eval_copying = false;
@@ -938,6 +950,7 @@ impl Ppu {
         // low field makes the first Y comparison consume a tile/attribute/X byte.
         if self.dot == 65 {
             self.eval_n = (self.oam_addr >> 2) & 0x3F;
+            self.eval_n_steps = 0;
             self.eval_m = self.oam_addr & 3;
             self.eval_copy_byte = 0;
         }
@@ -949,6 +962,7 @@ impl Ppu {
         // cycle-by-cycle path above.
         if self.dot == 256
             && self.eval_n == 0
+            && self.eval_n_steps == 0
             && self.eval_m == 0
             && self.eval_count == 0
             && !self.eval_copying
@@ -962,7 +976,7 @@ impl Ppu {
             self.update_sprite_overflow(self.scanline as usize);
             return;
         }
-        if !(65..=256).contains(&self.dot) || self.eval_n >= 64 {
+        if !(65..=256).contains(&self.dot) || self.eval_n_steps >= 64 {
             if self.dot == 256 {
                 self.sprite_line_oam = self.eval_oam;
                 self.sprite_line_indices = self.eval_indices;
@@ -993,7 +1007,7 @@ impl Ppu {
                     self.eval_copy_byte = 1;
                     self.eval_m = (self.eval_m + 1) & 3;
                     if self.eval_m == 0 {
-                        self.eval_n = self.eval_n.saturating_add(1);
+                        self.advance_sprite_eval_n();
                     }
                     self.eval_copying = true;
                 } else {
@@ -1036,7 +1050,7 @@ impl Ppu {
                 self.eval_n = self.eval_n.saturating_add(1);
                 self.eval_m = (self.eval_m + 1) & 3;
             }
-            if self.eval_n >= 64 {
+            if self.eval_n_steps >= 64 {
                 self.sprite_line = self.eval_target_y as u16;
             }
         }
@@ -4777,6 +4791,25 @@ mod cycle_sprite_evaluator_regressions {
         assert_eq!(ppu.eval_count, 1);
         assert_eq!(ppu.eval_oam[0], [0xFF, 0xA5, 0x10, 0xFF]);
         assert_eq!(ppu.eval_indices[0], 0);
+    }
+
+    #[test]
+    fn sprite_evaluation_wraps_the_six_bit_oam_index_before_finishing() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.mask = 0x18;
+        ppu.oam_addr = 62 * 4;
+        // The scan starts at entries 62 and 63, then wraps to entry zero.
+        ppu.oam[62 * 4] = 0x20;
+        ppu.oam[63 * 4] = 0x20;
+        ppu.oam[0..4].copy_from_slice(&[0xFF, 0x12, 0x34, 0x56]);
+
+        ppu.tick(341);
+
+        assert_eq!(ppu.sprite_line_count, 1,
+            "the 6-bit OAM index must wrap and continue scanning from entry zero");
+        assert_eq!(ppu.sprite_line_oam[0], [0xFF, 0x12, 0x34, 0x56]);
+        assert_eq!(ppu.sprite_line_indices[0], 0);
     }
 
     #[test]
