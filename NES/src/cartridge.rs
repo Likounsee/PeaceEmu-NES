@@ -2830,7 +2830,8 @@ mod mmc1_tests {
         let mut cart = Cartridge::parse(&small).unwrap();
         assert!(cart.cpu_write(0x6000, 0xA6));
         assert_eq!(cart.cpu_read(0x6080), Some(0xA6));
-        assert_eq!(cart.cpu_read(0x7FFF), Some(0xA6));
+        assert!(cart.cpu_write(0x607F, 0xB7));
+        assert_eq!(cart.cpu_read(0x7FFF), Some(0xB7));
 
         let mut absent = nes2_mmc1(2, 0);
         absent[11] = 7;
