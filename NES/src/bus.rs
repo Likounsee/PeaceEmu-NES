@@ -993,7 +993,7 @@ mod tests {
     fn dmc_load_waits_for_target_get_and_retries_halt_after_cpu_writes() {
         let mut bus = CpuBus::new();
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16] = 0xA5;
         bus.insert_cartridge(Cartridge::parse(&image).unwrap());
