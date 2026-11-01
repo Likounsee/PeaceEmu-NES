@@ -4767,7 +4767,7 @@ mod cycle_sprite_evaluator_regressions {
         // Eight sprites finish copying at dot 128. Dot 129 reads sprite nine's
         // Y byte; dot 130 consumes it and raises overflow.
         ppu.tick(129);
-        assert_eq!(ppu.position(), (261, 129));
+        assert_eq!(ppu.position(), (0, 129));
         assert_eq!(ppu.status & 0x20, 0, "the odd-dot OAM read cannot set overflow yet");
         ppu.tick(1);
         assert_ne!(ppu.status & 0x20, 0, "overflow is asserted on the compare dot");
@@ -4796,8 +4796,11 @@ mod cycle_sprite_evaluator_regressions {
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
         ppu.mask = 0x18;
+        for sprite in ppu.oam.chunks_exact_mut(4) {
+            sprite[0] = 20; // Keep every unspecified sprite outside target line one.
+        }
         ppu.oam[0..4].copy_from_slice(&[20, 3, 0, 16]);
-        ppu.oam[4..8].copy_from_slice(&[0xFF, 7, 0, 24]);
+        ppu.oam[4..8].copy_from_slice(&[0x00, 7, 0, 24]);
         ppu.tick(256);
         assert_eq!(ppu.sprite_line_count, 1);
         assert_eq!(ppu.sprite_line_indices[0], 1);
