@@ -59,6 +59,9 @@ impl CpuBus {
         // Keep the absolute CPU timeline monotonic: MMC1 consecutive-write
         // suppression and delayed APU events compare absolute cycle numbers.
         self.cpu_bus_address = 0;
+        if let Some(cartridge) = self.cartridge.as_mut() {
+            cartridge.reset_cpu_write_timing();
+        }
     }
     /// Attaches a parsed cartridge.
     pub fn insert_cartridge(&mut self, cartridge: Cartridge) { self.cartridge = Some(cartridge); }
@@ -1428,6 +1431,35 @@ mod dmc_mapper_bank_integration_regressions {
 #[cfg(test)]
 mod mmc1_timed_bus_write_regressions {
     use super::*;
+
+    #[test]
+    fn console_reset_clears_mmc1_adjacent_write_filter_without_resetting_serial_state() {
+        const BANK_LEN: usize = 16 * 1024;
+        let mut image = vec![0; 16 + 8 * BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 8;
+        image[6] = 0x10;
+        for bank in 0..8usize {
+            image[16 + bank * BANK_LEN..16 + (bank + 1) * BANK_LEN].fill(bank as u8);
+        }
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+
+        bus.begin_cpu_instruction();
+        bus.write(0xE000, 1); // First serial bit before reset.
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        bus.reset();
+
+        // Four additional accepted bits complete the serial value 00001.
+        for _ in 0..4 {
+            bus.begin_cpu_instruction();
+            bus.write(0xE000, 0);
+            assert_eq!(bus.end_cpu_instruction(), 1);
+            bus.advance_cpu_cycle(); // Keep each mapper write off the immediately following cycle.
+        }
+        assert_eq!(bus.read(0x8000), 1,
+            "reset clears only MMC1's consecutive-write filter, preserving the partial serial value");
+    }
 
     #[test]
     fn instruction_bus_suppresses_only_the_second_adjacent_mmc1_write() {
