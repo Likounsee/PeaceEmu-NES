@@ -398,6 +398,47 @@ mod tests {
     }
 
     #[test]
+    fn dmc_dma_halt_retries_after_one_two_or_three_consecutive_cpu_writes() {
+        for write_count in 1..=3 {
+            let mut image = vec![0; 16 + 16_384];
+            image[0..4].copy_from_slice(b"NES\\x1A");
+            image[4] = 1;
+            image[16] = 0xA5;
+
+            let mut bus = CpuBus::new();
+            bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+            bus.write(0x4010, 0x00);
+            bus.write(0x4012, 0x00);
+            bus.write(0x4013, 0x00);
+            bus.write(0x4015, 0x10);
+
+            bus.begin_cpu_instruction();
+            for index in 0..write_count {
+                bus.write(index as u16, 0x30 + index as u8);
+                assert_eq!(
+                    bus.take_instruction_dmc_stalls(),
+                    0,
+                    "DMC must not halt on write cycle {} of {write_count}",
+                    index + 1,
+                );
+            }
+
+            assert_eq!(bus.read(0x0000), 0x30);
+            assert_eq!(
+                bus.take_instruction_dmc_stalls(),
+                4,
+                "the pending DMC request must be serviced by the first read after {write_count} writes",
+            );
+            assert_eq!(
+                bus.end_cpu_instruction(),
+                u16::from(write_count) + 1,
+                "only the CPU's actual read/write accesses count as instruction bus cycles",
+            );
+            assert_eq!(bus.read(0x4015) & 0x10, 0);
+        }
+    }
+
+    #[test]
     fn dmc_sample_fetch_reports_four_cpu_stall_cycles() {
         let mut bus = CpuBus::new();
         let mut image = vec![0; 16 + 16_384];
