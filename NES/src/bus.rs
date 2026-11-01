@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn bus_trace_identifies_dmc_dummy_and_sample_reads() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16] = 0xA5;
         let mut bus = CpuBus::new();
@@ -455,13 +455,14 @@ mod tests {
         bus.write(0x4012, 0);
         bus.write(0x4013, 0);
         bus.write(0x4015, 0x10);
+        bus.set_dma_bus_address(0x1234);
 
         assert_eq!(bus.tick_apu(1), 3);
         let trace = bus.bus_trace();
         let dmc: Vec<_> = trace.iter().filter(|entry| entry.kind == CpuBusAccessKind::DmcRead).collect();
         assert_eq!(dmc.len(), 3, "initial DMC DMA exposes halt, dummy and sample GET reads");
-        assert_eq!(dmc[0].address, 0, "halt/dummy reads use the held CPU address");
-        assert_eq!(dmc[1].address, 0, "dummy reads use the held CPU address");
+        assert_eq!(dmc[0].address, 0x1234, "halt/dummy reads use the held CPU address");
+        assert_eq!(dmc[1].address, 0x1234, "dummy reads use the held CPU address");
         assert_eq!(dmc[2].address, 0xC000, "the final GET reads the sample address");
     }
 
