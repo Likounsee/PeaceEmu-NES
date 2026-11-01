@@ -289,13 +289,17 @@ impl NesMachine {
         // next opcode; preserve that address during OAM's halt/alignment slots.
         self.bus.set_dma_bus_address(self.cpu.state().pc);
         for _ in 0..initial_slots {
-            self.clock_dma_bus_phase(DmaBusPhase::Halt);
+            // A DMC transfer has priority over this OAM halt slot. Keep the
+            // same OAM slot pending until the DMC transaction releases the bus.
+            while self.clock_dma_bus_phase(DmaBusPhase::Halt) {}
         }
 
         for offset in 0..=u8::MAX {
             let source_address = (u16::from(page) << 8) | u16::from(offset);
             self.bus.set_dma_bus_address(source_address);
-            self.clock_dma_bus_phase(DmaBusPhase::Get);
+            // DMC owns a stolen GET slot; do not advance the OAM byte index or
+            // sample source memory until the delayed OAM GET actually occurs.
+            while self.clock_dma_bus_phase(DmaBusPhase::Get) {}
             let value = self.bus.read_oam_dma_source(page, offset);
 
             self.clock_dma_bus_phase(DmaBusPhase::Put);
@@ -305,8 +309,9 @@ impl NesMachine {
     }
 
     /// Advances one OAM DMA slot and lets DMC steal only eligible GET/HALT slots.
-    fn clock_dma_bus_phase(&mut self, phase: DmaBusPhase) {
-        self.clock_devices_for_cpu_cycles_with_dmc_access(1, phase.dmc_can_halt());
+    /// Returns true when DMC stole this OAM slot, requiring OAM to retry it.
+    fn clock_dma_bus_phase(&mut self, phase: DmaBusPhase) -> bool {
+        self.clock_devices_for_cpu_cycles_with_dmc_access(1, phase.dmc_can_halt()) != 0
     }
 
     /// Advances PPU and APU time in CPU-cycle-sized quanta.
@@ -325,7 +330,8 @@ impl NesMachine {
         &mut self,
         mut cycles: u32,
         dmc_dma_can_halt: bool,
-    ) {
+    ) -> u32 {
+        let mut stolen_cycles = 0u32;
         while cycles != 0 {
             self.bus.advance_cpu_cycle();
             let _crossed_scanlines = self.bus.tick_ppu(3);
@@ -336,10 +342,12 @@ impl NesMachine {
             // DMC DMA steals CPU time. Each stolen cycle advances both video and audio
             // clocks through this same path, including any scanline IRQ edges it crosses.
             if dmc_stalls != 0 {
+                stolen_cycles = stolen_cycles.saturating_add(dmc_stalls);
                 self.cpu.add_stall_cycles(dmc_stalls.min(u32::from(u16::MAX)) as u16);
                 cycles = cycles.saturating_add(dmc_stalls);
             }
         }
+        stolen_cycles
     }
 
     /// Reads a byte through the CPU address bus.
@@ -738,6 +746,37 @@ mod tests {
             machine.write_cpu(0x2003, i);
             assert_eq!(machine.read_cpu(0x2004), i ^ 0x5A);
         }
+    }
+
+    #[test]
+    fn dmc_dma_delays_oam_get_without_skipping_or_corrupting_bytes() {
+        let image = nrom_with_program(&[0xEA]);
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        for offset in 0..=u8::MAX {
+            machine.write_cpu(0x0200 | u16::from(offset), offset ^ 0xA7);
+        }
+
+        // One-byte DMC sample: its first request appears immediately, so it
+        // competes with OAM's initial halt slot and must complete before OAM GET.
+        machine.write_cpu(0x4012, 0x00);
+        machine.write_cpu(0x4013, 0x00);
+        machine.write_cpu(0x4015, 0x10);
+        let before = machine.total_cycles();
+        machine.perform_oam_dma(0x02);
+
+        assert_eq!(machine.total_cycles() - before, 513 + 3,
+            "the initial DMC fetch adds its three stolen phases to OAM DMA");
+        for offset in 0..=u8::MAX {
+            machine.write_cpu(0x2003, offset);
+            assert_eq!(
+                machine.read_cpu(0x2004),
+                offset ^ 0xA7,
+                "OAM byte {offset} must be copied only after its GET slot is granted",
+            );
+        }
+        assert!(machine.bus.bus_trace().iter().any(|entry| {
+            entry.kind == CpuBusAccessKind::DmcRead && entry.address == 0xC000
+        }));
     }
 
     #[test]
