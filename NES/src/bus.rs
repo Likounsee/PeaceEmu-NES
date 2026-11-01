@@ -693,8 +693,8 @@ mod tests {
         assert_eq!(bus.take_instruction_dmc_stalls(), 0,
             "DMC must not halt the CPU in the middle of a write cycle");
         assert_eq!(bus.read(0x0000), 0x55);
-        assert_eq!(bus.take_instruction_dmc_stalls(), 3,
-            "the pending sample fetch should be serviced on the following read cycle");
+        assert_eq!(bus.take_instruction_dmc_stalls(), 4,
+            "the write delays the halt to PUT, requiring one alignment cycle before GET");
         assert_eq!(bus.end_cpu_instruction(), 2);
         assert_eq!(bus.read(0x4015) & 0x10, 0,
             "the one-byte DMC sample must be fully fetched after the following CPU read");
@@ -727,10 +727,11 @@ mod tests {
             }
 
             assert_eq!(bus.read(0x0000), 0x30);
+            let expected_stalls = if write_count % 2 == 0 { 3 } else { 4 };
             assert_eq!(
                 bus.take_instruction_dmc_stalls(),
-                3,
-                "the pending DMC request must be serviced by the first read after {write_count} writes",
+                expected_stalls,
+                "the successful halt phase determines alignment after {write_count} writes",
             );
             assert_eq!(
                 bus.end_cpu_instruction(),
