@@ -557,6 +557,14 @@ impl Apu {
         } else { None }
     }
 
+    /// Returns whether the CPU cycle just clocked is a GET phase.
+    ///
+    /// The APU cycle toggle is reset with the APU and therefore remains aligned
+    /// even when the bus keeps its absolute mapper timestamp monotonic on reset.
+    pub(crate) const fn dmc_cpu_cycle_is_get(&self) -> bool {
+        self.cpu_cycle_odd
+    }
+
     /// Returns whether this request initially targets a GET or PUT cycle.
     /// Initial loads target GET; later buffer refills target PUT. If a write
     /// prevents the halt, the bus retries on every following CPU cycle.
