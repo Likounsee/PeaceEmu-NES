@@ -270,11 +270,16 @@ impl NesMachine {
         // by one halt cycle and an extra alignment cycle on odd CPU parity.
         let dma_cycles = if self.cpu.total_cycles() & 1 == 0 { 513u16 } else { 514u16 };
         let initial_slots = u32::from(dma_cycles - 512);
+        // The CPU has finished the $4014 write and is waiting to fetch its
+        // next opcode; preserve that address during OAM's halt/alignment slots.
+        self.bus.set_dma_bus_address(self.cpu.state().pc);
         for _ in 0..initial_slots {
             self.clock_dma_bus_phase(DmaBusPhase::Halt);
         }
 
         for offset in 0..=u8::MAX {
+            let source_address = (u16::from(page) << 8) | u16::from(offset);
+            self.bus.set_dma_bus_address(source_address);
             self.clock_dma_bus_phase(DmaBusPhase::Get);
             let value = self.bus.read_oam_dma_source(page, offset);
 
