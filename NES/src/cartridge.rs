@@ -391,6 +391,12 @@ impl Mmc1 {
         }
     }
 
+    /// Clears only the RMW write-filter history at a console reset boundary.
+    /// The serial registers and bank configuration remain intact.
+    fn reset_cpu_write_timing(&mut self) {
+        self.last_accepted_write_cycle = None;
+    }
+
     /// Applies an MMC1 write with its absolute CPU-cycle position.
     ///
     /// MMC1 ignores a mapper-register write immediately following an accepted
@@ -2226,6 +2232,12 @@ impl Cartridge {
         match self { Self::Nrom(c) => c.cpu_write(address, value), Self::Mmc1(c) => c.cpu_write(address, value), Self::Uxrom(c) => c.cpu_write(address, value), Self::Cnrom(c) => c.cpu_write(address, value), Self::Mmc3(c) => c.cpu_write(address, value), Self::Axrom(c) => c.cpu_write(address, value), Self::Gxrom(c) => c.cpu_write(address, value), Self::Camerica(c) => c.cpu_write(address, value), Self::ColorDreams(c) => c.cpu_write(address, value), Self::Bnrom(c) => c.cpu_write(address, value), Self::Cprom(c) => c.cpu_write(address, value), Self::Mmc2(c) => c.cpu_write(address, value), Self::Unrom512(c) => c.cpu_write(address, value), Self::Mapper15(c) => c.cpu_write(address, value), Self::Mapper8(c) => c.cpu_write(address, value), Self::Mapper87(c) => c.cpu_write(address, value) }
     }
 
+    /// Clears mapper-local CPU write timing history without resetting mapper registers.
+    pub fn reset_cpu_write_timing(&mut self) {
+        if let Self::Mmc1(mapper) = self {
+            mapper.reset_cpu_write_timing();
+        }
+    }
     /// Writes with an absolute CPU-cycle timestamp when the caller has one.
     /// MMC1 uses this to suppress consecutive-cycle serial-register writes;
     /// other mapper boards retain their existing write behavior.
