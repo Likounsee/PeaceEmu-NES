@@ -555,6 +555,13 @@ impl Apu {
         } else { None }
     }
 
+    /// Host-side register pokes do not represent a clocked CPU write cycle.
+    /// Let the next emulated bus slot service the request instead of inventing
+    /// two elapsed CPU cycles that the caller did not execute.
+    pub(crate) fn bypass_dmc_startup_delay_for_host_write(&mut self) {
+        self.dmc_request_delay = 0;
+    }
+
     /// Takes a request only after its hardware scheduling delay has elapsed.
     pub(crate) fn take_dmc_dma_request_for_bus(&mut self) -> Option<u16> {
         if self.dmc_request_delay == 0 {
