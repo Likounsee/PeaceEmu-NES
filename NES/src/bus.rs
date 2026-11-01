@@ -1888,6 +1888,8 @@ mod dmc_register_conflict_regressions {
         bus.write(0x4017, 0x00);
         bus.tick_apu(14_919);
         assert!(bus.irq_pending(), "fixture must begin with the frame-counter IRQ asserted");
+        // Align the next readable CPU slot to the initial DMC GET target.
+        bus.tick_apu(1);
 
         // The one-byte sample enables DMC IRQ. The CPU's $4015 read is held
         // across HALT/DUMMY/GET, so the repeated I/O read acknowledges frame
