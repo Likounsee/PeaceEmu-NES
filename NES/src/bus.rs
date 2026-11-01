@@ -401,7 +401,7 @@ mod tests {
     fn dmc_dma_halt_retries_after_one_two_or_three_consecutive_cpu_writes() {
         for write_count in 1u16..=3 {
             let mut image = vec![0; 16 + 16_384];
-            image[0..4].copy_from_slice(b"NES\\x1A");
+            image[0..4].copy_from_slice(b"NES\x1A");
             image[4] = 1;
             image[16] = 0xA5;
 
