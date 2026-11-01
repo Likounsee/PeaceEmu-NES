@@ -255,8 +255,8 @@ impl Mmc1 {
 
         let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
             else { image[4] as usize * PRG_BANK_LEN };
-        if prg_len < 2 * PRG_BANK_LEN || prg_len > 32 * PRG_BANK_LEN
-            || prg_len % PRG_BANK_LEN != 0 {
+        if !matches!(prg_len, 2 * PRG_BANK_LEN | 4 * PRG_BANK_LEN | 8 * PRG_BANK_LEN
+            | 16 * PRG_BANK_LEN | 32 * PRG_BANK_LEN) {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
         let chr_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) }
@@ -2136,7 +2136,7 @@ impl Cartridge {
             let mapper = ((image[6] >> 4) as u16)
                 | (image[7] & 0xF0) as u16
                 | (((image[8] & 0x0F) as u16) << 8);
-            if !matches!(mapper, 0 | 2 | 3 | 4 | 7 | 8 | 11 | 13 | 15 | 34 | 66 | 71 | 87) { return Err(CartridgeError::Nes2NotSupported); }
+            if !matches!(mapper, 0 | 1 | 2 | 3 | 4 | 7 | 8 | 11 | 13 | 15 | 34 | 66 | 71 | 87) { return Err(CartridgeError::Nes2NotSupported); }
         }
         let mapper = if nes2 {
             ((image[6] >> 4) as u16)
