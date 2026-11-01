@@ -1882,4 +1882,32 @@ mod dmc_register_conflict_regressions {
         assert!(!bus.bus_trace().iter().any(|entry| entry.kind == CpuBusAccessKind::DmcRead),
             "an aborted request must not perform dummy or sample reads");
     }
+    #[test]
+    fn dmc_held_status_reads_acknowledge_frame_irq_before_sample_get_asserts_dmc_irq() {
+        let mut bus = dmc_bus();
+        bus.write(0x4017, 0x00);
+        bus.tick_apu(14_919);
+        assert!(bus.irq_pending(), "fixture must begin with the frame-counter IRQ asserted");
+
+        // The one-byte sample enables DMC IRQ. The CPU's $4015 read is held
+        // across HALT/DUMMY/GET, so the repeated I/O read acknowledges frame
+        // IRQ before the final GET raises the independent DMC IRQ.
+        bus.write(0x4010, 0x80);
+        bus.write(0x4015, 0x10);
+        bus.begin_cpu_instruction();
+        let status = bus.read(0x4015);
+        let stalls = bus.take_instruction_dmc_stalls();
+        assert!(stalls >= 3, "the DMC transfer must hold the status read, got {stalls} cycles");
+        assert_eq!(bus.end_cpu_instruction(), 1);
+
+        assert_eq!(status & 0x40, 0, "$4015's repeated read must clear frame IRQ");
+        assert_ne!(status & 0x80, 0, "the final sample GET must raise DMC IRQ before CPU resumes");
+        assert!(bus.irq_pending(), "DMC IRQ must remain asserted after reading $4015");
+        let held_status_reads = bus.bus_trace().iter().filter(|entry| {
+            entry.kind == CpuBusAccessKind::DmcRead && entry.address == 0x4015
+        }).count();
+        assert!(held_status_reads >= 2,
+            "the held CPU address must be read during HALT/DUMMY before the sample GET");
+    }
+
 }
