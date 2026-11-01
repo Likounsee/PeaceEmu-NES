@@ -60,7 +60,7 @@ enum DmaBusPhase {
 
 impl DmaBusPhase {
     const fn dmc_can_halt(self) -> bool {
-        matches!(self, Self::OamHalt | Self::OamGet)
+        matches!(self, Self::Halt | Self::Get)
     }
 }
 
@@ -271,14 +271,14 @@ impl NesMachine {
         let dma_cycles = if self.cpu.total_cycles() & 1 == 0 { 513u16 } else { 514u16 };
         let initial_slots = u32::from(dma_cycles - 512);
         for _ in 0..initial_slots {
-            self.clock_dma_bus_phase(DmaBusPhase::OamHalt);
+            self.clock_dma_bus_phase(DmaBusPhase::Halt);
         }
 
         for offset in 0..=u8::MAX {
-            self.clock_dma_bus_phase(DmaBusPhase::OamGet);
+            self.clock_dma_bus_phase(DmaBusPhase::Get);
             let value = self.bus.read_oam_dma_source(page, offset);
 
-            self.clock_dma_bus_phase(DmaBusPhase::OamPut);
+            self.clock_dma_bus_phase(DmaBusPhase::Put);
             self.bus.write_oam_dma_byte(value);
         }
         self.cpu.add_stall_cycles(dma_cycles);
@@ -358,9 +358,9 @@ mod tests {
 
     #[test]
     fn oam_dma_phase_policy_gives_dmc_priority_only_on_get_and_halt_slots() {
-        assert!(DmaBusPhase::OamHalt.dmc_can_halt());
-        assert!(DmaBusPhase::OamGet.dmc_can_halt());
-        assert!(!DmaBusPhase::OamPut.dmc_can_halt());
+        assert!(DmaBusPhase::Halt.dmc_can_halt());
+        assert!(DmaBusPhase::Get.dmc_can_halt());
+        assert!(!DmaBusPhase::Put.dmc_can_halt());
     }
 
     #[test]
