@@ -442,7 +442,12 @@ mod tests {
         bus.write(0x4013, 0x00);
         bus.write(0x4015, 0x10);
 
+        bus.begin_cpu_instruction();
         let _ = bus.read(0x2007);
+        assert_eq!(bus.take_instruction_dmc_stalls(), 3,
+            "the initial DMC fetch must suspend the PPUDATA access");
+        assert_eq!(bus.end_cpu_instruction(), 1,
+            "only the resumed CPU read counts as an instruction bus access");
         assert_eq!(bus.read(0x2007), 0x44,
             "two DMC held-address reads must advance PPUDATA twice before the resumed CPU read");
     }
