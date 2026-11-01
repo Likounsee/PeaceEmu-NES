@@ -2040,3 +2040,112 @@ mod unofficial_rmw_addressing_matrix_regressions {
         }
     }
 }
+
+#[cfg(test)]
+mod stack_control_flow_bus_regressions {
+    use super::*;
+    use crate::bus::CpuBusAccessKind;
+
+    fn trace_pairs(bus: &CpuBus) -> Vec<(CpuBusAccessKind, u16)> {
+        bus.bus_trace().iter().map(|entry| (entry.kind, entry.address)).collect()
+    }
+
+    #[test]
+    fn jsr_fetches_high_operand_after_stack_writes() {
+        let mut bus = CpuBus::new();
+        bus.write(0x0600, 0x20); // JSR $1234
+        bus.write(0x0601, 0x34);
+        bus.write(0x0602, 0x12);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        bus.clear_bus_trace();
+
+        let result = cpu.step(&mut bus).unwrap();
+
+        assert_eq!(result.cycles, 6);
+        assert_eq!(cpu.state().pc, 0x1234);
+        assert_eq!(bus.read(0x01FD), 0x06);
+        assert_eq!(bus.read(0x01FC), 0x02);
+        assert_eq!(trace_pairs(&bus), vec![
+            (CpuBusAccessKind::Read, 0x0600),
+            (CpuBusAccessKind::Read, 0x0601),
+            (CpuBusAccessKind::Read, 0x01FD),
+            (CpuBusAccessKind::Write, 0x01FD),
+            (CpuBusAccessKind::Write, 0x01FC),
+            (CpuBusAccessKind::Read, 0x0602),
+        ]);
+    }
+
+    #[test]
+    fn rts_performs_stack_dummy_and_return_address_reads() {
+        let mut bus = CpuBus::new();
+        bus.write(0x0600, 0x60);
+        bus.write(0x01FE, 0x34);
+        bus.write(0x01FF, 0x12);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        bus.clear_bus_trace();
+
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 6);
+        assert_eq!(cpu.state().pc, 0x1235);
+        assert_eq!(trace_pairs(&bus), vec![
+            (CpuBusAccessKind::Read, 0x0600),
+            (CpuBusAccessKind::Read, 0x0601),
+            (CpuBusAccessKind::Read, 0x01FD),
+            (CpuBusAccessKind::Read, 0x01FE),
+            (CpuBusAccessKind::Read, 0x01FF),
+            (CpuBusAccessKind::Read, 0x1234),
+        ]);
+    }
+
+    #[test]
+    fn rti_performs_stack_dummy_read_before_restoring_state() {
+        let mut bus = CpuBus::new();
+        bus.write(0x0600, 0x40);
+        bus.write(0x01FE, flags::UNUSED | flags::CARRY);
+        bus.write(0x01FF, 0x78);
+        bus.write(0x0100, 0x56);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        bus.clear_bus_trace();
+
+        assert_eq!(cpu.step(&mut bus).unwrap().cycles, 6);
+        assert_eq!(cpu.state().pc, 0x5678);
+        assert_ne!(cpu.state().status & flags::CARRY, 0);
+        assert_eq!(trace_pairs(&bus), vec![
+            (CpuBusAccessKind::Read, 0x0600),
+            (CpuBusAccessKind::Read, 0x0601),
+            (CpuBusAccessKind::Read, 0x01FD),
+            (CpuBusAccessKind::Read, 0x01FE),
+            (CpuBusAccessKind::Read, 0x01FF),
+            (CpuBusAccessKind::Read, 0x0100),
+        ]);
+    }
+
+    #[test]
+    fn pla_and_plp_read_the_current_stack_slot_before_popping() {
+        for (opcode, value) in [(0x68, 0x80), (0x28, flags::CARRY | flags::UNUSED)] {
+            let mut bus = CpuBus::new();
+            bus.write(0x0600, opcode);
+            bus.write(0x01FE, value);
+            let mut cpu = Cpu::new();
+            cpu.set_pc(0x0600);
+            bus.clear_bus_trace();
+
+            assert_eq!(cpu.step(&mut bus).unwrap().cycles, 4);
+            let trace = trace_pairs(&bus);
+            assert_eq!(trace, vec![
+                (CpuBusAccessKind::Read, 0x0600),
+                (CpuBusAccessKind::Read, 0x0601),
+                (CpuBusAccessKind::Read, 0x01FD),
+                (CpuBusAccessKind::Read, 0x01FE),
+            ], "opcode {opcode:#04X} must perform the discarded stack read");
+            if opcode == 0x68 {
+                assert_eq!(cpu.state().a, value);
+            } else {
+                assert_ne!(cpu.state().status & flags::CARRY, 0);
+            }
+        }
+    }
+}
+
