@@ -414,7 +414,7 @@ mod tests {
 
             bus.begin_cpu_instruction();
             for index in 0..write_count {
-                bus.write(index as u16, 0x30 + index as u8);
+                bus.write(index, 0x30 + index as u8);
                 assert_eq!(
                     bus.take_instruction_dmc_stalls(),
                     0,
@@ -431,7 +431,7 @@ mod tests {
             );
             assert_eq!(
                 bus.end_cpu_instruction(),
-                u16::from(write_count) + 1,
+                write_count + 1,
                 "only the CPU's actual read/write accesses count as instruction bus cycles",
             );
             assert_eq!(bus.read(0x4015) & 0x10, 0);
