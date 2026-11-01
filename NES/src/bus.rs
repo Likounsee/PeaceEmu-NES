@@ -940,7 +940,6 @@ mod tests {
 
         bus.reset();
 
-        assert_eq!(bus.read(0x6000), 0xA6, "reset must preserve cartridge RAM");
         assert_eq!(bus.audio_sample_rate(), 48_000, "reset must preserve the host audio format");
         assert_eq!(bus.take_oam_dma_request(), None, "reset must discard pending DMA");
         assert_eq!(bus.ppu_position(), (261, 0), "PPU timing returns to pre-render");
@@ -949,6 +948,7 @@ mod tests {
         assert_eq!(bus.instruction_bus_cycles, 0, "partial instruction timing is discarded");
         assert_eq!(bus.instruction_dmc_stalls, 0, "stale DMC stall accounting is discarded");
         assert!(!bus.instruction_timing, "reset exits any active instruction timing scope");
+        assert_eq!(bus.read(0x6000), 0xA6, "reset must preserve cartridge RAM");
         bus.write(0x4016, 1);
         bus.write(0x4016, 0);
         assert_eq!(bus.read(0x4016) & 1, 1, "live controller button levels survive reset");
