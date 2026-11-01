@@ -1,6 +1,6 @@
 //! Host-facing session API for embedding the NES core inside PeaceEmu.
 
-use crate::bus::{CpuBusAccessKind, CpuBusTraceEntry};
+use crate::bus::CpuBusTraceEntry;
 use crate::cpu::CpuState;
 use crate::machine::{MachineError, NesMachine};
 
@@ -187,6 +187,7 @@ impl NesSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bus::CpuBusAccessKind;
 
     fn looping_rom() -> Vec<u8> {
         let mut rom = vec![0; 16 + 16 * 1024];
@@ -329,7 +330,7 @@ mod tests {
         assert!(trace.iter().any(|entry| entry.kind == CpuBusAccessKind::Read));
         session.clear_bus_trace();
         assert!(session.bus_trace().is_empty());
-        assert_eq!(session.total_cycles() > 0, true,
+        assert!(session.total_cycles() > 0,
             "clearing the trace must not reset emulation progress");
     }
 
