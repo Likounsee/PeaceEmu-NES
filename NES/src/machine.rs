@@ -1295,7 +1295,7 @@ mod color_emphasis_output_regressions {
 
     fn test_machine() -> NesMachine {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16 + 0x3FFC] = 0x00;
         image[16 + 0x3FFD] = 0x80;
