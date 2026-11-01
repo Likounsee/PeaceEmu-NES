@@ -1194,7 +1194,10 @@ impl Mmc3 {
         let declared_prg_ram_len = if nes2 {
             nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4))
         } else { PRG_RAM_LEN };
-        let prg_ram_len = declared_prg_ram_len.min(PRG_RAM_LEN)
+        if nes2 && declared_prg_ram_len > PRG_RAM_LEN {
+            return Err(CartridgeError::Nes2NotSupported);
+        }
+        let prg_ram_len = declared_prg_ram_len
             .max(if trainer_len != 0 { PRG_RAM_LEN } else { 0 });
         let mut prg_ram = vec![0; prg_ram_len];
         if trainer_len != 0 {
@@ -1203,7 +1206,10 @@ impl Mmc3 {
         let declared_chr_ram_len = if nes2 {
             nes2_ram_size(image[11] & 0x0F).saturating_add(nes2_ram_size(image[11] >> 4))
         } else { CHR_BANK_LEN };
-        let chr_ram_len = declared_chr_ram_len.min(32 * CHR_BANK_LEN);
+        if nes2 && declared_chr_ram_len > 32 * CHR_BANK_LEN {
+            return Err(CartridgeError::Nes2NotSupported);
+        }
+        let chr_ram_len = declared_chr_ram_len;
         let chr_is_ram = chr_len == 0 && chr_ram_len > 0;
         let chr = if chr_len != 0 { image[chr_start..chr_start + chr_len].to_vec() }
             else { vec![0; chr_ram_len] };
@@ -5079,6 +5085,23 @@ mod mmc3_nes2_tests {
         let mut truncated = nes2_mmc3();
         truncated.pop();
         assert!(matches!(Cartridge::parse(&truncated), Err(CartridgeError::TruncatedImage { .. })));
+    }
+
+    #[test]
+    fn nes2_mmc3_rejects_ram_declarations_larger_than_board_wiring() {
+        let mut oversized_prg_ram = nes2_mmc3();
+        oversized_prg_ram[10] = 0x77; // 8 KiB volatile + 8 KiB nonvolatile.
+        assert!(matches!(
+            Cartridge::parse(&oversized_prg_ram),
+            Err(CartridgeError::Nes2NotSupported)
+        ));
+
+        let mut oversized_chr_ram = nes2_mmc3();
+        oversized_chr_ram[11] = 0xCC; // 256 KiB volatile + 256 KiB nonvolatile.
+        assert!(matches!(
+            Cartridge::parse(&oversized_chr_ram),
+            Err(CartridgeError::Nes2NotSupported)
+        ));
     }
 }
 
