@@ -79,6 +79,8 @@ pub struct Apu {
     dmc_irq: bool,
     dmc_enabled: bool,
     dmc_bytes_remaining: u16,
+    // True until the first sample-buffer fetch after a $4015 enable/restart.
+    dmc_initial_fetch: bool,
     dmc_current_address: u16,
     dmc_sample_buffer: Option<u8>,
     dmc_shift_register: u8,
@@ -129,6 +131,7 @@ impl Default for Apu {
             dmc_irq: false,
             dmc_enabled: false,
             dmc_bytes_remaining: 0,
+            dmc_initial_fetch: false,
             dmc_current_address: 0,
             dmc_sample_buffer: None,
             dmc_shift_register: 0,
@@ -539,6 +542,12 @@ impl Apu {
         } else { None }
     }
 
+    /// Returns whether the pending fetch is the initial load (GET-targeted).
+    /// Later sample-buffer refills target PUT.
+    pub(crate) const fn dmc_dma_halt_target_is_get(&self) -> bool {
+        self.dmc_initial_fetch
+    }
+
     /// Returns the bus phases after a DMC halt has actually succeeded.
     ///
     /// GET halts proceed through Halt, Dummy, Get. PUT halts need an additional
@@ -563,6 +572,7 @@ impl Apu {
     pub fn supply_dmc_byte(&mut self, value: u8) {
         if self.dmc_sample_buffer.is_some() || self.dmc_bytes_remaining == 0 { return; }
         self.dmc_sample_buffer = Some(value);
+        self.dmc_initial_fetch = false;
         self.dmc_current_address = if self.dmc_current_address == 0xFFFF { 0x8000 } else { self.dmc_current_address + 1 };
         self.dmc_bytes_remaining -= 1;
         if self.dmc_bytes_remaining == 0 {
@@ -578,6 +588,7 @@ impl Apu {
 
     fn restart_dmc_sample(&mut self) {
         self.restart_dmc_loop();
+        self.dmc_initial_fetch = true;
     }
 
     /// Restarts the programmed sample address and length without changing DMA
