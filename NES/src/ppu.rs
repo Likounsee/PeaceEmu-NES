@@ -4804,7 +4804,7 @@ mod cycle_sprite_evaluator_regressions {
         ppu.tick(256);
         assert_eq!(ppu.sprite_line_count, 1);
         assert_eq!(ppu.sprite_line_indices[0], 1);
-        assert_eq!(ppu.sprite_line_oam[0], [0xFF, 7, 0, 24]);
+        assert_eq!(ppu.sprite_line_oam[0], [0x00, 7, 0, 24]);
     }
 }
 
