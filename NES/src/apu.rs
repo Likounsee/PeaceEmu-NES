@@ -562,10 +562,6 @@ impl Apu {
         if self.dmc_initial_fetch { INITIAL } else { RELOAD }
     }
 
-    /// Returns the modeled DMA cost for the currently pending sample fetch.
-    pub(crate) fn dmc_dma_stall_cycles(&self) -> u32 {
-        self.dmc_dma_sequence().len() as u32
-    }
 
     /// Supplies a byte fetched by the bus for the DMC sample buffer.
     pub fn supply_dmc_byte(&mut self, value: u8) {
@@ -879,7 +875,7 @@ mod tests {
         apu.write(0x4015, 0x10);
 
         assert_eq!(apu.take_dmc_dma_request(), Some(0xC000));
-        assert_eq!(apu.dmc_dma_stall_cycles(), 3,
+        assert_eq!(apu.dmc_dma_sequence().len() as u32, 3,
             "the first sample-buffer load uses the three-cycle load sequence");
         apu.supply_dmc_byte(0xA5);
 
