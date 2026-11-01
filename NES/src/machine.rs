@@ -641,8 +641,8 @@ mod tests {
         // The next OAM get/read phase is a legal DMC halt point.
         let before = machine.cpu.total_cycles();
         machine.clock_devices_for_cpu_cycles_with_dmc_access(1, true);
-        assert_eq!(machine.cpu.total_cycles() - before, 4,
-            "the deferred halt lands on PUT and therefore requires an alignment cycle");
+        assert_eq!(machine.cpu.total_cycles() - before, 3,
+            "the deferred initial load reaches its target GET on the next readable slot");
         assert_eq!(machine.bus.read(0x4015) & 0x10, 0,
             "the DMC sample must be fetched during the following OAM get phase");
     }
