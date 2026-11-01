@@ -1384,4 +1384,31 @@ mod color_emphasis_output_regressions {
         assert_eq!(machine.framebuffer(), before,
             "PPUMASK emphasis is a host RGB output effect, not a palette-index mutation");
     }
+    #[test]
+    fn dmc_irq_raised_during_stolen_cycles_is_polled_at_the_next_instruction_boundary() {
+        let mut image = nrom_with_program(&[0x58, 0xEA, 0xEA]); // CLI; NOP; NOP.
+        image[16 + 0x3FFE] = 0x00;
+        image[16 + 0x3FFF] = 0x90;
+        image[16 + 0x1000] = 0xEA;
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+
+        assert_eq!(machine.step().unwrap().opcode, 0x58,
+            "CLI must clear I before the DMC IRQ is generated");
+        machine.write_cpu(0x4010, 0x8F); // Enable DMC IRQ and use the fastest rate.
+        machine.write_cpu(0x4012, 0x00);
+        machine.write_cpu(0x4013, 0x00); // One-byte sample.
+        machine.write_cpu(0x4015, 0x10);
+
+        let interrupted_instruction = machine.step().unwrap();
+        assert_eq!(interrupted_instruction.opcode, 0xEA);
+        assert!(machine.bus.irq_pending(),
+            "the final DMC GET must assert IRQ while the CPU is stalled");
+
+        let irq = machine.step().unwrap();
+        assert_eq!(irq.opcode, 0xFE,
+            "the CPU must observe the DMC IRQ on the next instruction poll");
+        assert_eq!(machine.cpu_state().pc, 0x9000);
+        assert_ne!(machine.cpu_state().status & crate::cpu::flags::INTERRUPT_DISABLE, 0);
+    }
+
 }
