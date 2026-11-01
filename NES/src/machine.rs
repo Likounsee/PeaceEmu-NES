@@ -517,7 +517,7 @@ mod tests {
         machine.bus.write(0x4012, 0x00);
         machine.bus.write(0x4013, 0x00);
         machine.bus.write(0x4015, 0x10);
-        machine.bus.tick_apu_with_dma_access(1, false);
+
 
         let before = machine.total_cycles();
         machine.perform_oam_dma(0x02);
@@ -549,7 +549,7 @@ mod tests {
         machine.bus.write(0x4012, 0x00);
         machine.bus.write(0x4013, 0x01); // 17-byte sample.
         machine.bus.write(0x4015, 0x10);
-        machine.bus.tick_apu_with_dma_access(1, false);
+
 
         let before = machine.total_cycles();
         machine.perform_oam_dma(0x02);
@@ -583,7 +583,7 @@ mod tests {
         machine.bus.write(0x4012, 0x00);
         machine.bus.write(0x4013, 0x00);
         machine.bus.write(0x4015, 0x10);
-        machine.bus.tick_apu_with_dma_access(1, false);
+
 
         let before = machine.total_cycles();
         machine.perform_oam_dma(0x02);
@@ -610,11 +610,11 @@ mod tests {
         machine.bus.write(0x4012, 0x00);
         machine.bus.write(0x4013, 0x00);
         machine.bus.write(0x4015, 0x10);
-        machine.bus.tick_apu_with_dma_access(1, false);
 
-        // Reset leaves the CPU at cycle 7. One idle cycle makes the OAM
-        // halt slot the only initial slot, so the DMC sequence is:
-        // OAM Halt / DMC Halt, OAM Get / DMC Dummy, OAM Put / DMC Get.
+
+        // Reset leaves the CPU at cycle 7. One idle CPU stall makes the
+        // OAM halt slot the only initial slot. The APU phase is untouched, so
+        // DMC halts on that GET and its sample GET overlaps OAM's PUT.
         machine.cpu.add_stall_cycles(1);
         let before = machine.total_cycles();
         machine.perform_oam_dma(0x02);
@@ -633,16 +633,16 @@ mod tests {
         machine.bus.write(0x4013, 0x00); // One-byte sample.
         machine.bus.write(0x4015, 0x10);
 
-        // The OAM put/write phase advances the APU but cannot be halted by DMC.
-        machine.clock_devices_for_cpu_cycles_with_dmc_access(1, false);
+        // The initial load targets GET. Advance one non-haltable GET phase
+        // so the pending request records its failed halt attempt before PUT.
         assert_ne!(machine.bus.read(0x4015) & 0x10, 0,
             "DMC sample must remain pending throughout an OAM put phase");
 
         // The next OAM get/read phase is a legal DMC halt point.
         let before = machine.cpu.total_cycles();
         machine.clock_devices_for_cpu_cycles_with_dmc_access(1, true);
-        assert_eq!(machine.cpu.total_cycles() - before, 3,
-            "the deferred initial DMC load must charge three stolen cycles at the next get phase");
+        assert_eq!(machine.cpu.total_cycles() - before, 4,
+            "the deferred halt lands on PUT and therefore requires an alignment cycle");
         assert_eq!(machine.bus.read(0x4015) & 0x10, 0,
             "the DMC sample must be fetched during the following OAM get phase");
     }
