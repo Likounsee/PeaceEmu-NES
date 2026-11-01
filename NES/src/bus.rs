@@ -56,7 +56,8 @@ impl CpuBus {
         self.instruction_timing = false;
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
-        self.cpu_cycle = 0;
+        // Keep the absolute CPU timeline monotonic: MMC1 consecutive-write
+        // suppression and delayed APU events compare absolute cycle numbers.
         self.cpu_bus_address = 0;
     }
     /// Attaches a parsed cartridge.
@@ -941,13 +942,15 @@ mod tests {
         let _ = bus.read(0x0000);
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert!(bus.cpu_cycle > 0, "fixture must advance the bus clock before reset");
+        let cycle_before_reset = bus.cpu_cycle;
 
         bus.reset();
 
         assert_eq!(bus.audio_sample_rate(), 48_000, "reset must preserve the host audio format");
         assert_eq!(bus.take_oam_dma_request(), None, "reset must discard pending DMA");
         assert_eq!(bus.ppu_position(), (261, 0), "PPU timing returns to pre-render");
-        assert_eq!(bus.cpu_cycle, 0, "mapper-visible CPU timing restarts from a clean epoch");
+        assert_eq!(bus.cpu_cycle, cycle_before_reset,
+            "the absolute CPU timeline remains monotonic across reset for mapper write filtering");
         assert_eq!(bus.cpu_bus_address, 0, "the held DMA address is cleared");
         assert_eq!(bus.instruction_bus_cycles, 0, "partial instruction timing is discarded");
         assert_eq!(bus.instruction_dmc_stalls, 0, "stale DMC stall accounting is discarded");
