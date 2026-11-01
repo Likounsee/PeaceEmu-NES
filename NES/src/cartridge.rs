@@ -1901,7 +1901,7 @@ impl Mmc2 {
                 self.prg_ram[index] = value;
                 true
             }
-            0x6000..=0x7FFF => false
+            0x6000..=0x7FFF => false,
             0xA000..=0xAFFF => { self.prg_bank = value as usize; true }
             0xB000..=0xBFFF => { self.chr_fd0 = value as usize; true }
             0xC000..=0xCFFF => { self.chr_fe0 = value as usize; true }
