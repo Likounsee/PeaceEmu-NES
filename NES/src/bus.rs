@@ -26,7 +26,7 @@ pub struct CpuBus {
     /// Absolute CPU-cycle timeline shared with cycle-sensitive cartridge mappers.
     cpu_cycle: u64,
     /// Address retained on the CPU bus while DMA suspends the processor.
-    cpu_bus_address: u16, 
+    cpu_bus_address: u16,
     /// DMC stalls discovered while the instruction's bus accesses clock the APU.
     instruction_dmc_stalls: u32,
 }
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn dmc_halt_repeats_the_current_controller_read_address_before_sample_get() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16] = 0xA5;
         let mut bus = CpuBus::new();
