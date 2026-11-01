@@ -249,7 +249,12 @@ impl CpuBus {
                 }
             },
             0x2000..=0x3FFF => self.ppu.cpu_write_register(address & 7, value, self.cartridge.as_mut()),
-            0x4000..=0x4013 | 0x4015 | 0x4017 => self.apu.write(address, value),
+            0x4000..=0x4013 | 0x4015 | 0x4017 => {
+                self.apu.write(address, value);
+                if address == 0x4015 && !self.instruction_timing {
+                    self.apu.bypass_dmc_startup_delay_for_host_write();
+                }
+            },
             0x4014 => self.pending_oam_dma = Some(value),
             0x8000..=0xFFFF => {
                 if let Some(cartridge) = self.cartridge.as_mut() {
