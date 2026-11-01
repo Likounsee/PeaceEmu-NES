@@ -291,9 +291,9 @@ impl NesMachine {
 
     /// Runs one OAM DMA transfer through explicit GET/PUT bus phases.
     ///
-    /// A DMC request is serviced before the OAM source read on a GET slot, so
-    /// the OAM transfer remains paused with its byte index unchanged. PUT slots
-    /// are never haltable and always commit the previously latched byte.
+    /// DMC's setup phases overlap the OAM transfer. A DMC sample GET wins only
+    /// against an OAM GET, in which case OAM inserts one alignment cycle and
+    /// retries the same byte without advancing its index.
     fn perform_oam_dma(&mut self, page: u8) {
         // OAM DMA is 512 alternating source-read/OAM-write cycles, preceded
         // by one halt cycle and an extra alignment cycle on odd CPU parity.
@@ -313,7 +313,12 @@ impl NesMachine {
             self.bus.set_dma_bus_address(source_address);
             // DMC owns a stolen GET slot; do not advance the OAM byte index or
             // sample source memory until the delayed OAM GET actually occurs.
-            while self.clock_dma_bus_phase(DmaBusPhase::Get) {}
+            while self.clock_dma_bus_phase(DmaBusPhase::Get) {
+                // A DMC GET consumed this OAM GET slot. OAM must spend the
+                // following PUT half-cycle realigning before retrying the read.
+                self.clock_dma_bus_phase(DmaBusPhase::Halt);
+                self.cpu.add_stall_cycles(1);
+            }
             let value = self.bus.read_oam_dma_source(page, offset);
 
             self.clock_dma_bus_phase(DmaBusPhase::Put);
@@ -322,10 +327,24 @@ impl NesMachine {
         self.cpu.add_stall_cycles(dma_cycles);
     }
 
-    /// Advances one OAM DMA slot and lets DMC steal only eligible GET/HALT slots.
-    /// Returns true when DMC stole this OAM slot, requiring OAM to retry it.
+    /// Advances one OAM DMA slot while allowing DMC's non-GET phases to overlap.
+    ///
+    /// HALT, dummy and alignment phases consume cycles OAM was already using.
+    /// Only a DMC sample GET that collides with an OAM GET postpones that byte;
+    /// the caller then inserts OAM's one-cycle PUT alignment before retrying.
     fn clock_dma_bus_phase(&mut self, phase: DmaBusPhase) -> bool {
-        self.clock_devices_for_cpu_cycles_with_dmc_access(1, phase.dmc_can_halt()) != 0
+        self.bus.advance_cpu_cycle();
+        let _crossed_scanlines = self.bus.tick_ppu(3);
+        let _dmc_phase_cycles = self.bus.tick_apu_with_dma_access(1, phase.dmc_can_halt());
+        let dmc_get = self.bus.take_dmc_dma_get_occurred();
+        if dmc_get && phase == DmaBusPhase::Get {
+            // The DMC GET itself is one extra CPU cycle beyond the delayed OAM
+            // GET. The following OAM alignment cycle is charged by the caller.
+            self.cpu.add_stall_cycles(1);
+            true
+        } else {
+            false
+        }
     }
 
     /// Advances PPU and APU time in CPU-cycle-sized quanta.
@@ -503,9 +522,10 @@ mod tests {
         let before = machine.total_cycles();
         machine.perform_oam_dma(0x02);
 
-        // Reset starts on odd parity: base OAM DMA is 514 cycles. The pending
-        // DMC initial load adds three stolen cycles without replacing any OAM transfer.
-        assert_eq!(machine.total_cycles() - before, 517, "initial DMC load adds three cycles to the 514-cycle OAM transfer");
+        // The DMC halt and dummy phases overlap OAM. Its sample GET collides
+        // with OAM's first GET, costing the DMC GET plus one OAM realignment.
+        assert_eq!(machine.total_cycles() - before, 516,
+            "a DMC GET collision adds two cycles, not all three DMC setup phases");
         assert_eq!(machine.bus.read(0x4015) & 0x10, 0,
             "the pending one-byte DMC sample must be fetched during OAM DMA");
 
@@ -780,8 +800,8 @@ mod tests {
         let oam_base_cycles = if before & 1 == 0 { 513 } else { 514 };
         machine.perform_oam_dma(0x02);
 
-        assert_eq!(machine.total_cycles() - before, oam_base_cycles + 3,
-            "the initial DMC fetch adds its three stolen phases to parity-sized OAM DMA");
+        assert_eq!(machine.total_cycles() - before, oam_base_cycles + 2,
+            "DMC setup overlaps OAM; only its GET collision and OAM realignment extend the transfer");
         for offset in 0..=u8::MAX {
             machine.write_cpu(0x2003, offset);
             assert_eq!(
