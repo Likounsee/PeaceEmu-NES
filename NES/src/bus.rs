@@ -1,6 +1,6 @@
 //! CPU memory bus for the NES machine.
 
-use crate::apu::Apu;
+use crate::apu::{Apu, DmcDmaPhase};
 use crate::cartridge::Cartridge;
 use crate::ppu::Ppu;
 
@@ -268,17 +268,26 @@ impl CpuBus {
             self.apu.tick_cpu_cycles(1);
             if dma_can_halt {
                 if let Some(address) = self.apu.take_dmc_dma_request() {
-                    let dma_cycles = self.apu.dmc_dma_stall_cycles();
-                    // During the halt/dummy portion, the CPU keeps presenting its
-                    // current read address. These reads are observable on $2007,
-                    // $4015 and controller ports, so route them through the same
-                    // side-effectful decoder before the DMC sample GET.
-                    for _ in 1..dma_cycles {
-                        let _ = self.read_dmc_dma_source(self.cpu_bus_address);
+                    let sequence = self.apu.dmc_dma_sequence();
+                    // Execute the explicit halt/dummy/alignment slots against the
+                    // held CPU address. Their I/O side effects are observable on
+                    // $2007, $4015 and controller ports. Only the final GET reads
+                    // the DMC sample address.
+                    let mut sample = None;
+                    for phase in sequence {
+                        match phase {
+                            DmcDmaPhase::Halt | DmcDmaPhase::Dummy | DmcDmaPhase::Align => {
+                                let _ = self.read_dmc_dma_source(self.cpu_bus_address);
+                            }
+                            DmcDmaPhase::Get => {
+                                sample = Some(self.read_dmc_dma_source(address));
+                            }
+                        }
                     }
-                    let value = self.read_dmc_dma_source(address);
-                    self.apu.supply_dmc_byte(value);
-                    stall_cycles = stall_cycles.saturating_add(dma_cycles);
+                    if let Some(value) = sample {
+                        self.apu.supply_dmc_byte(value);
+                    }
+                    stall_cycles = stall_cycles.saturating_add(sequence.len() as u32);
                 }
             }
         }
