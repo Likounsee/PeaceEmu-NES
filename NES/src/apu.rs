@@ -28,6 +28,20 @@ fn pulse_sweep_target(period: u16, sweep: u8, channel: usize) -> u16 {
     }
 }
 
+
+/// A slot in the currently approximated DMC sample-fetch sequence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DmcDmaPhase {
+    /// The CPU is halted while its current read address remains on the bus.
+    Halt,
+    /// A repeated read of the held CPU address.
+    Dummy,
+    /// The additional alignment read used by the modeled reload sequence.
+    Align,
+    /// The DMC reads the sample byte from its programmed memory address.
+    Get,
+}
+
 /// CPU-visible register state for the NES audio processing unit.
 #[derive(Clone, Debug)]
 pub struct Apu {
@@ -528,13 +542,29 @@ impl Apu {
         } else { None }
     }
 
-    /// Returns the modeled DMA cost for the currently pending sample fetch.
+    /// Returns the modeled bus phases for the currently pending sample fetch.
     ///
-    /// The first load after enabling/restarting DMC uses the three-cycle load
-    /// sequence; later sample-buffer refills use the four-cycle reload sequence.
-    /// GET/PUT alignment and delayed halts are still handled as an approximation.
-    pub(crate) const fn dmc_dma_stall_cycles(&self) -> u32 {
-        if self.dmc_initial_fetch { 3 } else { 4 }
+    /// The initial load is represented by Halt, Dummy, Get. Subsequent refills
+    /// add an Align slot: Halt, Dummy, Align, Get. The exact hardware alignment
+    /// still depends on the CPU's live GET/PUT phase and is not yet cycle-exact.
+    pub(crate) const fn dmc_dma_sequence(&self) -> &'static [DmcDmaPhase] {
+        const INITIAL: &[DmcDmaPhase] = &[
+            DmcDmaPhase::Halt,
+            DmcDmaPhase::Dummy,
+            DmcDmaPhase::Get,
+        ];
+        const RELOAD: &[DmcDmaPhase] = &[
+            DmcDmaPhase::Halt,
+            DmcDmaPhase::Dummy,
+            DmcDmaPhase::Align,
+            DmcDmaPhase::Get,
+        ];
+        if self.dmc_initial_fetch { INITIAL } else { RELOAD }
+    }
+
+    /// Returns the modeled DMA cost for the currently pending sample fetch.
+    pub(crate) fn dmc_dma_stall_cycles(&self) -> u32 {
+        self.dmc_dma_sequence().len() as u32
     }
 
     /// Supplies a byte fetched by the bus for the DMC sample buffer.
@@ -818,6 +848,28 @@ mod tests {
 
 
     use super::*;
+
+    #[test]
+    fn dmc_dma_sequences_expose_halt_dummy_alignment_and_sample_get_slots() {
+        let mut apu = Apu::new();
+        apu.write(0x4012, 0x00);
+        apu.write(0x4013, 0x01);
+        apu.write(0x4015, 0x10);
+
+        assert_eq!(apu.dmc_dma_sequence(), &[
+            DmcDmaPhase::Halt,
+            DmcDmaPhase::Dummy,
+            DmcDmaPhase::Get,
+        ]);
+
+        apu.supply_dmc_byte(0xA5);
+        assert_eq!(apu.dmc_dma_sequence(), &[
+            DmcDmaPhase::Halt,
+            DmcDmaPhase::Dummy,
+            DmcDmaPhase::Align,
+            DmcDmaPhase::Get,
+        ]);
+    }
 
     #[test]
     fn dmc_initial_load_and_later_reload_have_distinct_dma_costs() {
