@@ -565,6 +565,15 @@ mod tests {
 
         assert_eq!(dmc_stalls, 3, "the initial DMC halt/dummy/GET sequence is charged");
         assert_eq!(bus_cycles, 1, "dummy DMA reads do not become CPU instruction accesses");
+        let dmc_cycles: Vec<u64> = bus.bus_trace().iter()
+            .filter(|entry| entry.kind == CpuBusAccessKind::DmcRead)
+            .map(|entry| entry.cycle)
+            .collect();
+        assert_eq!(dmc_cycles.len(), 3, "each DMC phase must create one bus transaction");
+        assert!(dmc_cycles.windows(2).all(|pair| pair[1] == pair[0] + 1),
+            "halt, dummy and GET must occupy consecutive, separately timestamped CPU cycles: {dmc_cycles:?}");
+        assert_eq!(bus.bus_trace().last().unwrap().cycle, dmc_cycles[2] + 1,
+            "the halted CPU read resumes only after the DMC GET cycle");
         assert_eq!(resumed_read & 1, 1,
             "two side-effectful held-address reads consume B and Select before the resumed Start read");
         assert_eq!(bus.read(0x4016) & 1, 0,
@@ -683,6 +692,11 @@ mod tests {
         bus.write(0x4015, 0x10);
         assert_eq!(bus.tick_apu(1), 3);
         assert_eq!(bus.tick_apu(1), 0, "a filled sample buffer must not repeatedly stall the CPU");
+        let phases: Vec<_> = bus.bus_trace().iter()
+            .filter(|entry| entry.kind == CpuBusAccessKind::DmcRead)
+            .collect();
+        assert_eq!(phases.iter().map(|entry| entry.address).collect::<Vec<_>>(),
+            [0, 0, 0xC000], "the initial transfer must issue two held-address reads and one sample GET");
     }
 
     #[test]
