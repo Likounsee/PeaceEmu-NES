@@ -47,6 +47,23 @@ impl From<CpuError> for MachineError {
     fn from(value: CpuError) -> Self { Self::Cpu(value) }
 }
 
+/// A CPU-bus slot used while the machine arbitrates OAM and DMC DMA.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DmaBusPhase {
+    /// OAM's initial CPU halt/alignment slot.
+    OamHalt,
+    /// OAM reads one byte from CPU memory; DMC has priority over this GET slot.
+    OamGet,
+    /// OAM commits the latched byte to PPU OAM; DMC cannot steal this PUT slot.
+    OamPut,
+}
+
+impl DmaBusPhase {
+    const fn dmc_can_halt(self) -> bool {
+        matches!(self, Self::OamHalt | Self::OamGet)
+    }
+}
+
 /// CPU plus the current minimal bus and a mapper-selected cartridge.
 ///
 /// The wrapper supports instruction stepping, frame execution, snapshot rendering, controller
@@ -243,23 +260,33 @@ impl NesMachine {
         Ok(result)
     }
 
-    /// Runs one OAM DMA transfer, allowing DMC to arbitrate only on read/get phases.
+    /// Runs one OAM DMA transfer through explicit GET/PUT bus phases.
+    ///
+    /// A DMC request is serviced before the OAM source read on a GET slot, so
+    /// the OAM transfer remains paused with its byte index unchanged. PUT slots
+    /// are never haltable and always commit the previously latched byte.
     fn perform_oam_dma(&mut self, page: u8) {
         // OAM DMA is 512 alternating source-read/OAM-write cycles, preceded
         // by one halt cycle and an extra alignment cycle on odd CPU parity.
-        // Advance devices between phases so I/O side effects and raster timing
-        // remain observable during the transfer.
         let dma_cycles = if self.cpu.total_cycles() & 1 == 0 { 513u16 } else { 514u16 };
-        self.clock_devices_for_cpu_cycles(u32::from(dma_cycles - 512));
+        let initial_slots = u32::from(dma_cycles - 512);
+        for _ in 0..initial_slots {
+            self.clock_dma_bus_phase(DmaBusPhase::OamHalt);
+        }
+
         for offset in 0..=u8::MAX {
-            // DMC DMA may halt OAM's read/get phase, but cannot steal
-            // the write/put phase that commits the byte to PPU OAM.
-            self.clock_devices_for_cpu_cycles(1);
+            self.clock_dma_bus_phase(DmaBusPhase::OamGet);
             let value = self.bus.read_oam_dma_source(page, offset);
-            self.clock_devices_for_cpu_cycles_with_dmc_access(1, false);
+
+            self.clock_dma_bus_phase(DmaBusPhase::OamPut);
             self.bus.write_oam_dma_byte(value);
         }
         self.cpu.add_stall_cycles(dma_cycles);
+    }
+
+    /// Advances one OAM DMA slot and lets DMC steal only eligible GET/HALT slots.
+    fn clock_dma_bus_phase(&mut self, phase: DmaBusPhase) {
+        self.clock_devices_for_cpu_cycles_with_dmc_access(1, phase.dmc_can_halt());
     }
 
     /// Advances PPU and APU time in CPU-cycle-sized quanta.
@@ -328,6 +355,13 @@ mod tests {
         assert_eq!(machine.ppu_position(), (261, 3));
     }
 
+
+    #[test]
+    fn oam_dma_phase_policy_gives_dmc_priority_only_on_get_and_halt_slots() {
+        assert!(DmaBusPhase::OamHalt.dmc_can_halt());
+        assert!(DmaBusPhase::OamGet.dmc_can_halt());
+        assert!(!DmaBusPhase::OamPut.dmc_can_halt());
+    }
 
     #[test]
     fn oam_dma_uses_513_cycles_when_the_post_instruction_parity_is_even() {
