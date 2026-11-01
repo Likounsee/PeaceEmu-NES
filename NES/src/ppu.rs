@@ -4799,6 +4799,10 @@ mod cycle_sprite_evaluator_regressions {
         ppu.scanline = 0;
         ppu.mask = 0x18;
         ppu.oam_addr = 62 * 4;
+        // Keep every unspecified sprite outside target line one.
+        for sprite in ppu.oam.chunks_exact_mut(4) {
+            sprite[0] = 0x20;
+        }
         // The scan starts at entries 62 and 63, then wraps to entry zero.
         ppu.oam[62 * 4] = 0x20;
         ppu.oam[63 * 4] = 0x20;
