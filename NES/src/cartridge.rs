@@ -6064,14 +6064,12 @@ mod nes2_mapper_error_classification_regressions {
 
     #[test]
     fn unsupported_legacy_only_nes2_mapper_reports_format_limitation() {
-        for mapper in [30] {
-            let image = nes2_header(mapper);
-            assert_eq!(
-                Cartridge::parse(&image),
-                Err(CartridgeError::Nes2NotSupported),
-                "mapper {mapper} is known but its NES 2.0 board variant is not implemented"
-            );
-        }
+        let image = nes2_header(30);
+        assert_eq!(
+            Cartridge::parse(&image),
+            Err(CartridgeError::Nes2NotSupported),
+            "mapper 30 is known but its NES 2.0 board variant is not implemented"
+        );
     }
 }
 
