@@ -2165,6 +2165,90 @@ mod indirect_addressing_bus_trace_regressions {
     }
 }
 
+
+#[cfg(test)]
+mod official_rmw_bus_trace_regressions {
+    use super::*;
+    use crate::bus::CpuBusAccessKind;
+
+    fn trace(bus: &CpuBus) -> Vec<(CpuBusAccessKind, u16, u8)> {
+        bus.bus_trace()
+            .iter()
+            .map(|entry| (entry.kind, entry.address, entry.value))
+            .collect()
+    }
+
+    #[test]
+    fn asl_rol_lsr_and_ror_write_old_then_new_value_in_every_memory_mode() {
+        let families = [
+            [0x06, 0x16, 0x0E, 0x1E], // ASL
+            [0x26, 0x36, 0x2E, 0x3E], // ROL
+            [0x46, 0x56, 0x4E, 0x5E], // LSR
+            [0x66, 0x76, 0x6E, 0x7E], // ROR
+        ];
+        let expected_cycles = [5, 6, 6, 7];
+
+        for (family, opcodes) in families.iter().enumerate() {
+            for (mode, opcode) in opcodes.iter().copied().enumerate() {
+                let mut bus = CpuBus::new();
+                let operand = match mode {
+                    0 => [0x30, 0x00],
+                    1 => [0x2C, 0x00], // $2C + X=4 -> $30
+                    2 => [0x30, 0x02],
+                    _ => [0xFC, 0x02], // $02FC + X=4 -> $0300
+                };
+                bus.write(0x0600, opcode);
+                bus.write(0x0601, operand[0]);
+                if mode >= 2 {
+                    bus.write(0x0602, operand[1]);
+                }
+                let target = match mode {
+                    0 | 1 => 0x0030,
+                    2 => 0x0230,
+                    _ => 0x0300,
+                };
+                bus.write(target, 0x81);
+                let mut cpu = Cpu::new();
+                cpu.set_pc(0x0600);
+                cpu.state.x = 4;
+                cpu.state.status = flags::UNUSED | flags::CARRY;
+                bus.clear_bus_trace();
+
+                let result = cpu.step(&mut bus).unwrap();
+
+                assert_eq!(result.cycles, expected_cycles[mode],
+                    "opcode {opcode:#04X} nominal cycle count");
+                let mut expected = vec![
+                    (CpuBusAccessKind::Read, 0x0600, opcode),
+                    (CpuBusAccessKind::Read, 0x0601, operand[0]),
+                ];
+                if mode >= 2 {
+                    expected.push((CpuBusAccessKind::Read, 0x0602, operand[1]));
+                }
+                match mode {
+                    1 => expected.push((CpuBusAccessKind::Read, 0x002C, 0x00)),
+                    3 => expected.push((CpuBusAccessKind::Read, 0x0200, 0x00)),
+                    _ => {}
+                }
+                expected.push((CpuBusAccessKind::Read, target, 0x81));
+                expected.push((CpuBusAccessKind::Write, target, 0x81));
+                let modified = match family {
+                    0 => 0x02, // ASL
+                    1 => 0x03, // ROL with carry-in set
+                    2 => 0x40, // LSR
+                    _ => 0xC0, // ROR with carry-in set
+                };
+                expected.push((CpuBusAccessKind::Write, target, modified));
+
+                assert_eq!(trace(&bus), expected,
+                    "opcode {opcode:#04X} must expose the complete RMW bus sequence");
+                assert_eq!(bus.read(target), modified,
+                    "opcode {opcode:#04X} final memory value");
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod stack_control_flow_bus_regressions {
     use super::*;
