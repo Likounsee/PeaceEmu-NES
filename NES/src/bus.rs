@@ -423,7 +423,7 @@ mod tests {
     #[test]
     fn dmc_dummy_reads_repeat_ppudata_side_effects_before_the_resumed_cpu_read() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut bus = CpuBus::new();
         bus.insert_cartridge(Cartridge::parse(&image).unwrap());
