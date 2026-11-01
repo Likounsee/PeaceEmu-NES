@@ -323,7 +323,18 @@ impl CpuBus {
     /// Returns the CPU stall cycles caused by DMC DMA. Each sample-buffer refill
     /// uses three cycles for the initial load and four for later reloads; alignment remains approximate.
     pub fn tick_apu(&mut self, cycles: u32) -> u32 {
-        self.tick_apu_with_dma_access(cycles, true)
+        // This convenience API owns the whole requested interval, including any
+        // CPU cycles stolen by DMC. Keep servicing one DMA phase per cycle while
+        // extending the interval by the number of stolen slots.
+        let mut remaining = cycles;
+        let mut stall_cycles = 0u32;
+        while remaining != 0 {
+            remaining -= 1;
+            let stolen = self.tick_apu_with_dma_access(1, true);
+            stall_cycles = stall_cycles.saturating_add(stolen);
+            remaining = remaining.saturating_add(stolen);
+        }
+        stall_cycles
     }
 
     /// Advances APU time while optionally allowing DMC DMA to halt the CPU bus.
