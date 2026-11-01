@@ -349,6 +349,25 @@ mod tests {
     }
 
     #[test]
+    fn machine_reset_restarts_cpu_and_bus_timing_without_losing_cartridge_ram() {
+        let mut image = nrom_with_program(&[0xEA, 0xEA]);
+        image[6] |= 0x02; // Battery-backed PRG RAM.
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+        machine.write_cpu(0x6000, 0xA9);
+        machine.step().unwrap();
+        machine.step().unwrap();
+        assert!(machine.total_cycles() > 7);
+        assert!(machine.bus.cpu_cycle > 0);
+
+        machine.reset();
+
+        assert_eq!(machine.total_cycles(), 7, "CPU reset sequence restarts at seven cycles");
+        assert_eq!(machine.bus.cpu_cycle, 0, "bus mapper timing restarts with the CPU");
+        assert_eq!(machine.ppu_position(), (261, 0));
+        assert_eq!(machine.read_cpu(0x6000), 0xA9, "reset preserves cartridge RAM");
+    }
+
+    #[test]
     fn public_device_diagnostics_report_audio_rate_and_ppu_position() {
         let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
         assert_eq!(machine.audio_sample_rate(), 44_100);
