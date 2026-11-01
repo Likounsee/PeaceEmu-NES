@@ -1844,7 +1844,8 @@ mod dmc_register_conflict_regressions {
         let mut bus = dmc_bus();
         // From the PPU's pre-render origin, this reaches scanline 241 dot 1.
         bus.tick_ppu(242 * 341 + 1);
-        bus.write(0x2000, 0x80); // Enable NMI so the read also tests NMI cancellation.
+        bus.write(0x2000, 0x80); // Enable NMI while vblank is active.
+        assert!(bus.take_nmi_request(), "fixture must consume the initial vblank NMI edge");
         bus.write(0x4015, 0x10);
 
         bus.begin_cpu_instruction();
@@ -1853,6 +1854,8 @@ mod dmc_register_conflict_regressions {
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert_eq!(status & 0x80, 0,
             "the DMC halt/dummy reads must clear vblank before the resumed CPU read");
+        assert!(!bus.take_nmi_request(),
+            "the held PPUSTATUS read must cancel the queued vblank NMI edge");
         let held_reads: Vec<_> = bus.bus_trace().iter()
             .filter(|entry| entry.kind == CpuBusAccessKind::DmcRead)
             .map(|entry| entry.address)
