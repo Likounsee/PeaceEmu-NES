@@ -1436,7 +1436,7 @@ mod mmc1_timed_bus_write_regressions {
     fn console_reset_clears_mmc1_adjacent_write_filter_without_resetting_serial_state() {
         const BANK_LEN: usize = 16 * 1024;
         let mut image = vec![0; 16 + 8 * BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 8;
         image[6] = 0x10;
         for bank in 0..8usize {
