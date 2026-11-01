@@ -65,6 +65,8 @@ pub struct Apu {
     dmc_irq: bool,
     dmc_enabled: bool,
     dmc_bytes_remaining: u16,
+    // The first fetch after $4015/restart uses the shorter DMC load sequence.
+    dmc_initial_fetch: bool,
     dmc_current_address: u16,
     dmc_sample_buffer: Option<u8>,
     dmc_shift_register: u8,
@@ -115,6 +117,7 @@ impl Default for Apu {
             dmc_irq: false,
             dmc_enabled: false,
             dmc_bytes_remaining: 0,
+            dmc_initial_fetch: false,
             dmc_current_address: 0,
             dmc_sample_buffer: None,
             dmc_shift_register: 0,
@@ -525,10 +528,20 @@ impl Apu {
         } else { None }
     }
 
+    /// Returns the modeled DMA cost for the currently pending sample fetch.
+    ///
+    /// The first load after enabling/restarting DMC uses the three-cycle load
+    /// sequence; later sample-buffer refills use the four-cycle reload sequence.
+    /// GET/PUT alignment and delayed halts are still handled as an approximation.
+    pub(crate) const fn dmc_dma_stall_cycles(&self) -> u32 {
+        if self.dmc_initial_fetch { 3 } else { 4 }
+    }
+
     /// Supplies a byte fetched by the bus for the DMC sample buffer.
     pub fn supply_dmc_byte(&mut self, value: u8) {
         if self.dmc_sample_buffer.is_some() || self.dmc_bytes_remaining == 0 { return; }
         self.dmc_sample_buffer = Some(value);
+        self.dmc_initial_fetch = false;
         self.dmc_current_address = if self.dmc_current_address == 0xFFFF { 0x8000 } else { self.dmc_current_address + 1 };
         self.dmc_bytes_remaining -= 1;
         if self.dmc_bytes_remaining == 0 {
@@ -539,6 +552,7 @@ impl Apu {
 
     fn restart_dmc_sample(&mut self) {
         self.dmc_current_address = 0xC000 | (u16::from(self.registers[0x12]) << 6);
+        self.dmc_initial_fetch = true;
         self.dmc_bytes_remaining = u16::from(self.registers[0x13]) * 16 + 1;
     }
 
