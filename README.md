@@ -23,7 +23,7 @@ Le dépôt contient un cœur Rust fonctionnel en cours de développement : CPU R
 - APU avec génération audio approximative, séquenceur de frame et premier DMC.
 - Machine/session exposant frames, PCM, entrées et accès à la RAM batterie.
 
-**NES 2.0 n'est pas pris en charge de manière générale.** Le chemin NROM contient un décodage limité de certaines tailles NES 2.0, mais les autres implémentations de cartouches rejettent ce format. Ne pas annoncer une compatibilité NES 2.0 complète.
+**NES 2.0 est pris en charge partiellement, pas de manière générale.** Des chemins explicites existent pour NROM, MMC1, UxROM, CNROM, MMC3, Mapper 8, GxROM et Camerica, avec des limites de tailles ROM/RAM et de sous-mappers propres à chaque carte. Les autres mappers et variantes non explicitement gérés sont rejetés ; ne pas annoncer une compatibilité NES 2.0 complète.
 
 ## Vérifications locales
 
