@@ -1881,7 +1881,10 @@ impl Mmc2 {
             };
         }
         match address {
-            0x6000..=0x7FFF => Some(self.prg_ram[address as usize - 0x6000]),
+            0x6000..=0x7FFF if !self.prg_ram.is_empty() => {
+                Some(self.prg_ram[(address as usize - 0x6000) % self.prg_ram.len()])
+            }
+            0x6000..=0x7FFF => None,
             0x8000..=0x9FFF => Some(self.prg_rom[(self.prg_bank % self.prg_rom.len().div_ceil(0x2000)) * 0x2000 + address as usize - 0x8000]),
             0xA000..=0xBFFF => Some(self.prg_rom[self.prg_rom.len() - 3 * 0x2000 + address as usize - 0xA000]),
             0xC000..=0xDFFF => Some(self.prg_rom[self.prg_rom.len() - 2 * 0x2000 + address as usize - 0xC000]),
@@ -1893,12 +1896,12 @@ impl Mmc2 {
     /// Programs the PRG bank, four CHR latch banks, and nametable mirroring.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
-            0x6000..=0x7FFF => {
-                if let Some(byte) = self.prg_ram.get_mut(address as usize - 0x6000) {
-                    *byte = value;
-                    true
-                } else { false }
+            0x6000..=0x7FFF if !self.prg_ram.is_empty() => {
+                let index = (address as usize - 0x6000) % self.prg_ram.len();
+                self.prg_ram[index] = value;
+                true
             }
+            0x6000..=0x7FFF => false
             0xA000..=0xAFFF => { self.prg_bank = value as usize; true }
             0xB000..=0xBFFF => { self.chr_fd0 = value as usize; true }
             0xC000..=0xCFFF => { self.chr_fe0 = value as usize; true }
@@ -6060,8 +6063,8 @@ mod nes2_mapper_error_classification_regressions {
     }
 
     #[test]
-    fn known_legacy_only_nes2_mapper_reports_format_limitation() {
-        for mapper in [9, 10, 30] {
+    fn unsupported_legacy_only_nes2_mapper_reports_format_limitation() {
+        for mapper in [30] {
             let image = nes2_header(mapper);
             assert_eq!(
                 Cartridge::parse(&image),
