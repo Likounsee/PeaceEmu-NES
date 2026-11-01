@@ -789,30 +789,20 @@ mod tests {
         image[16 + 0x3FFB] = 0x90;
         let mut machine = NesMachine::from_ines(&image).unwrap();
 
-        // Enable PPU NMI output and advance from the reset pre-render line
-        // to VBlank's first dot. The edge must remain latched while DMA owns
-        // the CPU bus; OAM DMA itself must not consume the CPU's NMI request.
+        // Start at VBlank scanline 241 dot 0, one dot before the PPU raises
+        // its NMI edge. OAM DMA advances the PPU through that edge while the
+        // CPU is stalled, so the request must remain pending until step().
         machine.write_cpu(0x2000, 0x80);
-        machine.bus.tick_ppu(21 * 341 + 1);
-        assert!(machine.bus.take_nmi_request(),
-            "the fixture must reach the VBlank NMI edge");
-        // Recreate the pending edge so the following DMA can test its retention.
-        machine.write_cpu(0x2002, 0x00);
-        machine.write_cpu(0x2000, 0x80);
-        assert!(machine.bus.take_nmi_request(),
-            "re-enabling NMI during VBlank must create a fresh edge");
-        // Re-latch the edge via the PPU's NMI output transition, then let DMA run.
-        machine.write_cpu(0x2002, 0x00);
-        machine.write_cpu(0x2000, 0x80);
-
+        machine.bus.tick_ppu(21 * 341);
+        assert_eq!(machine.ppu_position(), (241, 0));
         machine.perform_oam_dma(0x02);
-        assert_eq!(machine.cpu_state().pc, 0x8000,
-            "OAM DMA must not enter an interrupt handler mid-transfer");
 
+        assert_eq!(machine.cpu_state().pc, 0x8000,
+            "OAM DMA must not execute the NMI handler while the CPU is stalled");
         let interrupt = machine.step().unwrap();
         assert_eq!(interrupt.cycles, 7);
         assert_eq!(machine.cpu_state().pc, 0x9000,
-            "the pending NMI must be serviced at the next CPU boundary");
+            "the PPU NMI edge raised during DMA must be serviced at the next CPU boundary");
     }
 
     #[test]
