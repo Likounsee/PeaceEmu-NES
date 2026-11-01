@@ -5436,7 +5436,7 @@ mod sprite_fetch_window_invalidation_regressions {
     #[test]
     fn sprite_slot_becomes_valid_only_after_both_plane_fetches_in_the_same_window() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut cartridge = Cartridge::parse(&image).unwrap();
         cartridge.ppu_write(0, 0x80);
