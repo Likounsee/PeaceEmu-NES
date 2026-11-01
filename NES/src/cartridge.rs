@@ -2149,7 +2149,14 @@ impl Cartridge {
             let mapper = ((image[6] >> 4) as u16)
                 | (image[7] & 0xF0) as u16
                 | (((image[8] & 0x0F) as u16) << 8);
-            if !matches!(mapper, 0 | 1 | 2 | 3 | 4 | 7 | 8 | 11 | 13 | 15 | 34 | 66 | 71 | 87) { return Err(CartridgeError::Nes2NotSupported); }
+            // Keep the error distinction useful to callers: an unknown mapper
+            // is not the same thing as a known board whose NES 2.0 variant is
+            // not implemented. MMC2/MMC4 (9/10) and UNROM-512 (30) are known
+            // legacy-only implementations and their parsers return
+            // Nes2NotSupported themselves.
+            if !matches!(mapper, 0 | 1 | 2 | 3 | 4 | 7 | 8 | 9 | 10 | 11 | 13 | 15 | 30 | 34 | 66 | 71 | 87) {
+                return Err(CartridgeError::UnsupportedMapper(mapper));
+            }
         }
         let mapper = if nes2 {
             ((image[6] >> 4) as u16)
@@ -6000,3 +6007,37 @@ mod nes2_bnrom_cprom_tests {
     }
 }
 
+
+
+
+#[cfg(test)]
+mod nes2_mapper_error_classification_regressions {
+    use super::*;
+
+    fn nes2_header(mapper: u16) -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[7] = 0x08 | ((mapper as u8) & 0xF0);
+        image[6] = ((mapper as u8) & 0x0F) << 4;
+        image[8] = ((mapper >> 8) as u8) & 0x0F;
+        image
+    }
+
+    #[test]
+    fn unknown_nes2_mapper_reports_its_mapper_number() {
+        let image = nes2_header(5);
+        assert_eq!(Cartridge::parse(&image), Err(CartridgeError::UnsupportedMapper(5)));
+    }
+
+    #[test]
+    fn known_legacy_only_nes2_mapper_reports_format_limitation() {
+        for mapper in [9, 10, 30] {
+            let image = nes2_header(mapper);
+            assert_eq!(
+                Cartridge::parse(&image),
+                Err(CartridgeError::Nes2NotSupported),
+                "mapper {mapper} is known but its NES 2.0 board variant is not implemented"
+            );
+        }
+    }
+}
