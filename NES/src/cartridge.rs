@@ -6016,7 +6016,7 @@ mod nes2_mapper_error_classification_regressions {
 
     fn nes2_header(mapper: u16) -> Vec<u8> {
         let mut image = vec![0; INES_HEADER_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[7] = 0x08 | ((mapper as u8) & 0xF0);
         image[6] = ((mapper as u8) & 0x0F) << 4;
         image[8] = ((mapper >> 8) as u8) & 0x0F;
