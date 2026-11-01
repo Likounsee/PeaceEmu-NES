@@ -9,6 +9,8 @@ use std::collections::VecDeque;
 #[derive(Debug)]
 struct PendingDmcDma {
     sample_address: u16,
+    halt_target_is_get: bool,
+    halt_attempted: bool,
     phases: VecDeque<DmcDmaPhase>,
 }
 
@@ -371,18 +373,44 @@ impl CpuBus {
         for _ in 0..cycles {
             self.apu.tick_cpu_cycles(1);
 
-            // A request may begin only on a readable CPU bus slot. Once halted,
-            // however, the DMC owns the following DMA phases until its GET finishes.
-            if self.pending_dmc_dma.is_none() && dma_can_halt {
+            // Capture a ready request independently of the current CPU access.
+            // Initial loads first target GET; later refills first target PUT.
+            if self.pending_dmc_dma.is_none() {
                 if let Some(sample_address) = self.apu.take_dmc_dma_request() {
-                    let phases = self.apu.dmc_dma_sequence().iter().copied().collect();
-                    self.pending_dmc_dma = Some(PendingDmcDma { sample_address, phases });
+                    self.pending_dmc_dma = Some(PendingDmcDma {
+                        sample_address,
+                        halt_target_is_get: self.apu.dmc_dma_halt_target_is_get(),
+                        halt_attempted: false,
+                        phases: VecDeque::new(),
+                    });
                 }
             }
 
-            // Never collapse the halt/dummy/alignment/GET sequence into one host
-            // callback: each phase consumes exactly one elapsed CPU cycle and
-            // produces its I/O side effects at that phase's timestamp.
+            // A DMC request waits for its hardware target phase. If the CPU is
+            // writing on that cycle, the halt fails and is retried every cycle
+            // until a read can be halted. The successful halt phase, not whether
+            // this is an initial load or a refill, determines alignment.
+            if let Some(pending) = self.pending_dmc_dma.as_mut() {
+                if pending.phases.is_empty() {
+                    if !self.apu.needs_dmc_bus_service() {
+                        self.pending_dmc_dma = None;
+                    } else {
+                        let halt_cycle_is_get = self.apu.dmc_cpu_cycle_is_get();
+                        let attempt_now = pending.halt_attempted
+                            || halt_cycle_is_get == pending.halt_target_is_get;
+                        if attempt_now {
+                            pending.halt_attempted = true;
+                            if dma_can_halt {
+                                pending.phases = Apu::dmc_dma_sequence(halt_cycle_is_get)
+                                    .iter().copied().collect();
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Each HALT/DUMMY/ALIGN/GET phase consumes one elapsed CPU cycle and
+            // repeats the halted CPU read on non-GET phases, including I/O side effects.
             let next_phase = self.pending_dmc_dma.as_mut().and_then(|pending| {
                 pending.phases.pop_front().map(|phase| (phase, pending.sample_address))
             });
