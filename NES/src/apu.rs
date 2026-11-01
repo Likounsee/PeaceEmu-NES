@@ -545,14 +545,25 @@ impl Apu {
         self.dmc_current_address = if self.dmc_current_address == 0xFFFF { 0x8000 } else { self.dmc_current_address + 1 };
         self.dmc_bytes_remaining -= 1;
         if self.dmc_bytes_remaining == 0 {
-            if self.registers[0x10] & 0x40 != 0 && self.dmc_enabled { self.restart_dmc_sample(); }
-            else if self.registers[0x10] & 0x80 != 0 { self.dmc_irq = true; }
+            if self.registers[0x10] & 0x40 != 0 && self.dmc_enabled {
+                // A loop restart is a subsequent buffer refill, not the initial
+                // enable-time load. Keep the four-cycle reload classification.
+                self.restart_dmc_loop();
+            } else if self.registers[0x10] & 0x80 != 0 {
+                self.dmc_irq = true;
+            }
         }
     }
 
     fn restart_dmc_sample(&mut self) {
-        self.dmc_current_address = 0xC000 | (u16::from(self.registers[0x12]) << 6);
+        self.restart_dmc_loop();
         self.dmc_initial_fetch = true;
+    }
+
+    /// Restarts the programmed sample address and length without changing DMA
+    /// classification. Looping samples use a normal four-cycle buffer refill.
+    fn restart_dmc_loop(&mut self) {
+        self.dmc_current_address = 0xC000 | (u16::from(self.registers[0x12]) << 6);
         self.dmc_bytes_remaining = u16::from(self.registers[0x13]) * 16 + 1;
     }
 
@@ -910,6 +921,32 @@ mod tests {
         assert_eq!(apu.take_dmc_dma_request(), None);
         apu.dmc_sample_buffer = None;
         assert_eq!(apu.take_dmc_dma_request(), Some(0x8000));
+    }
+
+    #[test]
+    fn dmc_loop_refill_uses_reload_cost_but_reenable_uses_initial_load_cost() {
+        let mut apu = Apu::new();
+        apu.write(0x4010, 0x40); // Loop, IRQ disabled.
+        apu.write(0x4012, 0x02);
+        apu.write(0x4013, 0x00); // One-byte sample.
+        apu.write(0x4015, 0x10);
+
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xC080));
+        assert_eq!(apu.dmc_dma_stall_cycles(), 3);
+        apu.supply_dmc_byte(0x5A);
+        assert_eq!(apu.dmc_dma_stall_cycles(), 4,
+            "the looped sample's next fetch is a reload, not a power-on load");
+
+        apu.tick_cpu_cycles(4_000);
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xC080));
+        assert_eq!(apu.dmc_dma_stall_cycles(), 4,
+            "loop restart must preserve the reload classification");
+
+        apu.write(0x4015, 0x00);
+        apu.write(0x4015, 0x10);
+        assert_eq!(apu.take_dmc_dma_request(), Some(0xC080));
+        assert_eq!(apu.dmc_dma_stall_cycles(), 3,
+            "disabling and enabling DMC starts a new initial load");
     }
 
     #[test]
