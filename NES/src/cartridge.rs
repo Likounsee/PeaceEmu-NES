@@ -237,23 +237,47 @@ pub struct Mmc1 {
 }
 
 impl Mmc1 {
-    /// Parses a legacy iNES MMC1 image with 2, 4, 8, 16 or 32 16-KiB PRG banks.
+    /// Parses iNES or NES 2.0 MMC1 images with up to 512 KiB PRG and 128 KiB CHR.
+    /// NES 2.0 submapper 0 is supported; unsupported board-specific variants are rejected.
     pub fn parse(image: &[u8]) -> Result<Self, CartridgeError> {
         if image.len() < INES_HEADER_LEN { return Err(CartridgeError::TruncatedHeader); }
-        if &image[0..4] != b"NES\x1A" { return Err(CartridgeError::InvalidMagic); }
-        if image[7] & 0x0C == 0x08 { return Err(CartridgeError::Nes2NotSupported); }
-        let mapper = ((image[6] >> 4) as u16)
-            | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 };
+        if &image[0..4] != b"NES\\x1A" { return Err(CartridgeError::InvalidMagic); }
+        let nes2 = image[7] & 0x0C == 0x08;
+        let mapper = if nes2 {
+            ((image[6] >> 4) as u16) | (image[7] & 0xF0) as u16
+                | (((image[8] & 0x0F) as u16) << 8)
+        } else {
+            ((image[6] >> 4) as u16)
+                | if image[7] & 0x0C == 0 { (image[7] & 0xF0) as u16 } else { 0 }
+        };
         if mapper != 1 { return Err(CartridgeError::UnsupportedMapper(mapper)); }
+        if nes2 && image[8] >> 4 != 0 { return Err(CartridgeError::Nes2NotSupported); }
 
-        let prg_len = image[4] as usize * PRG_BANK_LEN;
-        if !matches!(image[4], 2 | 4 | 8 | 16 | 32) {
+        let prg_len = if nes2 { nes2_rom_size(image[4], image[9] & 0x0F, PRG_BANK_LEN) }
+            else { image[4] as usize * PRG_BANK_LEN };
+        if prg_len < 2 * PRG_BANK_LEN || prg_len > 32 * PRG_BANK_LEN
+            || prg_len % PRG_BANK_LEN != 0 {
             return Err(CartridgeError::InvalidPrgSize(prg_len));
         }
-        let chr_len = image[5] as usize * CHR_BANK_LEN;
+        let chr_len = if nes2 { nes2_rom_size(image[5], image[9] >> 4, CHR_BANK_LEN) }
+            else { image[5] as usize * CHR_BANK_LEN };
         if chr_len > 16 * CHR_BANK_LEN {
             return Err(CartridgeError::InvalidChrSize(chr_len));
         }
+        let declared_prg_ram_len = if nes2 {
+            nes2_ram_size(image[10] & 0x0F).saturating_add(nes2_ram_size(image[10] >> 4))
+        } else { PRG_RAM_LEN };
+        if nes2 && declared_prg_ram_len > PRG_RAM_LEN {
+            return Err(CartridgeError::Nes2NotSupported);
+        }
+        let declared_chr_ram_len = if nes2 {
+            nes2_ram_size(image[11] & 0x0F).saturating_add(nes2_ram_size(image[11] >> 4))
+        } else if chr_len == 0 { CHR_BANK_LEN } else { 0 };
+        if nes2 && (declared_chr_ram_len > 16 * CHR_BANK_LEN
+            || (chr_len != 0 && declared_chr_ram_len != 0)) {
+            return Err(CartridgeError::Nes2NotSupported);
+        }
+
         let trainer_len = if image[6] & 0x04 != 0 { TRAINER_LEN } else { 0 };
         let expected = INES_HEADER_LEN + trainer_len + prg_len + chr_len;
         if image.len() < expected {
@@ -261,13 +285,14 @@ impl Mmc1 {
         }
         let prg_start = INES_HEADER_LEN + trainer_len;
         let chr_start = prg_start + prg_len;
-        let mut prg_ram = vec![0; PRG_RAM_LEN];
+        let prg_ram_len = declared_prg_ram_len.max(if trainer_len != 0 { PRG_RAM_LEN } else { 0 });
+        let mut prg_ram = vec![0; prg_ram_len];
         if trainer_len != 0 {
             prg_ram[0x1000..0x1200].copy_from_slice(&image[INES_HEADER_LEN..INES_HEADER_LEN + TRAINER_LEN]);
         }
-        let chr_is_ram = chr_len == 0;
-        let chr = if chr_is_ram { vec![0; CHR_BANK_LEN] }
-            else { image[chr_start..chr_start + chr_len].to_vec() };
+        let chr_is_ram = chr_len == 0 && declared_chr_ram_len != 0;
+        let chr = if chr_len != 0 { image[chr_start..chr_start + chr_len].to_vec() }
+            else { vec![0; declared_chr_ram_len] };
         Ok(Self {
             prg_rom: image[prg_start..chr_start].to_vec(),
             prg_ram,
@@ -400,12 +425,12 @@ impl Mmc1 {
     pub fn chr_is_ram(&self) -> bool { self.chr_is_ram }
     /// Reads the selected 4-KiB CHR bank from the PPU pattern address space.
     pub fn ppu_read(&self, address: u16) -> Option<u8> {
-        if address >= 0x2000 { return None; }
+        if address >= 0x2000 || self.chr.is_empty() { return None; }
         Some(self.chr[self.chr_index(address)])
     }
     /// Writes pattern memory when the cartridge uses CHR-RAM.
     pub fn ppu_write(&mut self, address: u16, value: u8) -> bool {
-        if address >= 0x2000 || !self.chr_is_ram { return false; }
+        if address >= 0x2000 || !self.chr_is_ram || self.chr.is_empty() { return false; }
         let index = self.chr_index(address);
         self.chr[index] = value;
         true
@@ -2761,6 +2786,75 @@ mod mmc1_tests {
 
     fn serial_write(cart: &mut Cartridge, address: u16, value: u8) {
         for bit in 0..5 { assert!(cart.cpu_write(address, (value >> bit) & 1)); }
+    }
+
+    fn nes2_mmc1(prg_banks: u8, chr_banks: u8) -> Vec<u8> {
+        let mut image = vec![0; INES_HEADER_LEN + prg_banks as usize * PRG_BANK_LEN + chr_banks as usize * CHR_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = prg_banks;
+        image[5] = chr_banks;
+        image[6] = 0x10;
+        image[7] = 0x08;
+        for bank in 0..prg_banks as usize {
+            image[INES_HEADER_LEN + bank * PRG_BANK_LEN..INES_HEADER_LEN + (bank + 1) * PRG_BANK_LEN].fill(bank as u8);
+        }
+        image
+    }
+
+    #[test]
+    fn nes2_mmc1_supports_declared_prg_ram_and_chr_ram() {
+        let mut image = nes2_mmc1(4, 0);
+        image[10] = 7;
+        image[11] = 11;
+        let mut cart = Cartridge::parse(&image).unwrap();
+        assert!(matches!(cart, Cartridge::Mmc1(_)));
+        assert_eq!(cart.cpu_read(0x8000), Some(0));
+        assert!(cart.cpu_write(0x6000, 0xA5));
+        assert_eq!(cart.cpu_read(0x6000), Some(0xA5));
+        assert!(cart.ppu_write(0x0000, 0x51));
+        assert_eq!(cart.ppu_read(0x0000), Some(0x51));
+        serial_write(&mut cart, 0x8000, 0x1C);
+        serial_write(&mut cart, 0xA000, 0x1F);
+        assert_eq!(cart.ppu_read(0x0000), Some(0x51));
+    }
+
+    #[test]
+    fn nes2_mmc1_supports_extended_chr_rom_banking() {
+        let mut image = nes2_mmc1(2, 16);
+        let chr_start = INES_HEADER_LEN + 2 * PRG_BANK_LEN;
+        for bank in 0..32 {
+            image[chr_start + bank * 0x1000..chr_start + (bank + 1) * 0x1000].fill(bank as u8);
+        }
+        let mut cart = Cartridge::parse(&image).unwrap();
+        serial_write(&mut cart, 0x8000, 0x1C);
+        serial_write(&mut cart, 0xA000, 0x1F);
+        serial_write(&mut cart, 0xC000, 0x1E);
+        assert_eq!(cart.ppu_read(0x0000), Some(31));
+        assert_eq!(cart.ppu_read(0x1000), Some(30));
+    }
+
+    #[test]
+    fn nes2_mmc1_rejects_unsupported_submappers_and_invalid_memory_layouts() {
+        let mut image = nes2_mmc1(2, 0);
+        image[8] = 0x10;
+        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
+        let mut image = nes2_mmc1(2, 0);
+        image[10] = 8;
+        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
+        let mut image = nes2_mmc1(2, 0);
+        image[11] = 15;
+        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
+        let mut image = nes2_mmc1(2, 1);
+        image[11] = 7;
+        assert!(matches!(Cartridge::parse(&image), Err(CartridgeError::Nes2NotSupported)));
+    }
+
+    #[test]
+    fn nes2_mmc1_leaves_undeclared_chr_memory_unmapped() {
+        let image = nes2_mmc1(2, 0);
+        let cart = Cartridge::parse(&image).unwrap();
+        assert_eq!(cart.ppu_read(0), None);
+        assert!(!cart.chr_is_ram());
     }
 
     #[test]
