@@ -1820,3 +1820,88 @@ mod dmc_in_flight_disable_regressions {
             "disabling DMC must prevent a new transfer from starting");
     }
 }
+
+
+#[cfg(test)]
+mod dmc_register_conflict_regressions {
+    use super::*;
+
+    fn dmc_bus() -> CpuBus {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16] = 0xA5;
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.write(0x4010, 0x00);
+        bus.write(0x4012, 0x00);
+        bus.write(0x4013, 0x00);
+        bus
+    }
+
+    #[test]
+    fn dmc_held_reads_of_ppustatus_clear_vblank_before_cpu_resumes() {
+        let mut bus = dmc_bus();
+        // From the PPU's pre-render origin, this reaches scanline 241 dot 1.
+        bus.tick_ppu(242 * 341 + 1);
+        bus.write(0x2000, 0x80); // Enable NMI so the read also tests NMI cancellation.
+        bus.write(0x4015, 0x10);
+
+        bus.begin_cpu_instruction();
+        let status = bus.read(0x2002);
+        assert_eq!(bus.take_instruction_dmc_stalls(), 3);
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        assert_eq!(status & 0x80, 0,
+            "the DMC halt/dummy reads must clear vblank before the resumed CPU read");
+        assert!(!bus.nmi_pending(),
+            "a held PPUSTATUS read must lower the vblank NMI line as well");
+        let held_reads: Vec<_> = bus.bus_trace().iter()
+            .filter(|entry| entry.kind == CpuBusAccessKind::DmcRead)
+            .map(|entry| entry.address)
+            .collect();
+        assert_eq!(held_reads, [0x2002, 0x2002, 0xC000]);
+    }
+
+    #[test]
+    fn dmc_held_reads_of_apu_status_acknowledge_frame_irq() {
+        let mut bus = dmc_bus();
+        bus.write(0x4017, 0x00);
+        bus.tick_apu(14_919);
+        assert!(bus.irq_pending(), "fixture must have a pending frame IRQ");
+        bus.write(0x4015, 0x10);
+
+        bus.begin_cpu_instruction();
+        let status = bus.read(0x4015);
+        assert_eq!(bus.take_instruction_dmc_stalls(), 3);
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        assert_eq!(status & 0x40, 0,
+            "the DMC-held $4015 reads acknowledge the frame IRQ before the CPU resumes");
+        assert!(!bus.irq_pending(),
+            "reading $4015 during a DMC halt must clear the frame IRQ line");
+        let held_reads: Vec<_> = bus.bus_trace().iter()
+            .filter(|entry| entry.kind == CpuBusAccessKind::DmcRead)
+            .map(|entry| entry.address)
+            .collect();
+        assert_eq!(held_reads, [0x4015, 0x4015, 0xC000]);
+    }
+
+    #[test]
+    fn disabling_dmc_before_a_cpu_read_aborts_the_unstarted_halt_request() {
+        let mut bus = dmc_bus();
+        bus.write(0x4015, 0x10);
+        bus.begin_cpu_instruction();
+        bus.write(0x0000, 0x11);
+        bus.write(0x0001, 0x22);
+        assert_eq!(bus.take_instruction_dmc_stalls(), 0,
+            "DMC must not halt during either CPU write");
+        bus.write(0x4015, 0x00);
+        let _ = bus.read(0x0002);
+        assert_eq!(bus.take_instruction_dmc_stalls(), 0,
+            "disabling the channel before a successful HALT must cancel the request");
+        assert_eq!(bus.end_cpu_instruction(), 4);
+        assert!(bus.pending_dmc_dma.is_none(),
+            "an aborted pre-HALT request must release the DMA arbiter");
+        assert!(!bus.bus_trace().iter().any(|entry| entry.kind == CpuBusAccessKind::DmcRead),
+            "an aborted request must not perform dummy or sample reads");
+    }
+}
