@@ -1853,7 +1853,7 @@ mod dmc_register_conflict_regressions {
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert_eq!(status & 0x80, 0,
             "the DMC halt/dummy reads must clear vblank before the resumed CPU read");
-        assert!(!bus.nmi_pending(),
+        assert!(!bus.take_nmi_request(),
             "a held PPUSTATUS read must lower the vblank NMI line as well");
         let held_reads: Vec<_> = bus.bus_trace().iter()
             .filter(|entry| entry.kind == CpuBusAccessKind::DmcRead)
