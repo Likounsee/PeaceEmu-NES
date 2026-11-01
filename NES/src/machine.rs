@@ -955,10 +955,10 @@ mod tests {
 
         let result = machine.step().unwrap();
         assert_eq!(result.cycles, 2, "StepResult reports the opcode's nominal cycles");
-        assert_eq!(machine.total_cycles() - before_cycles, 6, "the four-cycle DMC DMA stall must be included in elapsed CPU time");
+        assert_eq!(machine.total_cycles() - before_cycles, 5, "the three-cycle initial DMC DMA load must be included in elapsed CPU time");
         let after_position = machine.bus.ppu_position();
         assert_eq!(after_position.0, before_position.0);
-        assert_eq!(after_position.1 - before_position.1, 18, "the PPU must advance three dots for each of six elapsed CPU cycles");
+        assert_eq!(after_position.1 - before_position.1, 15, "the PPU must advance three dots for each of five elapsed CPU cycles");
     }
 
     #[test]
