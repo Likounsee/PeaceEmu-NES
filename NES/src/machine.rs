@@ -1,6 +1,6 @@
 //! Small top-level NES machine wrapper for loading and stepping cartridge programs.
 
-use crate::bus::{CpuBus, CpuBusTraceEntry};
+use crate::bus::{CpuBus, CpuBusAccessKind, CpuBusTraceEntry};
 use crate::cartridge::{Cartridge, CartridgeError};
 use crate::cpu::{Cpu, CpuError, CpuState, StepResult};
 use core::fmt;
