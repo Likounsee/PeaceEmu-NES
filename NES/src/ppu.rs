@@ -1313,6 +1313,11 @@ impl Ppu {
         if self.mask & 0x01 != 0 { color & 0x30 } else { color & 0x3F }
     }
 
+    /// Returns PPUMASK's NTSC color-emphasis bits (red, green, blue).
+    /// The indexed framebuffer intentionally remains a six-bit palette image;
+    /// frontends can apply these output-stage channel attenuations when converting it.
+    pub(crate) fn color_emphasis(&self) -> u8 { (self.mask >> 5) & 0x07 }
+
     /// Returns the most recently rendered 256x240 image as NES palette indices.
     pub fn framebuffer(&self) -> &[u8] { &self.framebuffer }
 
