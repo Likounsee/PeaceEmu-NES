@@ -555,10 +555,13 @@ mod tests {
         machine.perform_oam_dma(0x02);
         let elapsed = machine.total_cycles() - before;
 
-        assert!(elapsed >= 514 + 7,
-            "the initial three-cycle DMC load and at least one four-cycle reload should steal OAM get cycles; elapsed={elapsed}");
-        assert_eq!((elapsed - 514 - 3) % 4, 0,
-            "the initial DMC load costs three cycles and each subsequent reload costs four");
+        assert!(elapsed >= 516,
+            "the initial DMC GET must delay the first OAM GET and force realignment; elapsed={elapsed}");
+        let sample_gets = machine.bus.bus_trace().iter().filter(|entry| {
+            entry.kind == CpuBusAccessKind::DmcRead && entry.address >= 0x8000
+        }).count();
+        assert!(sample_gets >= 2,
+            "the output unit must empty its first byte and request a later sample refill; GETs={sample_gets}");
 
         for offset in 0..=u8::MAX {
             machine.bus.write(0x2003, offset);
@@ -585,16 +588,41 @@ mod tests {
         let before = machine.total_cycles();
         machine.perform_oam_dma(0x02);
         let elapsed = machine.total_cycles() - before;
-        assert!(elapsed >= 514 + 3 + 4,
-            "the looped sample must perform an initial load and a later reload; elapsed={elapsed}");
-        assert_eq!((elapsed - 514 - 3) % 4, 0,
-            "every post-initial loop refill must use the four-cycle reload cost");
+        assert!(elapsed >= 516,
+            "the initial DMC GET collision must delay OAM and trigger realignment; elapsed={elapsed}");
+        let sample_gets = machine.bus.bus_trace().iter().filter(|entry| {
+            entry.kind == CpuBusAccessKind::DmcRead && entry.address == 0xC000
+        }).count();
+        assert!(sample_gets >= 2,
+            "the looping sample must be fetched again after its first byte is consumed; GETs={sample_gets}");
 
         for offset in 0..=u8::MAX {
             machine.bus.write(0x2003, offset);
             assert_eq!(machine.bus.read(0x2004), offset.wrapping_mul(19) ^ 0x73,
                 "looped DMC arbitration must preserve OAM byte {offset}");
         }
+    }
+
+    #[test]
+    fn dmc_get_overlapping_oam_put_does_not_extend_the_oam_transfer() {
+        let mut machine = NesMachine::from_ines(&nrom_with_program(&[0xEA])).unwrap();
+        machine.bus.write(0x4010, 0x00);
+        machine.bus.write(0x4012, 0x00);
+        machine.bus.write(0x4013, 0x00);
+        machine.bus.write(0x4015, 0x10);
+        machine.bus.tick_apu_with_dma_access(1, false);
+
+        // Reset leaves the CPU at cycle 7. One idle cycle makes the OAM
+        // halt slot the only initial slot, so the DMC sequence is:
+        // OAM Halt / DMC Halt, OAM Get / DMC Dummy, OAM Put / DMC Get.
+        machine.cpu.add_stall_cycles(1);
+        let before = machine.total_cycles();
+        machine.perform_oam_dma(0x02);
+
+        assert_eq!(machine.total_cycles() - before, 513,
+            "a DMC sample GET can share an OAM PUT cycle without delaying OAM");
+        assert_eq!(machine.bus.read(0x4015) & 0x10, 0,
+            "the overlapping DMC sample GET must still complete");
     }
 
     #[test]
