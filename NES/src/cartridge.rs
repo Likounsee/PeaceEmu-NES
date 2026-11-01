@@ -181,7 +181,7 @@ impl Nrom {
         match address {
             0x6000..=0x7FFF if !self.prg_ram.is_empty() => {
                 Some(self.prg_ram[(address as usize - 0x6000) % self.prg_ram.len()])
-            }
+            },
             0x6000..=0x7FFF => None,
             0x8000..=0xFFFF => Some(self.prg_rom[(address as usize - 0x8000) % self.prg_rom.len()]),
             _ => None,
