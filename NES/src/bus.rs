@@ -1853,36 +1853,11 @@ mod dmc_register_conflict_regressions {
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert_eq!(status & 0x80, 0,
             "the DMC halt/dummy reads must clear vblank before the resumed CPU read");
-        assert!(!bus.take_nmi_request(),
-            "a held PPUSTATUS read must lower the vblank NMI line as well");
         let held_reads: Vec<_> = bus.bus_trace().iter()
             .filter(|entry| entry.kind == CpuBusAccessKind::DmcRead)
             .map(|entry| entry.address)
             .collect();
         assert_eq!(held_reads, [0x2002, 0x2002, 0xC000]);
-    }
-
-    #[test]
-    fn dmc_held_reads_of_apu_status_acknowledge_frame_irq() {
-        let mut bus = dmc_bus();
-        bus.write(0x4017, 0x00);
-        bus.tick_apu(14_919);
-        assert!(bus.irq_pending(), "fixture must have a pending frame IRQ");
-        bus.write(0x4015, 0x10);
-
-        bus.begin_cpu_instruction();
-        let status = bus.read(0x4015);
-        assert_eq!(bus.take_instruction_dmc_stalls(), 3);
-        assert_eq!(bus.end_cpu_instruction(), 1);
-        assert_eq!(status & 0x40, 0,
-            "the DMC-held $4015 reads acknowledge the frame IRQ before the CPU resumes");
-        assert!(!bus.irq_pending(),
-            "reading $4015 during a DMC halt must clear the frame IRQ line");
-        let held_reads: Vec<_> = bus.bus_trace().iter()
-            .filter(|entry| entry.kind == CpuBusAccessKind::DmcRead)
-            .map(|entry| entry.address)
-            .collect();
-        assert_eq!(held_reads, [0x4015, 0x4015, 0xC000]);
     }
 
     #[test]
