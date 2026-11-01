@@ -421,6 +421,32 @@ mod tests {
     }
 
     #[test]
+    fn dmc_dummy_reads_repeat_ppudata_side_effects_before_the_resumed_cpu_read() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(Cartridge::parse(&image).unwrap());
+        bus.ppu.v = 0x2000;
+        bus.ppu.read_buffer = 0x11;
+        bus.ppu.nametables[0] = 0x22;
+        bus.ppu.nametables[1] = 0x33;
+        bus.ppu.nametables[2] = 0x44;
+
+        bus.write(0x4010, 0x00);
+        bus.write(0x4012, 0x00);
+        bus.write(0x4013, 0x00);
+        bus.write(0x4015, 0x10);
+
+        let _ = bus.read(0x2007);
+
+        assert_eq!(bus.ppu.v, 0x2003,
+            "two DMC held-address reads and the resumed CPU read each increment PPUDATA");
+        assert_eq!(bus.ppu.read_buffer, 0x44,
+            "the final PPUDATA dummy/read sequence must leave the third fetched byte buffered");
+    }
+
+    #[test]
     fn dmc_dma_waits_through_cpu_writes_and_halts_on_the_next_read() {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
