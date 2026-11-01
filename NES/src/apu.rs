@@ -2226,10 +2226,10 @@ mod dmc_disable_output_regressions {
             "the output unit must still consume its already-buffered byte");
         assert_eq!(apu.dmc_shift_register, 0xFF);
         assert!(!apu.dmc_silence);
-        assert_eq!(apu.dmc_output_level, 64,
-            "the first loaded one-bit has not been clocked into the DAC yet");
+        assert_eq!(apu.dmc_output_level, 62,
+            "the final zero from the previous shift register is clocked before the buffered byte loads");
         apu.tick_cpu_cycles(54);
-        assert_eq!(apu.dmc_output_level, 66,
+        assert_eq!(apu.dmc_output_level, 64,
             "the output unit continues clocking a buffered sample after $4015 disables new fetches");
     }
 
