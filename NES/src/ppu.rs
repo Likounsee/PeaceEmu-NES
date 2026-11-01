@@ -22,6 +22,8 @@ pub struct Ppu {
     sprite_pattern_low: [u8; 8],
     sprite_pattern_high: [u8; 8],
     sprite_pattern_valid: [bool; 8],
+    /// Low-plane reads completed in the current sprite-fetch window.
+    sprite_pattern_low_valid: [bool; 8],
     /// Per-slot X countdowns and live pattern shifters for pixel composition.
     sprite_x_counter: [u8; 8],
     sprite_shift_low: [u8; 8],
@@ -99,6 +101,7 @@ impl Default for Ppu {
             sprite_line_count: 0,
             sprite_pattern_low: [0; 8], sprite_pattern_high: [0; 8],
             sprite_pattern_valid: [false; 8],
+            sprite_pattern_low_valid: [false; 8],
             sprite_x_counter: [0; 8], sprite_shift_low: [0; 8], sprite_shift_high: [0; 8],
             sprite_line: u16::MAX,
             eval_n: 0, eval_n_steps: 0, eval_m: 0, eval_latch: 0xFF, eval_copying: false, eval_copy_byte: 0,
@@ -852,6 +855,7 @@ impl Ppu {
         // from the preceding scanline before the current line has fetched them.
         if self.dot == 257 {
             self.sprite_pattern_valid = [false; 8];
+            self.sprite_pattern_low_valid = [false; 8];
         }
         if self.mask & 0x18 == 0 || !(257..=320).contains(&self.dot) {
             return;
@@ -869,6 +873,7 @@ impl Ppu {
         let address = self.sprite_pattern_address(sprite[1] as usize, sprite[2], row);
         if phase == 4 {
             self.sprite_pattern_low[slot] = self.mem_read(address, cartridge);
+            self.sprite_pattern_low_valid[slot] = true;
         } else {
             let high = self.mem_read(address + 8, cartridge);
             self.sprite_pattern_high[slot] = high;
@@ -881,7 +886,11 @@ impl Ppu {
                 self.sprite_shift_low[slot] = self.sprite_pattern_low[slot];
                 self.sprite_shift_high[slot] = high;
             }
-            self.sprite_pattern_valid[slot] = true;
+            // A high-plane fetch alone cannot make this slot usable: if rendering
+            // was enabled after phase 4, the low byte still belongs to an older
+            // scanline (or power-on state). Publish the pair only after both reads
+            // have occurred in this fetch window.
+            self.sprite_pattern_valid[slot] = self.sprite_pattern_low_valid[slot];
         }
     }
 
@@ -5396,6 +5405,63 @@ mod sprite_fetch_window_invalidation_regressions {
         assert_eq!(ppu.position(), (261, 257));
         assert_eq!(ppu.sprite_pattern_valid, [false; 8],
             "line-zero sprite output must never inherit stale fetch validity from an earlier frame");
+    }
+
+    #[test]
+    fn enabling_rendering_after_low_plane_fetch_does_not_publish_a_stale_sprite_pair() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 12;
+        ppu.dot = 256;
+        ppu.mask = 0;
+        ppu.sprite_pattern_low[0] = 0xFF;
+        ppu.sprite_pattern_high[0] = 0x00;
+        ppu.sprite_pattern_valid[0] = true;
+
+        // Dot 257 starts a new fetch window while rendering is disabled.
+        ppu.tick(1);
+        assert!(!ppu.sprite_pattern_valid[0]);
+        assert!(!ppu.sprite_pattern_low_valid[0]);
+
+        // Enabling at dot 263 performs only the high-plane read for slot zero.
+        ppu.mask = 0x10;
+        ppu.dot = 262;
+        ppu.tick(1);
+
+        assert_eq!(ppu.position(), (12, 263));
+        assert!(!ppu.sprite_pattern_valid[0],
+            "a high-plane byte must not validate a slot whose low-plane fetch was skipped");
+        assert_eq!(ppu.fetched_sprite_pixel(0, 0, 0), None);
+    }
+
+    #[test]
+    fn sprite_slot_becomes_valid_only_after_both_plane_fetches_in_the_same_window() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        cartridge.ppu_write(0, 0x80);
+        cartridge.ppu_write(8, 0x40);
+
+        let mut ppu = Ppu::new();
+        ppu.scanline = 261;
+        ppu.dot = 256;
+        ppu.mask = 0x10;
+        ppu.tick(1); // Reset per-window plane validity at dot 257.
+
+        ppu.dot = 260;
+        ppu.tick(1); // Dot 261: low plane.
+        assert!(ppu.sprite_pattern_low_valid[0]);
+        assert!(!ppu.sprite_pattern_valid[0]);
+
+        ppu.mask = 0;
+        ppu.dot = 262;
+        ppu.tick(1); // Dot 263: high plane is not fetched.
+        assert!(!ppu.sprite_pattern_valid[0]);
+
+        ppu.mask = 0x10;
+        ppu.dot = 263;
+        ppu.tick(1); // Dot 264 is not another high-plane fetch.
+        assert!(!ppu.sprite_pattern_valid[0]);
     }
 
     #[test]
