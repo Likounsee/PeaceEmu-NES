@@ -181,7 +181,7 @@ impl Nrom {
         match address {
             0x6000..=0x7FFF if !self.prg_ram.is_empty() => {
                 Some(self.prg_ram[(address as usize - 0x6000) % self.prg_ram.len()])
-            },
+            }
             0x6000..=0x7FFF => None,
             0x8000..=0xFFFF => Some(self.prg_rom[(address as usize - 0x8000) % self.prg_rom.len()]),
             _ => None,
@@ -1638,12 +1638,12 @@ impl Camerica {
     /// Writes PRG-RAM or selects the PRG bank; $9000 writes select one-screen mirroring.
     pub fn cpu_write(&mut self, address: u16, value: u8) -> bool {
         match address {
-            0x6000..=0x7FFF if !self.prg_ram.is_empty() => {
-                let index = (address as usize - 0x6000) % self.prg_ram.len();
-                self.prg_ram[index] = value;
-                true
-            }
-            0x6000..=0x7FFF => false,
+            0x6000..=0x7FFF => {
+                if let Some(byte) = self.prg_ram.get_mut(address as usize - 0x6000) {
+                    *byte = value;
+                    true
+                } else { false }
+            },
             0x9000..=0x9FFF => {
                 self.selected_prg_bank = (value & 0x0F) as usize % (self.prg_rom.len() / PRG_BANK_LEN - 1);
                 self.mirroring = if value & 0x10 != 0 { Mirroring::OneScreenUpper } else { Mirroring::OneScreenLower };
