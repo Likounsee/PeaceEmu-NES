@@ -5,6 +5,13 @@ use crate::cartridge::Cartridge;
 use crate::ppu::Ppu;
 use std::collections::VecDeque;
 
+/// A DMC transfer whose bus phases are serviced on separate CPU cycles.
+#[derive(Debug)]
+struct PendingDmcDma {
+    sample_address: u16,
+    phases: VecDeque<DmcDmaPhase>,
+}
+
 /// Kind of decoded CPU-address-space transaction recorded by the optional bus trace.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CpuBusAccessKind {
@@ -54,11 +61,13 @@ pub struct CpuBus {
     cpu_bus_address: u16,
     /// DMC stalls discovered while the instruction's bus accesses clock the APU.
     instruction_dmc_stalls: u32,
+    /// In-flight DMC transfer; one phase is serviced per elapsed CPU cycle.
+    pending_dmc_dma: Option<PendingDmcDma>,
     /// Bounded diagnostic history; oldest entries are discarded when full.
     bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, bus_trace: VecDeque::with_capacity(2048) } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, pending_dmc_dma: None, bus_trace: VecDeque::with_capacity(2048) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -83,6 +92,7 @@ impl CpuBus {
         self.instruction_timing = false;
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
+        self.pending_dmc_dma = None;
         self.bus_trace.clear();
         // Keep the absolute CPU timeline monotonic: MMC1 consecutive-write
         // suppression and delayed APU events compare absolute cycle numbers.
@@ -332,28 +342,36 @@ impl CpuBus {
         let mut stall_cycles = 0u32;
         for _ in 0..cycles {
             self.apu.tick_cpu_cycles(1);
-            if dma_can_halt {
-                if let Some(address) = self.apu.take_dmc_dma_request() {
-                    let sequence = self.apu.dmc_dma_sequence();
-                    // Execute the explicit halt/dummy/alignment slots against the
-                    // held CPU address. Their I/O side effects are observable on
-                    // $2007, $4015 and controller ports. Only the final GET reads
-                    // the DMC sample address.
-                    let mut sample = None;
-                    for phase in sequence {
-                        match phase {
-                            DmcDmaPhase::Halt | DmcDmaPhase::Dummy | DmcDmaPhase::Align => {
-                                let _ = self.read_dmc_dma_source(self.cpu_bus_address);
-                            }
-                            DmcDmaPhase::Get => {
-                                sample = Some(self.read_dmc_dma_source(address));
-                            }
+
+            // A request may begin only on a readable CPU bus slot. Once halted,
+            // however, the DMC owns the following DMA phases until its GET finishes.
+            if self.pending_dmc_dma.is_none() && dma_can_halt {
+                if let Some(sample_address) = self.apu.take_dmc_dma_request() {
+                    let phases = self.apu.dmc_dma_sequence().iter().copied().collect();
+                    self.pending_dmc_dma = Some(PendingDmcDma { sample_address, phases });
+                }
+            }
+
+            // Never collapse the halt/dummy/alignment/GET sequence into one host
+            // callback: each phase consumes exactly one elapsed CPU cycle and
+            // produces its I/O side effects at that phase's timestamp.
+            if let Some(pending) = self.pending_dmc_dma.as_mut() {
+                if let Some(phase) = pending.phases.pop_front() {
+                    let address = match phase {
+                        DmcDmaPhase::Halt | DmcDmaPhase::Dummy | DmcDmaPhase::Align => {
+                            self.cpu_bus_address
                         }
-                    }
-                    if let Some(value) = sample {
+                        DmcDmaPhase::Get => pending.sample_address,
+                    };
+                    let is_get = phase == DmcDmaPhase::Get;
+                    let value = self.read_dmc_dma_source(address);
+                    if is_get {
                         self.apu.supply_dmc_byte(value);
                     }
-                    stall_cycles = stall_cycles.saturating_add(sequence.len() as u32);
+                    stall_cycles = stall_cycles.saturating_add(1);
+                }
+                if pending.phases.is_empty() {
+                    self.pending_dmc_dma = None;
                 }
             }
         }
