@@ -5465,6 +5465,44 @@ mod sprite_fetch_window_invalidation_regressions {
     }
 
     #[test]
+    fn complete_sprite_fetch_window_validates_all_eight_slots_after_both_planes() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 256;
+        ppu.mask = 0x10;
+        for slot in 0..8 {
+            // Y=0 places each sprite on scanline zero; tile and X are unique
+            // so every slot follows its own pair of fetch phases.
+            ppu.sprite_line_oam[slot] = [0, slot as u8, 0, (slot * 8) as u8];
+        }
+
+        ppu.tick(64); // Dots 257-320, including both pattern reads per slot.
+
+        assert_eq!(ppu.position(), (0, 320));
+        assert_eq!(ppu.sprite_pattern_low_valid, [true; 8],
+            "each slot must complete its low-plane fetch");
+        assert_eq!(ppu.sprite_pattern_valid, [true; 8],
+            "a complete fetch window must publish every slot only after its high-plane read");
+    }
+
+    #[test]
+    fn sprite_fetch_can_begin_after_rendering_is_enabled_mid_window() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 24;
+        ppu.dot = 256;
+        ppu.mask = 0;
+        ppu.tick(4); // Dots 257-260: slot zero's early fetch phases were missed.
+
+        ppu.mask = 0x10;
+        ppu.tick(4); // Dots 261-264: both pattern reads for slot zero still occur.
+
+        assert_eq!(ppu.position(), (24, 264));
+        assert!(ppu.sprite_pattern_low_valid[0]);
+        assert!(ppu.sprite_pattern_valid[0],
+            "the slot is usable when both pattern-plane fetch phases actually occurred after enable");
+    }
+
+    #[test]
     fn enabled_sprite_fetch_window_still_invalidates_before_fetching_each_slot() {
         let mut ppu = Ppu::new();
         ppu.scanline = 12;
