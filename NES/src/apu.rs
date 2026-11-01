@@ -1022,24 +1022,24 @@ mod tests {
         apu.write(0x4013, 0x00); // One-byte sample.
         apu.write(0x4015, 0x10);
 
-        assert_eq!(apu.take_dmc_dma_request(), None);
+        assert_eq!(apu.take_dmc_dma_request_for_bus(), None);
         apu.tick_cpu_cycles(2);
-        assert_eq!(apu.take_dmc_dma_request(), Some(0xC080));
+        assert_eq!(apu.take_dmc_dma_request_for_bus(), Some(0xC080));
         assert!(apu.dmc_dma_halt_target_is_get());
         apu.supply_dmc_byte(0x5A);
         assert!(!apu.dmc_dma_halt_target_is_get(),
             "the looped sample's next fetch targets PUT, not the initial GET phase");
 
         apu.tick_cpu_cycles(4_000);
-        assert_eq!(apu.take_dmc_dma_request(), Some(0xC080));
+        assert_eq!(apu.take_dmc_dma_request_for_bus(), Some(0xC080));
         assert!(!apu.dmc_dma_halt_target_is_get(),
             "loop restart must preserve the reload classification");
 
         apu.write(0x4015, 0x00);
         apu.write(0x4015, 0x10);
-        assert_eq!(apu.take_dmc_dma_request(), None);
+        assert_eq!(apu.take_dmc_dma_request_for_bus(), None);
         apu.tick_cpu_cycles(2);
-        assert_eq!(apu.take_dmc_dma_request(), Some(0xC080));
+        assert_eq!(apu.take_dmc_dma_request_for_bus(), Some(0xC080));
         assert!(apu.dmc_dma_halt_target_is_get(),
             "disabling and enabling DMC starts a new delayed initial load");
     }
