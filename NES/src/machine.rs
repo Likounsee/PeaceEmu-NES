@@ -442,7 +442,7 @@ mod tests {
         machine.perform_oam_dma(0x02);
 
         // Reset starts on odd parity: base OAM DMA is 514 cycles. The pending
-        // DMC fetch adds four stolen cycles without replacing any OAM transfer.
+        // DMC initial load adds three stolen cycles without replacing any OAM transfer.
         assert_eq!(machine.total_cycles() - before, 517, "initial DMC load adds three cycles to the 514-cycle OAM transfer");
         assert_eq!(machine.bus.read(0x4015) & 0x10, 0,
             "the pending one-byte DMC sample must be fetched during OAM DMA");
@@ -917,8 +917,8 @@ mod tests {
         machine.step().unwrap();
         assert_ne!(machine.cpu_state().a & 0x80, 0,
             "PPUSTATUS must see vblank after the DMC halt delays the operand accesses");
-        assert_eq!(machine.total_cycles(), 4 + 4 + 7,
-            "the four nominal instruction cycles and four DMC stall cycles are both charged");
+        assert_eq!(machine.total_cycles(), 4 + 3 + 7,
+            "the four nominal instruction cycles and three initial DMC load cycles are both charged");
     }
 
     #[test]
@@ -1132,8 +1132,8 @@ mod dmc_clock_integration_regressions {
         let before_ppu = machine.ppu_position();
         machine.clock_devices_for_cpu_cycles(1);
 
-        assert_eq!(machine.ppu_position(), (261, 15),
-            "one elapsed CPU cycle plus four DMC stall cycles must advance fifteen PPU dots from pre-render");
+        assert_eq!(machine.ppu_position(), (261, 12),
+            "one elapsed CPU cycle plus three initial DMC load cycles must advance twelve PPU dots from pre-render");
         assert_ne!(machine.ppu_position(), before_ppu,
             "the DMC stall must advance the same PPU timeline as ordinary CPU cycles");
     }
