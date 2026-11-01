@@ -6161,7 +6161,7 @@ mod nes2_mmc2_mmc4_regressions {
         assert!(chr_latches.cpu_write(0xB000, 1)); // FD0 bank 1.
         assert!(chr_latches.cpu_write(0xC000, 0)); // FE0 bank 0.
         assert_eq!(chr_latches.ppu_read(0x0000), Some(4));
-        let _ = chr_latches.ppu_read(0x0FD8); // Switch latch 0 back to FD.
+        let _ = chr_latches.ppu_read(0x0FE8); // Switch latch 0 to FE.
         assert_eq!(chr_latches.ppu_read(0x0000), Some(0));
 
         let mut trainer = vec![0; image.len() + TRAINER_LEN];
