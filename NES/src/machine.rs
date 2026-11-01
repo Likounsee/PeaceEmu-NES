@@ -1322,10 +1322,10 @@ mod color_emphasis_output_regressions {
     }
 
     #[test]
-    fn combined_emphasis_attenuates_only_channels_without_an_emphasis_bit() {
+    fn combined_emphasis_attenuates_each_channel_affected_by_another_primary() {
         let mut machine = test_machine();
         machine.write_cpu(0x2001, 0x60); // Red + green emphasis.
-        assert_eq!(&machine.framebuffer_rgba(&palette())[..4], &[200, 160, 90, 255]);
+        assert_eq!(&machine.framebuffer_rgba(&palette())[..4], &[150, 120, 90, 255]);
     }
 
     #[test]
