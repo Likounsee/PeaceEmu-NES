@@ -311,6 +311,11 @@ impl CpuBus {
         }
     }
 
+    /// Updates the address held on the CPU bus for an upcoming DMA slot.
+    pub(crate) fn set_dma_bus_address(&mut self, address: u16) {
+        self.cpu_bus_address = address;
+    }
+
     /// Reads one source byte during a machine-timed OAM DMA transfer.
     pub(crate) fn read_oam_dma_source(&mut self, page: u8, offset: u8) -> u8 {
         self.read((u16::from(page) << 8) | u16::from(offset))
