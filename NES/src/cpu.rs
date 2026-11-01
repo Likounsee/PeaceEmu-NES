@@ -536,7 +536,7 @@ impl Cpu {
         matches!(opcode,
             // Official implied and accumulator instructions.
             0x0A | 0x18 | 0x2A | 0x38 | 0x4A | 0x58 | 0x6A | 0x78 |
-            0x28 | 0x40 | 0x60 | 0x68 |
+            0x08 | 0x28 | 0x40 | 0x48 | 0x60 | 0x68 |
             0x88 | 0x8A | 0x98 | 0x9A | 0xA8 | 0xAA | 0xB8 | 0xBA |
             0xC8 | 0xCA | 0xD8 | 0xE8 | 0xF8 |
             // Stable implied unofficial NOPs and KIL/JAM opcodes.
@@ -727,7 +727,7 @@ mod tests {
             0x88, 0x8A, 0x98, 0x9A, 0xA8, 0xAA, 0xB8, 0xBA,
             0xC8, 0xCA, 0xD8, 0xE8, 0xF8, 0xEA, 0x1A, 0x3A,
             0x5A, 0x7A, 0xDA, 0xFA, 0x02, 0x12, 0x22, 0x32,
-            0x42, 0x52, 0x62, 0x72, 0x92, 0xB2, 0xD2, 0xF2,
+            0x08, 0x42, 0x48, 0x52, 0x62, 0x72, 0x92, 0xB2, 0xD2, 0xF2,
         ];
         for opcode in implied {
             let (mut cpu, mut bus) = setup(&[opcode, 0xEA]);
@@ -736,6 +736,34 @@ mod tests {
             let bus_cycles = bus.end_cpu_instruction();
             assert_eq!(result.cycles, 2, "opcode {opcode:#04X}");
             assert_eq!(bus_cycles, 2, "opcode {opcode:#04X} must perform its dummy read before the next instruction");
+        }
+    }
+
+    #[test]
+    fn pha_and_php_read_the_next_pc_before_writing_the_stack() {
+        for opcode in [0x08, 0x48] {
+            let (mut cpu, mut bus) = setup(&[opcode, 0xEA]);
+            cpu.state.a = 0x5A;
+            bus.clear_bus_trace();
+
+            bus.begin_cpu_instruction();
+            let result = cpu.step(&mut bus).unwrap();
+            let bus_cycles = bus.end_cpu_instruction();
+
+            assert_eq!(result.cycles, 3, "opcode {opcode:#04X}");
+            assert_eq!(bus_cycles, 3, "opcode {opcode:#04X}");
+            let trace = bus.bus_trace();
+            assert_eq!(
+                trace.iter().map(|entry| entry.address).collect::<Vec<_>>(),
+                [0x0600, 0x0601, 0x01FD],
+                "PHA/PHP must fetch, dummy-read the next PC, then write the stack"
+            );
+            assert_eq!(
+                trace.iter().map(|entry| entry.kind).collect::<Vec<_>>(),
+                [CpuBusAccessKind::Read, CpuBusAccessKind::Read, CpuBusAccessKind::Write],
+                "the third cycle must be the stack write"
+            );
+            assert_eq!(trace[2].value, if opcode == 0x48 { 0x5A } else { cpu.state.status | flags::BREAK | flags::UNUSED });
         }
     }
 
