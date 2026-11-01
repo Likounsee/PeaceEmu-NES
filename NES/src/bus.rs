@@ -10,8 +10,6 @@ use std::collections::VecDeque;
 struct PendingDmcDma {
     sample_address: u16,
     phases: VecDeque<DmcDmaPhase>,
-    halt_on_get: bool,
-    halt_attempted: bool,
 }
 
 /// Kind of decoded CPU-address-space transaction recorded by the optional bus trace.
@@ -362,35 +360,15 @@ impl CpuBus {
         for _ in 0..cycles {
             self.apu.tick_cpu_cycles(1);
 
-            // Capture a pending request even on a CPU write. Initial loads target
-            // GET; subsequent buffer refills target PUT.
-            if self.pending_dmc_dma.is_none() {
+            // DMC can halt only on a readable bus cycle. The number of
+            // setup cycles depends on whether the successful halt lands on GET
+            // or PUT, not on whether this is the first load or a later refill.
+            if self.pending_dmc_dma.is_none() && dma_can_halt {
                 if let Some(sample_address) = self.apu.take_dmc_dma_request() {
-                    self.pending_dmc_dma = Some(PendingDmcDma {
-                        sample_address,
-                        phases: VecDeque::new(),
-                        halt_on_get: self.apu.dmc_dma_halt_target_is_get(),
-                        halt_attempted: false,
-                    });
-                }
-            }
-
-            // GET and PUT alternate on CPU cycles. The first halt attempt is made
-            // on the target phase; if that phase is a CPU write, RDY cannot halt
-            // the processor and the DMA retries on the immediately following cycle.
-            let halt_cycle_is_get = self.cpu_cycle & 1 != 0;
-            if let Some(pending) = self.pending_dmc_dma.as_mut() {
-                if pending.phases.is_empty() {
-                    if !pending.halt_attempted && halt_cycle_is_get == pending.halt_on_get {
-                        pending.halt_attempted = true;
-                        if dma_can_halt {
-                            pending.phases = Apu::dmc_dma_sequence(halt_cycle_is_get)
-                                .iter().copied().collect();
-                        }
-                    } else if pending.halt_attempted && dma_can_halt {
-                        pending.phases = Apu::dmc_dma_sequence(halt_cycle_is_get)
-                            .iter().copied().collect();
-                    }
+                    let halt_cycle_is_get = self.cpu_cycle & 1 == 0;
+                    let phases = Apu::dmc_dma_sequence(halt_cycle_is_get)
+                        .iter().copied().collect();
+                    self.pending_dmc_dma = Some(PendingDmcDma { sample_address, phases });
                 }
             }
 
