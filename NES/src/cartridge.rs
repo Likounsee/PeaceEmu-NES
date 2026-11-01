@@ -1643,7 +1643,7 @@ impl Camerica {
                     *byte = value;
                     true
                 } else { false }
-            },
+            }
             0x9000..=0x9FFF => {
                 self.selected_prg_bank = (value & 0x0F) as usize % (self.prg_rom.len() / PRG_BANK_LEN - 1);
                 self.mirroring = if value & 0x10 != 0 { Mirroring::OneScreenUpper } else { Mirroring::OneScreenLower };
