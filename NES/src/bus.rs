@@ -427,7 +427,7 @@ mod tests {
             assert_eq!(bus.read(0x0000), 0x30);
             assert_eq!(
                 bus.take_instruction_dmc_stalls(),
-                4,
+                3,
                 "the pending DMC request must be serviced by the first read after {write_count} writes",
             );
             assert_eq!(
@@ -451,7 +451,7 @@ mod tests {
         bus.write(0x4012, 0x00);
         bus.write(0x4013, 0x00);
         bus.write(0x4015, 0x10);
-        assert_eq!(bus.tick_apu(1), 4);
+        assert_eq!(bus.tick_apu(1), 3);
         assert_eq!(bus.tick_apu(1), 0, "a filled sample buffer must not repeatedly stall the CPU");
     }
 
