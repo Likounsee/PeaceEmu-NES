@@ -332,7 +332,6 @@ impl CpuBus {
         let mut stall_cycles = 0u32;
         while remaining != 0 {
             remaining -= 1;
-            self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
             let stolen = self.tick_apu_with_dma_access(1, true);
             stall_cycles = stall_cycles.saturating_add(stolen);
             remaining = remaining.saturating_add(stolen);
@@ -360,14 +359,11 @@ impl CpuBus {
         for _ in 0..cycles {
             self.apu.tick_cpu_cycles(1);
 
-            // DMC can halt only on a readable bus cycle. The number of
-            // setup cycles depends on whether the successful halt lands on GET
-            // or PUT, not on whether this is the first load or a later refill.
+            // A request may begin only on a readable CPU bus slot. Once halted,
+            // however, the DMC owns the following DMA phases until its GET finishes.
             if self.pending_dmc_dma.is_none() && dma_can_halt {
                 if let Some(sample_address) = self.apu.take_dmc_dma_request() {
-                    let halt_cycle_is_get = self.cpu_cycle & 1 != 0;
-                    let phases = Apu::dmc_dma_sequence(halt_cycle_is_get)
-                        .iter().copied().collect();
+                    let phases = self.apu.dmc_dma_sequence().iter().copied().collect();
                     self.pending_dmc_dma = Some(PendingDmcDma { sample_address, phases });
                 }
             }
