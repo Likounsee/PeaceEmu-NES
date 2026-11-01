@@ -443,16 +443,31 @@ impl Cpu {
                 5
             }
             0x20 => {
-                let target = self.fetch_word(bus);
-                let ret = self.state.pc.wrapping_sub(1);
-                self.push(bus, (ret >> 8) as u8); self.push(bus, ret as u8);
-                self.state.pc = target; 6
+                // JSR fetches the low target byte, performs a stack dummy read,
+                // pushes the address of the high operand, and only then fetches it.
+                let target_low = self.fetch(bus) as u16;
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
+                let ret = self.state.pc;
+                self.push(bus, (ret >> 8) as u8);
+                self.push(bus, ret as u8);
+                let target_high = self.fetch(bus) as u16;
+                self.state.pc = (target_high << 8) | target_low;
+                6
             }
             0x60 => {
-                let lo = self.pop(bus) as u16; let hi = self.pop(bus) as u16;
-                self.state.pc = ((hi << 8) | lo).wrapping_add(1); 6
+                // RTS has a stack dummy read and a final read at the pulled
+                // return address before incrementing PC.
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
+                let lo = self.pop(bus) as u16;
+                let hi = self.pop(bus) as u16;
+                let return_address = (hi << 8) | lo;
+                let _ = bus.read(return_address);
+                self.state.pc = return_address.wrapping_add(1);
+                6
             }
             0x40 => {
+                // RTI's first stack cycle is a discarded read at the current SP.
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
                 self.state.status = (self.pop(bus) | flags::UNUSED) & !flags::BREAK;
                 let lo = self.pop(bus) as u16;
                 let hi = self.pop(bus) as u16;
@@ -460,9 +475,19 @@ impl Cpu {
                 6
             }
             0x48 => { self.push(bus, self.state.a); 3 }
-            0x68 => { self.state.a = self.pop(bus); self.set_nz(self.state.a); 4 }
+            0x68 => {
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
+                self.state.a = self.pop(bus);
+                self.set_nz(self.state.a);
+                4
+            }
             0x08 => { self.push(bus, self.state.status | flags::BREAK | flags::UNUSED); 3 }
-            0x28 => { self.state.status = (self.pop(bus) | flags::UNUSED) & !flags::BREAK; self.irq_poll_delay = true; 4 }
+            0x28 => {
+                let _ = bus.read(0x0100 | u16::from(self.state.sp));
+                self.state.status = (self.pop(bus) | flags::UNUSED) & !flags::BREAK;
+                self.irq_poll_delay = true;
+                4
+            }
             0x18 => { self.set_flag(flags::CARRY, false); 2 }
             0x38 => { self.set_flag(flags::CARRY, true); 2 }
             0x58 => { self.set_flag(flags::INTERRUPT_DISABLE, false); self.irq_poll_delay = true; 2 }
