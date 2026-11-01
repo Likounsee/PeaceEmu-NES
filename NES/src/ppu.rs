@@ -1013,7 +1013,7 @@ impl Ppu {
                 } else {
                     // A failed Y comparison advances n but leaves the byte
                     // offset m intact; misaligned OAMADDR walks stay misaligned.
-                    self.eval_n = self.eval_n.saturating_add(1);
+                    self.advance_sprite_eval_n();
                 }
             } else {
                 let slot = self.eval_count as usize;
@@ -1022,7 +1022,7 @@ impl Ppu {
                 self.eval_copy_byte += 1;
                 self.eval_m = (self.eval_m + 1) & 3;
                 if self.eval_m == 0 {
-                    self.eval_n = self.eval_n.saturating_add(1);
+                    self.advance_sprite_eval_n();
                 }
                 if self.eval_copy_byte >= 4 {
                     self.eval_copy_byte = 0;
@@ -1044,10 +1044,10 @@ impl Ppu {
                 self.status |= 0x20;
                 self.eval_m = (self.eval_m + 1) & 3;
                 if self.eval_m == 0 {
-                    self.eval_n = self.eval_n.saturating_add(1);
+                    self.advance_sprite_eval_n();
                 }
             } else {
-                self.eval_n = self.eval_n.saturating_add(1);
+                self.advance_sprite_eval_n();
                 self.eval_m = (self.eval_m + 1) & 3;
             }
             if self.eval_n_steps >= 64 {
