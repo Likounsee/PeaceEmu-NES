@@ -528,7 +528,12 @@ impl Ppu {
                 self.bg_attribute_shift_high =
                     (self.bg_attribute_shift_high & 0xFF00)
                         | if self.bg_next_attribute & 2 != 0 { 0x00FF } else { 0 };
-                if self.scanline == 261 && self.dot == 336 {
+                // The first complete two-tile prefetch primes the shifters.
+                // This normally happens on the pre-render line, but rendering may
+                // be enabled only after power-on or partway through a frame. In
+                // that case the first visible-line prefetch must also be allowed
+                // to hand output over from the snapshot fallback to the live beam.
+                if self.dot == 336 {
                     self.bg_pipeline_primed = true;
                 }
             }
@@ -5450,5 +5455,52 @@ mod background_beam_shifter_order_regressions {
 
         assert_eq!(&ppu.framebuffer[..8], &[0x11, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x11],
             "the first and last pattern bits belong to the same eight-pixel tile");
+    }
+}
+
+
+#[cfg(test)]
+mod background_pipeline_late_enable_regressions {
+    use super::*;
+
+    #[test]
+    fn visible_line_prefetch_primes_background_shifters_after_late_render_enable() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 17;
+        ppu.dot = 335;
+        ppu.mask = 0x08;
+        assert!(!ppu.bg_pipeline_primed);
+
+        ppu.tick(1);
+
+        assert_eq!(ppu.position(), (17, 336));
+        assert!(ppu.bg_pipeline_primed,
+            "the first completed visible-line prefetch must activate live shifter output");
+    }
+
+    #[test]
+    fn vblank_dots_never_prime_the_background_pipeline() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 241;
+        ppu.dot = 335;
+        ppu.mask = 0x08;
+
+        ppu.tick(1);
+
+        assert!(!ppu.bg_pipeline_primed,
+            "non-rendering scanlines do not perform background prefetches");
+    }
+
+    #[test]
+    fn disabled_rendering_does_not_prime_shifters_at_visible_prefetch_boundary() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 17;
+        ppu.dot = 335;
+        ppu.mask = 0;
+
+        ppu.tick(1);
+
+        assert!(!ppu.bg_pipeline_primed,
+            "dot 336 only primes after actual rendering fetch activity");
     }
 }
