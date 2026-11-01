@@ -63,11 +63,13 @@ pub struct CpuBus {
     instruction_dmc_stalls: u32,
     /// In-flight DMC transfer; one phase is serviced per elapsed CPU cycle.
     pending_dmc_dma: Option<PendingDmcDma>,
+    /// Set when the most recent APU tick completed a DMC sample-memory GET.
+    dmc_dma_get_occurred: bool,
     /// Bounded diagnostic history; oldest entries are discarded when full.
     bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, pending_dmc_dma: None, bus_trace: VecDeque::with_capacity(2048) } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, pending_dmc_dma: None, dmc_dma_get_occurred: false, bus_trace: VecDeque::with_capacity(2048) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -93,6 +95,7 @@ impl CpuBus {
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
         self.pending_dmc_dma = None;
+        self.dmc_dma_get_occurred = false;
         self.bus_trace.clear();
         // Keep the absolute CPU timeline monotonic: MMC1 consecutive-write
         // suppression and delayed APU events compare absolute cycle numbers.
@@ -339,12 +342,21 @@ impl CpuBus {
         stall_cycles
     }
 
+    /// Takes and clears the indication that the most recent APU tick completed a DMC GET.
+    ///
+    /// OAM DMA can overlap DMC halt/dummy/alignment phases. Only a DMC sample GET
+    /// competing with an OAM GET delays the OAM byte transfer.
+    pub(crate) fn take_dmc_dma_get_occurred(&mut self) -> bool {
+        core::mem::take(&mut self.dmc_dma_get_occurred)
+    }
+
     /// Advances APU time while optionally allowing DMC DMA to halt the CPU bus.
     ///
     /// The 2A03 can halt the CPU for DMC DMA only on a read cycle. A write cycle
     /// still advances every APU unit, but leaves an empty sample buffer pending
     /// until a later readable bus slot (or an internal idle/read cycle).
     pub(crate) fn tick_apu_with_dma_access(&mut self, cycles: u32, dma_can_halt: bool) -> u32 {
+        self.dmc_dma_get_occurred = false;
         // Most games do not use DMC. Advance their APU cycles in a single batch
         // instead of checking the CPU bus for DMA on every cycle.
         // Once the CPU has been halted, the in-flight DMA owns the bus until
@@ -379,6 +391,7 @@ impl CpuBus {
                 let address = if is_get { sample_address } else { self.cpu_bus_address };
                 let value = self.read_dmc_dma_source(address);
                 if is_get {
+                    self.dmc_dma_get_occurred = true;
                     self.apu.supply_dmc_byte(value);
                 }
                 stall_cycles = stall_cycles.saturating_add(1);
