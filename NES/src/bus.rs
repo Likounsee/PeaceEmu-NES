@@ -1955,7 +1955,7 @@ mod dmc_controller_read_conflict_regressions {
     #[test]
     fn dmc_dma_finishes_an_already_halted_transfer_after_channel_disable() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16] = 0xA5;
 
