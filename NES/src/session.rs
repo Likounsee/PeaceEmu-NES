@@ -1,5 +1,6 @@
 //! Host-facing session API for embedding the NES core inside PeaceEmu.
 
+use crate::bus::{CpuBusAccessKind, CpuBusTraceEntry};
 use crate::cpu::CpuState;
 use crate::machine::{MachineError, NesMachine};
 
@@ -148,6 +149,18 @@ impl NesSession {
             audio_samples,
             cpu_cycles,
         })
+    }
+
+    /// Returns recent CPU-bus transactions for frontend debugger and DMA diagnostics.
+    ///
+    /// The bounded trace contains CPU reads/writes and DMC DMA reads in observation order.
+    pub fn bus_trace(&self) -> Vec<CpuBusTraceEntry> {
+        self.machine.bus_trace()
+    }
+
+    /// Clears diagnostic bus history without changing the running game.
+    pub fn clear_bus_trace(&mut self) {
+        self.machine.clear_bus_trace();
     }
 
     /// Returns whether the current cartridge declares battery-backed RAM.
@@ -307,6 +320,19 @@ mod tests {
         session.set_controller_state(1, 0b0000_0010);
         assert_eq!(session.total_cycles(), 7);
     }
+    #[test]
+    fn session_exposes_and_clears_machine_bus_trace() {
+        let mut session = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
+        session.advance_frame().unwrap();
+        let trace = session.bus_trace();
+        assert!(!trace.is_empty(), "frontend session should expose CPU fetch traffic");
+        assert!(trace.iter().any(|entry| entry.kind == CpuBusAccessKind::Read));
+        session.clear_bus_trace();
+        assert!(session.bus_trace().is_empty());
+        assert_eq!(session.total_cycles() > 0, true,
+            "clearing the trace must not reset emulation progress");
+    }
+
     #[test]
     fn audio_rate_accepts_both_documented_limits_and_rejects_above_maximum() {
         let mut session = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
