@@ -896,7 +896,7 @@ mod tests {
         apu.write(0x4013, 0x01);
         apu.write(0x4015, 0x10);
 
-        assert_eq!(apu.dmc_dma_halt_target_is_get(), true);
+        assert!(apu.dmc_dma_halt_target_is_get());
         assert_eq!(Apu::dmc_dma_sequence(true), &[
             DmcDmaPhase::Halt,
             DmcDmaPhase::Dummy,
@@ -910,7 +910,7 @@ mod tests {
         ]);
 
         apu.supply_dmc_byte(0xA5);
-        assert_eq!(apu.dmc_dma_halt_target_is_get(), false);
+        assert!(!apu.dmc_dma_halt_target_is_get());
     }
 
     #[test]
