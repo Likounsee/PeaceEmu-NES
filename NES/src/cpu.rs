@@ -714,6 +714,7 @@ impl Cpu {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bus::CpuBusAccessKind;
     fn setup(program: &[u8]) -> (Cpu, CpuBus) {
         let mut bus = CpuBus::new();
         for (i, v) in program.iter().copied().enumerate() { bus.write(0x0600 + i as u16, v); }
