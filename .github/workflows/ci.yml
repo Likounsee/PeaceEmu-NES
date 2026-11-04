@@ -25,6 +25,12 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+      - name: Check out pinned public-domain NES diagnostic ROMs
+        uses: actions/checkout@v4
+        with:
+          repository: christopherpow/nes-test-roms
+          ref: 95d8f621ae55cee0d09b91519a8989ae0e64753b
+          path: NES/test-roms
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -33,6 +39,10 @@ jobs:
         run: cargo fmt --manifest-path NES/Cargo.toml
       - name: Run tests
         run: cargo test --manifest-path NES/Cargo.toml --locked
+      - name: Run Blargg CPU diagnostic ROMs
+        env:
+          PEACEEMU_NES_TEST_ROM_DIR: NES/test-roms
+        run: cargo test --manifest-path NES/Cargo.toml --test rom_conformance --locked -- --nocapture
       - name: Build desktop module
         run: cargo build --manifest-path NES/Cargo.toml --bin peaceemu-nes-desktop --release --locked
       - name: Upload desktop build artifact
