@@ -115,6 +115,7 @@ mod win {
         fn DefWindowProcW(hwnd: Hwnd, message: u32, w_param: Wparam, l_param: Lparam) -> Lresult;
         fn ShowWindow(hwnd: Hwnd, command: i32) -> Bool;
         fn UpdateWindow(hwnd: Hwnd) -> Bool;
+        fn SetForegroundWindow(hwnd: Hwnd) -> Bool;
         fn PeekMessageW(msg: *mut Msg, hwnd: Hwnd, min: u32, max: u32, remove: u32) -> Bool;
         fn TranslateMessage(msg: *const Msg) -> Bool;
         fn DispatchMessageW(msg: *const Msg) -> Lresult;
@@ -407,7 +408,14 @@ mod win {
                 null_mut(), null_mut(), instance, null_mut())
         };
         if hwnd.is_null() { return Err("CreateWindowExW failed".into()); }
-        unsafe { ShowWindow(hwnd, SW_SHOW); UpdateWindow(hwnd); }
+        unsafe {
+            ShowWindow(hwnd, SW_SHOW);
+            UpdateWindow(hwnd);
+            // The module is launched by the PeaceEmu desktop process. Explicitly
+            // activate its window so the foreground-window guard below does not
+            // discard every keyboard/gamepad input on the first frames.
+            SetForegroundWindow(hwnd);
+        }
 
         let bitmap = make_bitmap();
         let mut pixels = vec![0u8; 256 * 240 * 4];
