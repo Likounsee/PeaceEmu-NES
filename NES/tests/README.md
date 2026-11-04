@@ -84,9 +84,13 @@ Les régressions CPU couvrent aussi le bug matériel du `JMP ($xxFF)` du 6502 (l
 Le workflow récupère une version épinglée de `christopherpow/nes-test-roms`
 (commit `95d8f621ae55cee0d09b91519a8989ae0e64753b`) dans `NES/test-roms`.
 Le dépôt amont regroupe des ROMs de diagnostic communautaires ; les tests retenus
-ici sont les 16 ROMs Blargg `instr_test-v5` suivantes :
+ici sont les 16 ROMs Blargg `instr_test-v5` et les 8 ROMs expérimentales
+`apu_test/rom_singles` :
 
-- `01-basics.nes` à `16-special.nes` (16 ROMs individuelles).
+- CPU : `01-basics.nes` à `16-special.nes` (16 ROMs individuelles).
+- APU : `1-len_ctr.nes`, `2-len_table.nes`, `3-irq_flag.nes`,
+  `4-jitter.nes`, `5-len_timing.nes`, `6-irq_flag_timing.nes`,
+  `7-dmc_basics.nes` et `8-dmc_rates.nes`.
 
 Le test d'intégration `rom_conformance.rs` exécute chaque ROM dans le vrai
 `NesMachine` et lit le protocole Blargg en mémoire (`$DE $B0 $61` à
@@ -99,8 +103,12 @@ Pour reproduire localement après avoir cloné `christopherpow/nes-test-roms` :
 
 ```sh
 PEACEEMU_NES_TEST_ROM_DIR=/chemin/vers/nes-test-roms cargo test --manifest-path NES/Cargo.toml --test rom_conformance --locked -- --nocapture
+PEACEEMU_NES_APU_TEST_ROM_DIR=/chemin/vers/nes-test-roms cargo test --manifest-path NES/Cargo.toml --test rom_conformance --locked -- --nocapture blargg_apu_diagnostics_experimental
 ```
 
-La suite actuelle valide le protocole CPU Blargg sur seize cas ; elle ne prétend
-pas encore couvrir nestest avec comparaison de trace, ni les tests PPU/APU ou
-les mappers.
+La suite CPU valide seize cas. Les huit ROMs APU sont exécutées dans un job
+expérimental distinct : leurs échecs sont visibles et bloquent ce job, mais
+elles ne sont pas encore considérées comme une compatibilité APU acquise.
+Le protocole commun lit la signature `$DE $B0 $61`, l'état à `$6000` et le
+message à partir de `$6004`. Les ROMs PPU, nestest avec comparaison de trace
+et la compatibilité des mappers restent à valider séparément.
