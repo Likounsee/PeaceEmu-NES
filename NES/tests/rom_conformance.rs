@@ -113,3 +113,32 @@ fn blargg_instruction_diagnostics_pass() {
         }
     }
 }
+
+
+#[test]
+fn blargg_apu_diagnostics_experimental() {
+    let Some(root) = std::env::var_os("PEACEEMU_NES_APU_TEST_ROM_DIR") else {
+        eprintln!("Skipping experimental APU ROM tests: PEACEEMU_NES_APU_TEST_ROM_DIR is not set");
+        return;
+    };
+    let root = PathBuf::from(root);
+    let roms = [
+        "apu_test/rom_singles/1-len_ctr.nes",
+        "apu_test/rom_singles/2-len_table.nes",
+        "apu_test/rom_singles/3-irq_flag.nes",
+        "apu_test/rom_singles/4-jitter.nes",
+        "apu_test/rom_singles/5-len_timing.nes",
+        "apu_test/rom_singles/6-irq_flag_timing.nes",
+        "apu_test/rom_singles/7-dmc_basics.nes",
+        "apu_test/rom_singles/8-dmc_rates.nes",
+    ];
+
+    for relative in roms {
+        let path = root.join(relative);
+        assert!(path.is_file(), "missing experimental APU ROM: {}", path.display());
+        match run_blargg_rom(&path) {
+            Ok(message) => println!("EXPERIMENTAL PASS {} — {}", relative, message),
+            Err(error) => panic!("experimental APU diagnostic failed: {error}"),
+        }
+    }
+}
