@@ -88,7 +88,20 @@ fn blargg_instruction_diagnostics_pass() {
     let roms = [
         "instr_test-v5/rom_singles/01-basics.nes",
         "instr_test-v5/rom_singles/02-implied.nes",
+        "instr_test-v5/rom_singles/03-immediate.nes",
         "instr_test-v5/rom_singles/04-zero_page.nes",
+        "instr_test-v5/rom_singles/05-zp_xy.nes",
+        "instr_test-v5/rom_singles/06-absolute.nes",
+        "instr_test-v5/rom_singles/07-abs_xy.nes",
+        "instr_test-v5/rom_singles/08-ind_x.nes",
+        "instr_test-v5/rom_singles/09-ind_y.nes",
+        "instr_test-v5/rom_singles/10-branches.nes",
+        "instr_test-v5/rom_singles/11-stack.nes",
+        "instr_test-v5/rom_singles/12-jmp_jsr.nes",
+        "instr_test-v5/rom_singles/13-rts.nes",
+        "instr_test-v5/rom_singles/14-rti.nes",
+        "instr_test-v5/rom_singles/15-brk.nes",
+        "instr_test-v5/rom_singles/16-special.nes",
     ];
 
     for relative in roms {
