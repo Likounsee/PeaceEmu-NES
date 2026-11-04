@@ -565,7 +565,7 @@ mod tests {
         let mut bus = CpuBus::new();
         bus.write(0x4017, 0x00); // Four-step frame counter.
         bus.write(0x4000, 0x20); // Set bit 5 on the CPU data-bus latch.
-        bus.tick_apu(14_919);
+        bus.tick_apu(29_834);
         assert!(bus.irq_pending());
 
         let first = bus.read(0x4015);
@@ -957,7 +957,7 @@ mod tests {
         bus.write(0x4000, 0x20);
         bus.write(0x4015, 0x00);
         bus.write(0x4017, 0x00);
-        bus.tick_apu(14_919); // Include the delayed $4017 sequencer reset.
+        bus.tick_apu(29_834); // Include the delayed $4017 sequencer reset.
         assert!(bus.irq_pending());
         bus.write(0x4000, 0x20); // Put bit 5 high on the CPU data bus before reading status.
         let status = bus.read(0x4015);
@@ -1054,7 +1054,7 @@ mod tests {
         bus.write(0x4015, 0x01);
         bus.write(0x4003, 0xF8); // Pulse 1 length table entry 31 = 30.
         assert_eq!(bus.read(0x4015) & 0x01, 0x01);
-        bus.tick_apu(7_457);
+        bus.tick_apu(14_913);
         assert_eq!(bus.read(0x4015) & 0x01, 0x01);
         bus.write(0x4015, 0x00);
         assert_eq!(bus.read(0x4015) & 0x0F, 0);
@@ -1886,7 +1886,7 @@ mod dmc_register_conflict_regressions {
     fn dmc_held_status_reads_acknowledge_frame_irq_before_sample_get_asserts_dmc_irq() {
         let mut bus = dmc_bus();
         bus.write(0x4017, 0x00);
-        bus.tick_apu(14_919);
+        bus.tick_apu(29_834);
         assert!(bus.irq_pending(), "fixture must begin with the frame-counter IRQ asserted");
         // Align the next readable CPU slot to the initial DMC GET target.
         bus.tick_apu(1);
