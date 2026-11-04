@@ -86,9 +86,7 @@ Le workflow récupère une version épinglée de `christopherpow/nes-test-roms`
 Le dépôt amont regroupe des ROMs de diagnostic communautaires ; les tests retenus
 ici sont les trois ROMs Blargg `instr_test-v5` suivantes :
 
-- `01-basics.nes`
-- `02-implied.nes`
-- `04-zero_page.nes`
+- `01-basics.nes` à `16-special.nes` (16 ROMs individuelles).
 
 Le test d'intégration `rom_conformance.rs` exécute chaque ROM dans le vrai
 `NesMachine` et lit le protocole Blargg en mémoire (`$DE $B0 $61` à
@@ -103,6 +101,6 @@ Pour reproduire localement après avoir cloné `christopherpow/nes-test-roms` :
 PEACEEMU_NES_TEST_ROM_DIR=/chemin/vers/nes-test-roms cargo test --manifest-path NES/Cargo.toml --test rom_conformance --locked -- --nocapture
 ```
 
-La suite actuelle valide le protocole CPU Blargg sur trois cas ; elle ne prétend
+La suite actuelle valide le protocole CPU Blargg sur seize cas ; elle ne prétend
 pas encore couvrir nestest avec comparaison de trace, ni les tests PPU/APU ou
 les mappers.
