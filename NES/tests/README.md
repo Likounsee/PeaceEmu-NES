@@ -84,7 +84,7 @@ Les régressions CPU couvrent aussi le bug matériel du `JMP ($xxFF)` du 6502 (l
 Le workflow récupère une version épinglée de `christopherpow/nes-test-roms`
 (commit `95d8f621ae55cee0d09b91519a8989ae0e64753b`) dans `NES/test-roms`.
 Le dépôt amont regroupe des ROMs de diagnostic communautaires ; les tests retenus
-ici sont les trois ROMs Blargg `instr_test-v5` suivantes :
+ici sont les 16 ROMs Blargg `instr_test-v5` suivantes :
 
 - `01-basics.nes` à `16-special.nes` (16 ROMs individuelles).
 
