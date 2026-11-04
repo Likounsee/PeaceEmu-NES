@@ -1064,7 +1064,7 @@ mod tests {
         bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
         bus.write(0x4017, 0x00);
         // The frame-counter write resets the sequencer after its 3/4-cycle delay.
-        bus.tick_apu(14_919);
+        bus.tick_apu(29_834);
         assert!(bus.irq_pending());
         // IRQ is masked before CLI, so CLI executes first.
         assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0x58);
@@ -1091,7 +1091,7 @@ mod tests {
         bus.write(0x01FE, flags::UNUSED); // PLP restores I=0 from the stack.
         bus.write(0x4017, 0x00);
         // The frame-counter write resets the sequencer after its 3/4-cycle delay.
-        bus.tick_apu(14_919);
+        bus.tick_apu(29_834);
         assert!(bus.irq_pending());
 
         assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0x28);
@@ -1111,7 +1111,7 @@ mod tests {
         image[16 + 0x3FFE] = 0x00;
         image[16 + 0x3FFF] = 0x07;
         bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
-        bus.tick_apu(14_915);
+        bus.tick_apu(29_834);
         assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0xEA);
         assert_eq!(cpu.state().pc, 0x0601);
     }
@@ -1131,7 +1131,7 @@ mod tests {
         cpu.step(&mut bus).unwrap(); // Clear I before either interrupt.
         bus.tick_ppu(243 * 341 + 1);
         bus.write(0x2000, 0x80);
-        bus.tick_apu(14_915);
+        bus.tick_apu(29_834);
         assert!(bus.irq_pending());
         let result = cpu.step(&mut bus).unwrap();
         assert_eq!(result.cycles, 7);
