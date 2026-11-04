@@ -25,7 +25,7 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
-      - name: Check out pinned public-domain NES diagnostic ROMs
+      - name: Check out pinned NES diagnostic ROMs
         uses: actions/checkout@v4
         with:
           repository: christopherpow/nes-test-roms
@@ -41,7 +41,7 @@ jobs:
         run: cargo test --manifest-path NES/Cargo.toml --locked
       - name: Run Blargg CPU diagnostic ROMs
         env:
-          PEACEEMU_NES_TEST_ROM_DIR: NES/test-roms
+          PEACEEMU_NES_TEST_ROM_DIR: test-roms
         run: cargo test --manifest-path NES/Cargo.toml --test rom_conformance --locked -- --nocapture
       - name: Build desktop module
         run: cargo build --manifest-path NES/Cargo.toml --bin peaceemu-nes-desktop --release --locked
