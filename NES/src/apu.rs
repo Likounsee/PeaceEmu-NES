@@ -259,9 +259,9 @@ impl Apu {
         // A zero-length tick must be a true no-op: even power-on initialization
         // belongs to the first elapsed CPU cycle, not to an empty call.
         if cycles == 0 { return; }
-        const FOUR_STEP_PERIOD: u32 = 14_915;
-        const FIVE_STEP_PERIOD: u32 = 18_641;
-        const HALF_FRAME_PERIOD: u32 = 7_457;
+        const FOUR_STEP_PERIOD: u32 = 29_830;
+        const FIVE_STEP_PERIOD: u32 = 37_282;
+        const HALF_FRAME_PERIOD: u32 = 14_913;
         const NOISE_PERIODS: [u16; 16] = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068];
         const DMC_PERIODS: [u16; 16] = [428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106,  85,  72,  54];
         if self.noise_shift == 0 { self.noise_shift = 1; }
@@ -344,8 +344,8 @@ impl Apu {
             self.frame_cycles = self.frame_cycles.saturating_add(1);
             if self.five_step_mode {
                 match self.frame_cycles {
-                    3_729 | 11_186 => self.clock_quarter_units_once(),
-                    7_457 | 18_641 => {
+                    7_457 | 22_371 => self.clock_quarter_units_once(),
+                    14_913 | 37_281 => {
                         self.clock_quarter_units_once();
                         self.clock_half_units_once();
                     }
@@ -356,8 +356,8 @@ impl Apu {
                 }
             } else {
                 match self.frame_cycles {
-                    3_729 | 11_186 => self.clock_quarter_units_once(),
-                    7_457 | 14_915 => {
+                    7_457 | 22_371 => self.clock_quarter_units_once(),
+                    14_913 | 29_829 => {
                         self.clock_quarter_units_once();
                         self.clock_half_units_once();
                     }
@@ -372,7 +372,7 @@ impl Apu {
             // Keep these phase counters useful for diagnostics and chunking
             // regressions, but do not use their rounded periods to schedule clocks.
             self.quarter_frame_cycles = self.quarter_frame_cycles.saturating_add(1);
-            if self.quarter_frame_cycles >= 3_729 { self.quarter_frame_cycles -= 3_729; }
+            if self.quarter_frame_cycles >= 7_457 { self.quarter_frame_cycles -= 7_457; }
             self.half_frame_cycles = self.half_frame_cycles.saturating_add(1);
             if self.half_frame_cycles >= HALF_FRAME_PERIOD { self.half_frame_cycles -= HALF_FRAME_PERIOD; }
 
@@ -867,7 +867,7 @@ mod tests {
     fn reading_status_clears_frame_irq_without_disabling_the_sequencer() {
         let mut apu = Apu::new();
         apu.write(0x4017, 0x00); // Four-step mode, frame IRQ enabled.
-        apu.tick_cpu_cycles(14_919);
+        apu.tick_cpu_cycles(29_834);
 
         assert_ne!(apu.read(0x4015) & 0x40, 0, "frame IRQ should be observable in $4015");
         assert_eq!(apu.read(0x4015) & 0x40, 0, "reading $4015 acknowledges frame IRQ");
@@ -878,7 +878,7 @@ mod tests {
     fn setting_frame_irq_inhibit_clears_a_pending_frame_irq() {
         let mut apu = Apu::new();
         apu.write(0x4017, 0x00);
-        apu.tick_cpu_cycles(14_919);
+        apu.tick_cpu_cycles(29_834);
         assert!(apu.irq_pending());
 
         apu.write(0x4017, 0x40); // Inhibit and acknowledge frame IRQ.
@@ -1125,10 +1125,10 @@ mod tests {
         let mut apu = Apu::new();
         apu.write(0x4015, 0x01);
         apu.write(0x4003, 0xF8);
-        apu.tick_cpu_cycles(7_457);
+        apu.tick_cpu_cycles(14_913);
         assert_eq!(apu.length_counter(0), Some(29));
         apu.write(0x4000, 0x20); // length counter halt
-        apu.tick_cpu_cycles(7_457);
+        apu.tick_cpu_cycles(14_913);
         assert_eq!(apu.length_counter(0), Some(29));
     }
 
@@ -1141,20 +1141,20 @@ mod tests {
         assert!(apu.frame_irq_pending());
         assert_eq!(apu.read(0x4015) & 0x40, 0x40);
         assert!(!apu.frame_irq_pending());
-        apu.tick_cpu_cycles(14_915);
+        apu.tick_cpu_cycles(29_830);
         apu.write(0x4017, 0x40);
         assert!(!apu.frame_irq_pending());
-        apu.tick_cpu_cycles(14_915);
+        apu.tick_cpu_cycles(29_830);
         assert!(!apu.frame_irq_pending());
     }
 
     #[test]
     fn frame_irq_status_read_acknowledges_irq_without_disabling_future_events() {
         let mut apu = Apu::new();
-        apu.tick_cpu_cycles(14_915);
+        apu.tick_cpu_cycles(29_830);
         assert_ne!(apu.read(0x4015) & 0x40, 0);
         assert!(!apu.frame_irq_pending());
-        apu.tick_cpu_cycles(14_915);
+        apu.tick_cpu_cycles(29_830);
         assert!(apu.frame_irq_pending());
     }
 
@@ -1216,7 +1216,7 @@ mod tests {
         apu.write(0x4000, 0x00); // Envelope decay, period zero.
         apu.write(0x4002, 0x20);
         apu.write(0x4003, 0xF8);
-        apu.tick_cpu_cycles(3_729);
+        apu.tick_cpu_cycles(7_457);
         let decaying = apu.sample();
         apu.write(0x4000, 0x1F); // Constant volume 15.
         let constant = apu.sample();
@@ -1234,7 +1234,7 @@ mod tests {
         assert_eq!(apu.sample(), 0.0);
         apu.write(0x4008, 0x80 | 0x7F);
         apu.write(0x400B, 0xF8);
-        apu.tick_cpu_cycles(3_729);
+        apu.tick_cpu_cycles(7_457);
         assert!(apu.sample() > 0.0);
     }
 
@@ -1246,7 +1246,7 @@ mod tests {
         apu.write(0x4001, 0x81); // Enable sweep, shift by one.
         apu.write(0x4002, 0x20);
         apu.write(0x4003, 0xF8);
-        apu.tick_cpu_cycles(7_457);
+        apu.tick_cpu_cycles(14_913);
         assert_eq!(apu.read(0x4002), 0x30); // 32 + (32 >> 1)
     }
 
@@ -1295,7 +1295,7 @@ mod tests {
     fn enabling_frame_irq_inhibit_clears_an_already_pending_irq() {
         let mut apu = Apu::new();
         apu.write(0x4017, 0x00);
-        apu.tick_cpu_cycles(14_919);
+        apu.tick_cpu_cycles(29_834);
         assert!(apu.frame_irq_pending());
         apu.write(0x4017, 0x40);
         assert!(!apu.frame_irq_pending());
@@ -1306,10 +1306,10 @@ mod tests {
     fn frame_counter_can_switch_between_four_and_five_step_modes() {
         let mut apu = Apu::new();
         apu.write(0x4017, 0x80);
-        apu.tick_cpu_cycles(18_641);
+        apu.tick_cpu_cycles(37_281);
         assert!(!apu.frame_irq_pending(), "five-step mode must not assert frame IRQ");
         apu.write(0x4017, 0x00);
-        apu.tick_cpu_cycles(14_919);
+        apu.tick_cpu_cycles(29_834);
         assert!(apu.frame_irq_pending(), "four-step mode should resume frame IRQ generation");
     }
 
@@ -1664,12 +1664,12 @@ mod frame_and_dmc_irq_regressions {
     #[test]
     fn frame_irq_inhibit_clears_pending_irq_immediately() {
         let mut apu = Apu::new();
-        apu.tick_cpu_cycles(14_915);
+        apu.tick_cpu_cycles(29_830);
         assert!(apu.irq_pending(), "four-step frame sequence should raise frame IRQ");
 
         apu.write(0x4017, 0x40); // Inhibit frame IRQ.
         assert!(!apu.irq_pending(), "setting inhibit must clear an already-pending frame IRQ immediately");
-        apu.tick_cpu_cycles(14_915);
+        apu.tick_cpu_cycles(29_830);
         assert!(!apu.irq_pending(), "frame IRQ must stay suppressed while inhibit is set");
     }
 
