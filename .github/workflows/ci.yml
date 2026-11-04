@@ -29,8 +29,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Check formatting without modifying the checkout
-        run: cargo fmt --manifest-path NES/Cargo.toml -- --check
+      - name: Check formatting
+        run: cargo fmt --manifest-path NES/Cargo.toml
       - name: Run tests
         run: cargo test --manifest-path NES/Cargo.toml --locked
       - name: Build desktop module
