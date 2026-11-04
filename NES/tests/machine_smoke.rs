@@ -1,4 +1,4 @@
-use peaceemu_nes::NesMachine;
+use peaceemu_nes::machine::NesMachine;
 
 fn minimal_nrom() -> Vec<u8> {
     let mut image = vec![0; 16 + 16 * 1024 + 8 * 1024];
