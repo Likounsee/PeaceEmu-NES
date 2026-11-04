@@ -77,3 +77,32 @@ Les tests UNROM-512 (mapper 30) vérifient le wrap des banques PRG installées, 
 
 
 Les régressions CPU couvrent aussi le bug matériel du `JMP ($xxFF)` du 6502 (lecture de l’octet haut dans la même page) et la différence de cycles d’une branche prise selon qu’elle franchit ou non une page.
+
+
+## Tests de ROM de diagnostic dans GitHub Actions
+
+Le workflow récupère une version épinglée de `christopherpow/nes-test-roms`
+(commit `95d8f621ae55cee0d09b91519a8989ae0e64753b`) dans `NES/test-roms`.
+Le dépôt amont regroupe des ROMs de diagnostic communautaires ; les tests retenus
+ici sont les trois ROMs Blargg `instr_test-v5` suivantes :
+
+- `01-basics.nes`
+- `02-implied.nes`
+- `04-zero_page.nes`
+
+Le test d'intégration `rom_conformance.rs` exécute chaque ROM dans le vrai
+`NesMachine` et lit le protocole Blargg en mémoire (`$DE $B0 $61` à
+`$6001-$6003`, état à `$6000`, message à partir de `$6004`). Un code
+terminal non nul, une erreur CPU, une ROM absente ou un dépassement du budget
+d'instructions fait échouer le job. Les ROMs ne sont pas copiées dans le dépôt
+PeaceEmu-NES : elles sont récupérées à un commit fixe au moment de la CI.
+
+Pour reproduire localement après avoir cloné `christopherpow/nes-test-roms` :
+
+```sh
+PEACEEMU_NES_TEST_ROM_DIR=/chemin/vers/nes-test-roms cargo test --manifest-path NES/Cargo.toml --test rom_conformance --locked -- --nocapture
+```
+
+La suite actuelle valide le protocole CPU Blargg sur trois cas ; elle ne prétend
+pas encore couvrir nestest avec comparaison de trace, ni les tests PPU/APU ou
+les mappers.
