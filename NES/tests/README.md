@@ -11,6 +11,7 @@ La suite protège les comportements du cœur et évite les régressions. Elle ne
 - `mapper30_banking.rs` — banques PRG/CHR-RAM et mirroring de la variante UNROM-512 ciblée.
 - `mapper30_boundaries.rs` — limites de taille, trainer et rejet des images non prises en charge.
 - `ppu_nmi_timing.rs` — événements VBlank/NMI via l'API publique de la PPU.
+- `machine_smoke.rs` — chargement d'une ROM NROM synthétique, exécution de plusieurs frames et reprise après reset.
 
 ## Couverture déjà présente (vue fonctionnelle)
 
