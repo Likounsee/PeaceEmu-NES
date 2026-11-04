@@ -337,10 +337,9 @@ impl Apu {
                     }
                 }
             }
-            // The NTSC frame sequencer is not a fixed 3,729-cycle metronome:
-            // its quarter/half-frame events alternate 3,729 / 3,728 / 3,729 /
-            // 3,729 cycles. Drive unit clocks from the actual sequence positions so
-            // the second and final events do not drift by one cycle per interval.
+            // The NTSC frame sequencer runs on CPU-cycle positions: quarter-frame clocks
+            // occur at 7,457 / 22,371 and half-frame clocks at 14,913 / 29,829.
+            // Use explicit sequence positions to preserve the alternating intervals.
             self.frame_cycles = self.frame_cycles.saturating_add(1);
             if self.five_step_mode {
                 match self.frame_cycles {
@@ -1135,7 +1134,7 @@ mod tests {
     #[test]
     fn four_step_frame_irq_is_raised_cleared_and_can_be_inhibited() {
         let mut apu = Apu::new();
-        apu.tick_cpu_cycles(14_914);
+        apu.tick_cpu_cycles(29_829);
         assert!(!apu.frame_irq_pending());
         apu.tick_cpu_cycles(1);
         assert!(apu.frame_irq_pending());
