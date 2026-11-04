@@ -1350,7 +1350,7 @@ mod pcm_output_tests {
         apu.write(0x400C, 0x00); // Envelope mode, divider period zero.
         apu.write(0x400E, 0x00);
         apu.write(0x400F, 0xF8); // Reload length and restart noise envelope.
-        apu.tick_cpu_cycles(7_458); // First quarter-frame starts the envelope; the next clocks its decay.
+        apu.tick_cpu_cycles(14_914); // The second quarter-frame clocks the envelope decay.
         let envelope_level = apu.noise_envelope_decay;
         assert!(envelope_level < 15, "quarter-frame clocks should decay noise volume");
         apu.noise_shift = 0; // Force an audible LFSR output for deterministic mixer assertions.
@@ -2136,31 +2136,31 @@ mod exact_frame_sequence_timing_regressions {
     use super::*;
 
     #[test]
-    fn four_step_frame_irq_is_asserted_on_cycle_14915_not_14916() {
+    fn four_step_frame_irq_is_asserted_at_the_end_of_the_ntsc_sequence() {
         let mut apu = Apu::new();
-        apu.tick_cpu_cycles(14_914);
+        apu.tick_cpu_cycles(29_829);
         assert!(!apu.irq_pending(), "four-step frame IRQ must not fire a cycle early");
-        assert_eq!(apu.frame_cycles, 14_914);
+        assert_eq!(apu.frame_cycles, 29_829);
 
         apu.tick_cpu_cycles(1);
-        assert!(apu.irq_pending(), "four-step frame IRQ must fire at cycle 14915");
+        assert!(apu.irq_pending(), "four-step frame IRQ must fire at cycle 29830");
         assert_eq!(apu.frame_cycles, 0, "the four-step sequence resets on its terminal event");
     }
 
     #[test]
-    fn five_step_sequence_resets_at_cycle_18641_without_frame_irq() {
+    fn five_step_sequence_resets_at_cycle_37282_without_frame_irq() {
         let mut apu = Apu::new();
         apu.write(0x4017, 0x80);
         // Reset delay is 3 or 4 cycles depending on APU parity.
         apu.tick_cpu_cycles(4);
         assert!(apu.five_step_mode);
 
-        apu.tick_cpu_cycles(18_639);
+        apu.tick_cpu_cycles(37_280);
         assert!(!apu.irq_pending(), "five-step mode must not assert frame IRQ");
-        assert_eq!(apu.frame_cycles, 18_640, "the sequence must be one cycle short of its terminal event");
+        assert_eq!(apu.frame_cycles, 37_281, "the sequence must be one cycle short of its terminal event");
 
         apu.tick_cpu_cycles(1);
-        assert_eq!(apu.frame_cycles, 0, "five-step sequence terminal event is cycle 18641");
+        assert_eq!(apu.frame_cycles, 0, "five-step sequence terminal event is cycle 37282");
         assert!(!apu.irq_pending());
     }
     #[test]
