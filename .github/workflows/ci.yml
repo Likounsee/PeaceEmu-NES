@@ -35,5 +35,12 @@ jobs:
         run: cargo test --manifest-path NES/Cargo.toml --locked
       - name: Build desktop module
         run: cargo build --manifest-path NES/Cargo.toml --bin peaceemu-nes-desktop --release --locked
+      - name: Upload desktop build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: peaceemu-nes-desktop-${{ runner.os }}
+          path: NES/target/release/peaceemu-nes-desktop*
+          if-no-files-found: error
+          retention-days: 7
       - name: Run Clippy
         run: cargo clippy --manifest-path NES/Cargo.toml --all-targets --locked -- -D warnings
