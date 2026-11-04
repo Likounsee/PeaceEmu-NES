@@ -1886,7 +1886,7 @@ mod dmc_register_conflict_regressions {
     fn dmc_held_status_reads_acknowledge_frame_irq_before_sample_get_asserts_dmc_irq() {
         let mut bus = dmc_bus();
         bus.write(0x4017, 0x00);
-        bus.tick_apu(29_834);
+        bus.tick_apu(29_833);
         assert!(bus.irq_pending(), "fixture must begin with the frame-counter IRQ asserted");
         // Align the next readable CPU slot to the initial DMC GET target.
         bus.tick_apu(1);
