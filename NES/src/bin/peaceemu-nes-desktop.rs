@@ -196,10 +196,7 @@ mod win {
         if !focused { return 0; }
         let mut state = 0u8;
         for (button, key) in keys.iter().copied().enumerate() {
-            // Keep Shift as a compatibility alias for Select. Older standalone
-            // module builds used VK_SHIFT by default, while the desktop frontend
-            // currently sends Space for its configurable Select binding.
-            let pressed = key_down(key) || (button == 2 && key != 0x10 && key_down(0x10));
+            let pressed = key_down(key);
             if pressed {
                 state |= 1 << button;
             }
