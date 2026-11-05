@@ -173,6 +173,11 @@ impl CpuBus {
         });
     }
 
+    /// Returns the bounded PPU VBlank/NMI timing history, oldest first.
+    pub fn ppu_timing_events(&self) -> Vec<crate::ppu::PpuTimingEvent> {
+        self.ppu.timing_events()
+    }
+
     /// Returns the most recent decoded CPU-bus transactions, oldest first.
     pub fn bus_trace(&self) -> Vec<CpuBusTraceEntry> {
         self.bus_trace.iter().copied().collect()
