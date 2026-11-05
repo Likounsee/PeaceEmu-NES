@@ -84,23 +84,23 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                     entries.extend(machine.bus_trace().into_iter().filter(|entry| {
                         matches!(entry.ppu_scanline, 240..=242 | 261)
                     }));
-                    // Keep the failure report focused on the CPU-visible status
-                    // reads. Dumping hundreds of unrelated opcode fetches hid the
-                    // exact $2002 sampling point in CI's truncated log output.
-                    let status_reads: Vec<_> = entries.iter()
+                    // Keep all PPUCTRL and PPUSTATUS transactions. Their ordering
+                    // relative to CPU_NMI_SAMPLE events is what distinguishes the
+                    // dot-1/2/3 race; status reads alone omit the NMI-enable strobe.
+                    let ppu_accesses: Vec<_> = entries.iter()
                         .filter(|entry| {
-                            entry.address & 0xE007 == 0x2002
+                            matches!(entry.address & 0xE007, 0x2000 | 0x2002)
                                 && matches!(entry.ppu_scanline, 240..=242 | 261)
                         })
                         .rev()
-                        .take(120)
+                        .take(240)
                         .collect::<Vec<_>>()
                         .into_iter()
                         .rev()
                         .map(|entry| format!(
-                            "cycle={} beam={}:{} value=${:02X} ppu_nmi={} cpu_nmi_pending={}",
-                            entry.cycle, entry.ppu_scanline, entry.ppu_dot, entry.value,
-                            entry.ppu_nmi_line, entry.cpu_nmi_pending
+                            "cycle={} beam={}:{} {:?} addr=${:04X} value=${:02X} ppu_nmi={} cpu_nmi_pending={}",
+                            entry.cycle, entry.ppu_scanline, entry.ppu_dot, entry.kind,
+                            entry.address, entry.value, entry.ppu_nmi_line, entry.cpu_nmi_pending
                         ))
                         .collect();
                     let mut timing_events = ppu_timing_history.clone();
