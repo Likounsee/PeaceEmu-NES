@@ -2195,15 +2195,18 @@ mod nmi_sampling_boundary_regressions {
             bus.set_ppu_bus_phase(phase);
             bus.begin_cpu_instruction();
 
-            let _ = bus.read(0x8000);
+            // A timed PPU-register access uses the selected divider phase.
+            // Ordinary PRG reads always advance three dots and would make this
+            // test accidentally exercise the same alignment in all iterations.
+            bus.write(0x2001, 0x00);
             let first_cycle = bus.end_cpu_instruction();
             assert_eq!(first_cycle, 1, "phase {phase}: first CPU access is one cycle");
 
             if phase == 2 {
                 assert!(!bus.take_nmi_request(),
-                    "phase 2: dot 1 has set VBlank but the delayed NMI line is not high yet");
+                    "phase 2: the first access reaches dot 1, before the delayed NMI output rises");
                 bus.begin_cpu_instruction();
-                let _ = bus.read(0x8000);
+                let _ = bus.read(0x2001);
                 assert_eq!(bus.end_cpu_instruction(), 1);
             }
 
