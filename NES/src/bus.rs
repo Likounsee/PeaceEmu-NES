@@ -276,14 +276,6 @@ impl CpuBus {
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
         let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
         self.clock_instruction_bus_access(true, ppu_dots_before_access);
-        // A $2002 read clears the PPU's NMI output as a side effect. The
-        // CPU samples the interrupt line at the bus strobe before that read
-        // side effect takes effect; sampling afterward loses an NMI edge
-        // that rises on the same PPU dot as the status read.
-        let status_read = ppu_register && address & 7 == 2;
-        if timed_access && status_read {
-            self.sample_nmi_line();
-        }
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x6000..=0x7FFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
@@ -297,7 +289,7 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.open_bus = value;
         self.record_bus_access(CpuBusAccessKind::Read, address, value);
-        if timed_access && !status_read { self.sample_nmi_line(); }
+        if timed_access { self.sample_nmi_line(); }
         if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
         value
     }
@@ -2193,21 +2185,6 @@ mod nmi_sampling_boundary_regressions {
     }
 }
 
-
-    #[test]
-    fn cpu_captures_vblank_nmi_before_same_dot_ppustatus_read_clears_the_line() {
-        let mut bus = CpuBus::new();
-        bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
-        bus.write(0x2000, 0x80); // Enable NMI without advancing the host bus.
-        bus.begin_cpu_instruction();
-
-        let status = bus.read(0x2002); // Default phase reaches dot 2 before the read.
-        assert_eq!(bus.end_cpu_instruction(), 1);
-        assert_ne!(status & 0x80, 0, "dot 2 exposes the VBlank flag");
-        assert!(bus.take_nmi_request(),
-            "the CPU samples the NMI edge before PPUSTATUS clears the PPU output");
-        assert!(!bus.take_nmi_request());
-    }
 
     #[test]
     fn vblank_nmi_capture_respects_all_three_cpu_ppu_divider_phases() {
