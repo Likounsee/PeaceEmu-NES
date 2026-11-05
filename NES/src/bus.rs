@@ -16,7 +16,7 @@ struct PendingDmcDma {
 
 /// Kind of decoded CPU-address-space transaction recorded by the optional bus trace.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CpuBusAccessKind {
+pub(crate) enum CpuBusAccessKind {
     /// Read initiated by the CPU or the OAM DMA source port.
     Read,
     /// Write initiated by the CPU.
@@ -26,6 +26,7 @@ pub enum CpuBusAccessKind {
 }
 
 /// One observable transaction on the NES CPU address bus.
+#[cfg(any(test, feature = "ppu-timing-diagnostics"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CpuBusTraceEntry {
     /// Absolute bus-cycle timestamp at which the access was observed.
@@ -84,10 +85,11 @@ pub struct CpuBus {
     /// Set when the most recent APU tick completed a DMC sample-memory GET.
     dmc_dma_get_occurred: bool,
     /// Bounded diagnostic history; oldest entries are discarded when full.
+    #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
     bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, bus_trace: VecDeque::with_capacity(2048) } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -118,6 +120,7 @@ impl CpuBus {
         self.nmi_sample_cycle = None;
         self.nmi_deferred = false;
         self.dmc_dma_get_occurred = false;
+        #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
         self.bus_trace.clear();
         // Keep the absolute CPU timeline monotonic: MMC1 consecutive-write
         // suppression and delayed APU events compare absolute cycle numbers.
@@ -155,6 +158,7 @@ impl CpuBus {
         core::mem::take(&mut self.instruction_bus_cycles)
     }
 
+    #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
     fn record_bus_access(&mut self, kind: CpuBusAccessKind, address: u16, value: u8) {
         const TRACE_CAPACITY: usize = 131_072;
         if self.bus_trace.len() == TRACE_CAPACITY {
@@ -173,6 +177,10 @@ impl CpuBus {
         });
     }
 
+    #[cfg(not(any(test, feature = "ppu-timing-diagnostics")))]
+    #[inline(always)]
+    fn record_bus_access(&mut self, _kind: CpuBusAccessKind, _address: u16, _value: u8) {}
+
     /// Returns the bounded PPU VBlank/NMI timing history, oldest first.
     #[cfg(feature = "ppu-timing-diagnostics")]
     pub fn ppu_timing_events(&self) -> Vec<crate::ppu::PpuTimingEvent> {
@@ -180,11 +188,13 @@ impl CpuBus {
     }
 
     /// Returns the most recent decoded CPU-bus transactions, oldest first.
+    #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
     pub fn bus_trace(&self) -> Vec<CpuBusTraceEntry> {
         self.bus_trace.iter().copied().collect()
     }
 
     /// Clears the diagnostic bus trace without changing emulated hardware state.
+    #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
     pub fn clear_bus_trace(&mut self) {
         self.bus_trace.clear();
     }
