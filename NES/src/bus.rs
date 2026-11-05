@@ -192,7 +192,7 @@ impl CpuBus {
     /// before the data-bus transaction. The 2A03 samples interrupt inputs before
     /// the final data-transfer phase; sampling after a $2002 read incorrectly lets
     /// reads two dots after VBlank begins retract an NMI that the CPU has already seen.
-    fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool, ppu_dots_before_access: u32) {
+    fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool, ppu_dots_before_access: u32, sample_before_access: bool) {
         if self.instruction_timing {
             self.instruction_bus_cycles = self.instruction_bus_cycles.saturating_add(1);
             self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
@@ -222,10 +222,12 @@ impl CpuBus {
                 self.sample_nmi_line();
             }
 
-            // Sample before the final PPU dot and before the register side effect.
-            // A read at dot 2 after VBlank set sees no NMI edge; a read at dot 3
-            // sees the edge first, so clearing PPUSTATUS can no longer retract it.
-            self.sample_nmi_line();
+            // PPUSTATUS reads must sample the NMI input before their clearing
+            // side effect. PPUCTRL writes retain post-write sampling so enabling
+            // NMI during an already-active VBlank is visible in that bus cycle.
+            if sample_before_access {
+                self.sample_nmi_line();
+            }
             self.tick_ppu(ppu_dots_before_access - sample_dots);
         }
     }
@@ -276,7 +278,7 @@ impl CpuBus {
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
         let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
-        self.clock_instruction_bus_access(true, ppu_dots_before_access);
+        self.clock_instruction_bus_access(true, ppu_dots_before_access, true);
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x6000..=0x7FFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
@@ -299,7 +301,7 @@ impl CpuBus {
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
         let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
-        self.clock_instruction_bus_access(false, ppu_dots_before_access);
+        self.clock_instruction_bus_access(false, ppu_dots_before_access, false);
         self.open_bus = value;
         match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF] = value,
@@ -340,7 +342,10 @@ impl CpuBus {
         }
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
-        if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
+        if timed_access {
+            self.sample_nmi_line();
+            if ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
+        }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
     /// The values are latched by the next strobe write to $4016.
