@@ -1257,10 +1257,10 @@ mod tests {
     fn selected_ppu_startup_phase_survives_console_reset() {
         let image = nrom_with_program(&[0xEA]);
         let mut machine = NesMachine::from_ines_with_ppu_startup_phase(&image, 2).unwrap();
-        assert_eq!(machine.ppu_position(), (261, 0));
+        assert_eq!(machine.ppu_position(), (261, 2));
         assert_eq!(machine.ppu_startup_phase, 2);
         machine.reset();
-        assert_eq!(machine.ppu_position(), (261, 0));
+        assert_eq!(machine.ppu_position(), (261, 2));
         assert_eq!(machine.ppu_startup_phase, 2);
     }
 
