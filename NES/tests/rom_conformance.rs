@@ -163,12 +163,17 @@ fn blargg_ppu_diagnostics_experimental() {
         "ppu_vbl_nmi/rom_singles/10-even_odd_timing.nes",
     ];
 
+    let mut failures = Vec::new();
     for relative in roms {
         let path = root.join(relative);
         assert!(path.is_file(), "missing experimental PPU ROM: {}", path.display());
         match run_blargg_rom(&path) {
             Ok(message) => println!("EXPERIMENTAL PASS {} — {}", relative, message),
-            Err(error) => panic!("experimental PPU diagnostic failed: {error}"),
+            Err(error) => {
+                eprintln!("EXPERIMENTAL FAIL {} — {}", relative, error);
+                failures.push(error);
+            }
         }
     }
+    assert!(failures.is_empty(), "experimental PPU diagnostics reported {} failure(s)", failures.len());
 }
