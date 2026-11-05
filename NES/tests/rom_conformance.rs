@@ -293,3 +293,75 @@ fn blargg_ppu_diagnostics_experimental() {
         "alternate-phase PPU diagnostics reported {} failure(s):\n{}",
         phase_failures.len(), phase_failures.join("\n"));
 }
+
+#[test]
+fn blargg_extended_hardware_diagnostics() {
+    let Some(root) = std::env::var_os("PEACEEMU_NES_TEST_ROM_DIR") else {
+        eprintln!("Skipping extended ROM tests: PEACEEMU_NES_TEST_ROM_DIR is not set");
+        return;
+    };
+    let root = PathBuf::from(root);
+    // Additional Blargg suites exercise CPU bus timing, interrupts, reset,
+    // PPU register behavior, sprite evaluation and sprite-zero hit timing.
+    const ROMS: &[&str] = &[
+        "branch_timing_tests/1.Branch_Basics.nes",
+        "branch_timing_tests/2.Backward_Branch.nes",
+        "branch_timing_tests/3.Forward_Branch.nes",
+        "instr_misc/rom_singles/01-abs_x_wrap.nes",
+        "instr_misc/rom_singles/02-branch_wrap.nes",
+        "instr_misc/rom_singles/03-dummy_reads.nes",
+        "instr_misc/rom_singles/04-dummy_reads_apu.nes",
+        "cpu_interrupts_v2/rom_singles/1-cli_latency.nes",
+        "cpu_interrupts_v2/rom_singles/2-nmi_and_brk.nes",
+        "cpu_interrupts_v2/rom_singles/3-nmi_and_irq.nes",
+        "cpu_interrupts_v2/rom_singles/4-irq_and_dma.nes",
+        "cpu_interrupts_v2/rom_singles/5-branch_delays_irq.nes",
+        "cpu_reset/ram_after_reset.nes",
+        "cpu_reset/registers.nes",
+        "ppu_open_bus/ppu_open_bus.nes",
+        "ppu_read_buffer/test_ppu_read_buffer.nes",
+        "sprite_hit_tests_2005.10.05/01.basics.nes",
+        "sprite_hit_tests_2005.10.05/02.alignment.nes",
+        "sprite_hit_tests_2005.10.05/03.corners.nes",
+        "sprite_hit_tests_2005.10.05/04.flip.nes",
+        "sprite_hit_tests_2005.10.05/05.left_clip.nes",
+        "sprite_hit_tests_2005.10.05/06.right_edge.nes",
+        "sprite_hit_tests_2005.10.05/07.screen_bottom.nes",
+        "sprite_hit_tests_2005.10.05/08.double_height.nes",
+        "sprite_hit_tests_2005.10.05/09.timing_basics.nes",
+        "sprite_hit_tests_2005.10.05/10.timing_order.nes",
+        "sprite_hit_tests_2005.10.05/11.edge_timing.nes",
+        "sprite_overflow_tests/1.Basics.nes",
+        "sprite_overflow_tests/2.Details.nes",
+        "sprite_overflow_tests/3.Timing.nes",
+        "sprite_overflow_tests/4.Obscure.nes",
+        "sprite_overflow_tests/5.Emulator.nes",
+    ];
+
+    let mut failures = Vec::new();
+    let mut passed = 0;
+    for relative in ROMS {
+        let path = root.join(relative);
+        if !path.is_file() {
+            failures.push(format!("missing diagnostic ROM: {}", path.display()));
+            continue;
+        }
+        match run_blargg_rom(&path) {
+            Ok(message) => {
+                passed += 1;
+                println!("EXTENDED PASS {} — {}", relative, message);
+            }
+            Err(error) => {
+                eprintln!("EXTENDED FAIL {}", error);
+                failures.push(error);
+            }
+        }
+    }
+    println!("Extended Blargg diagnostics: {passed}/{} passed", ROMS.len());
+    assert!(
+        failures.is_empty(),
+        "extended hardware diagnostics reported {} failure(s):\\n{}",
+        failures.len(),
+        failures.join("\\n")
+    );
+}
