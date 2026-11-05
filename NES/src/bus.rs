@@ -139,10 +139,7 @@ impl CpuBus {
 
     fn ppu_register_dots_before_access(&self) -> u32 {
         match self.ppu_bus_phase {
-            // The default divider alignment samples at the CPU bus-cycle
-            // boundary. Sampling after only two PPU dots makes $2002 one
-            // PPU dot early at the VBlank set/suppression boundary.
-            0 => 3,
+            0 => 2,
             1 => 3,
             _ => 1,
         }
