@@ -534,6 +534,7 @@ impl CpuBus {
             self.nmi_pending = true;
             self.nmi_sample_cycle = Some(self.cpu_cycle);
         }
+        #[cfg(feature = "ppu-timing-diagnostics")]
         self.ppu.record_cpu_nmi_sample(captured_edge);
     }
 
