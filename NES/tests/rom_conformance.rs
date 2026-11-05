@@ -64,11 +64,12 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 let trace = if path.to_string_lossy().contains("ppu_vbl_nmi") {
                     let entries = machine.bus_trace();
                     let relevant: Vec<_> = entries.iter()
-                        .filter(|entry| {
-                            (entry.ppu_scanline == 241 || entry.ppu_scanline == 261)
-                                && (0x2000..=0x3FFF).contains(&entry.address)
-                                && matches!(entry.address & 7, 0 | 2)
-                        })
+                        .rev()
+                        .filter(|entry| (0x2000..=0x3FFF).contains(&entry.address))
+                        .take(100)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
                         .map(|entry| format!(
                             "cycle={} beam={}:{} reg=${:04X} value=${:02X} ppu_nmi={} cpu_nmi_pending={}",
                             entry.cycle, entry.ppu_scanline, entry.ppu_dot, entry.address,
