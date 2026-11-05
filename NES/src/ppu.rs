@@ -192,9 +192,8 @@ impl Ppu {
                     self.record_timing_event("VBLANK_SUPPRESSED");
                     value &= !0x80;
                 } else if self.scanline == 241 && self.dot == 1 {
-                    // The set-dot event has already asserted VBlank for this
-                    // bus phase. The read observes bit 7 high, then clears the
-                    // flag and cancels the unsampled NMI edge.
+                    // A read on the set dot still observes bit 7 low.
+                    value &= !0x80;
                     self.nmi_pending = false;
                 } else if self.scanline == 241 && self.dot == 2 {
                     // One dot after the set, bit 7 is visible but the CPU may
@@ -2817,7 +2816,7 @@ mod tests {
         ppu.tick(1);
         assert_ne!(ppu.status & 0x80, 0, "vblank is set at scanline 241 dot 1 in this timing model");
         let status = ppu.cpu_read_register(2, None);
-        assert_ne!(status & 0x80, 0, "the dot-1 event has set VBlank before this bus read");
+        assert_eq!(status & 0x80, 0, "a dot-1 race must return vblank clear to the CPU");
         assert_eq!(ppu.status & 0x80, 0);
         assert!(!ppu.nmi_line);
     }
@@ -4159,7 +4158,7 @@ mod vblank_nmi_race_regressions {
 
         let status = ppu.cpu_read_register(2, None);
 
-        assert_ne!(status & 0x80, 0, "the set-dot read observes the flag before clearing it");
+        assert_eq!(status & 0x80, 0, "the racing status read observes vblank as clear");
         assert_eq!(ppu.status & 0x80, 0, "the read clears the vblank flag");
         assert!(!ppu.nmi_line, "clearing vblank lowers the NMI output");
         assert!(!ppu.take_nmi_request(), "the NMI edge from this same-dot race must not reach the CPU");
