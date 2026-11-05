@@ -802,6 +802,27 @@ mod tests {
     }
 
     #[test]
+    fn frame_irq_timing_preserves_three_vs_four_cycle_reset_jitter() {
+        let mut three_cycle = Apu::new();
+        three_cycle.cpu_cycle_odd = true;
+        three_cycle.write(0x4017, 0x00);
+        assert_eq!(three_cycle.frame_reset_delay, 3);
+        three_cycle.tick_cpu_cycles(29_831);
+        assert!(three_cycle.frame_irq_pending(),
+            "the three-cycle reset reaches the 29,828 IRQ landmark on this read");
+
+        let mut four_cycle = Apu::new();
+        four_cycle.cpu_cycle_odd = false;
+        four_cycle.write(0x4017, 0x00);
+        assert_eq!(four_cycle.frame_reset_delay, 4);
+        four_cycle.tick_cpu_cycles(29_831);
+        assert!(!four_cycle.frame_irq_pending(),
+            "the four-cycle reset is still one cycle before the IRQ landmark");
+        four_cycle.tick_cpu_cycles(1);
+        assert!(four_cycle.frame_irq_pending());
+    }
+
+    #[test]
     fn frame_counter_reset_occurs_on_exact_final_delay_cycle() {
         let mut apu = Apu::new();
         apu.frame_cycles = 321;
