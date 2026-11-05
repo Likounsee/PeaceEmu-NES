@@ -10,4 +10,9 @@ description = "Nintendo Entertainment System emulation core for PeaceEmu"
 name = "peaceemu_nes"
 path = "NES/src/lib.rs"
 
+[features]
+default = []
+# Exposes internal PPU timing history only to diagnostic/test builds.
+ppu-timing-diagnostics = []
+
 [dependencies]
