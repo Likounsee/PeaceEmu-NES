@@ -383,23 +383,10 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
         if timed_access {
-            // A PPUCTRL write can itself raise the NMI output (when VBlank is
-            // already set), or cancel it by disabling NMI. Let its propagation
-            // dots elapse before the CPU samples that changed line.
-            let ppu_ctrl_write = ppu_register && address & 7 == 0;
-            if ppu_ctrl_write {
-                self.tick_ppu(3 - ppu_dots_before_access);
-                self.sample_nmi_line();
-            } else {
-                // Other writes retain the bus-strobe sampling point. Sampling
-                // after their trailing dots would incorrectly capture an edge
-                // that occurred after the CPU's poll, and breaks DMC-held
-                // PPUSTATUS cancellation.
-                self.sample_nmi_line();
-                if ppu_register {
-                    self.tick_ppu(3 - ppu_dots_before_access);
-                }
-            }
+            self.sample_nmi_line();
+        }
+        if timed_access && ppu_register {
+            self.tick_ppu(3 - ppu_dots_before_access);
         }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
@@ -2242,20 +2229,6 @@ mod nmi_sampling_boundary_regressions {
         assert!(!bus.ppu.nmi_line(), "the status read lowers the PPU output");
         assert!(bus.take_nmi_request(),
             "the already-propagated NMI edge must survive the later falling edge");
-    }
-
-    #[test]
-    fn ppuctrl_enable_samples_nmi_edge_that_rises_during_trailing_dots() {
-        let mut bus = CpuBus::new();
-        bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
-        bus.set_ppu_bus_phase(2); // $2000 strobe on dot 1; cycle ends on dot 3.
-        bus.begin_cpu_instruction();
-        bus.write(0x2000, 0x80); // VBlank sets on dot 1; NMI propagation completes on dot 2.
-        assert_eq!(bus.end_cpu_instruction(), 1);
-        assert_eq!(bus.ppu_position(), (241, 3));
-        assert!(bus.ppu.nmi_line(), "the PPU output must have risen during the trailing dots");
-        assert!(bus.take_nmi_request(),
-            "the CPU must sample an NMI edge that rises after the PPUCTRL write strobe but before cycle end");
     }
 
     #[test]
