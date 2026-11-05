@@ -74,18 +74,33 @@ pub struct NesMachine {
     cpu: Cpu,
     bus: CpuBus,
     battery_backed: bool,
+    ppu_startup_phase: u8,
 }
 
 impl NesMachine {
     /// Parses an iNES image, attaches its mapper-selected cartridge, and performs CPU reset.
     pub fn from_ines(image: &[u8]) -> Result<Self, MachineError> {
+        Self::from_ines_with_ppu_startup_phase(image, 0)
+    }
+
+    /// Loads an iNES image with a selected CPU/PPU divider phase (0, 1, or 2 dots).
+    ///
+    /// Real hardware can start with any of the three PPU-dot alignments relative
+    /// to a CPU cycle. The default constructor selects phase 0; this variant is
+    /// useful for deterministic hardware-timing diagnostics and reset testing.
+    pub fn from_ines_with_ppu_startup_phase(
+        image: &[u8],
+        ppu_startup_phase: u8,
+    ) -> Result<Self, MachineError> {
+        assert!(ppu_startup_phase < 3, "PPU startup phase must be 0, 1, or 2");
         let cartridge = Cartridge::parse(image)?;
         let battery_backed = image.get(6).is_some_and(|flags| flags & 0x02 != 0);
         let mut bus = CpuBus::new();
         bus.insert_cartridge(cartridge);
+        bus.tick_ppu(u32::from(ppu_startup_phase));
         let mut cpu = Cpu::new();
         cpu.reset(&mut bus);
-        Ok(Self { cpu, bus, battery_backed })
+        Ok(Self { cpu, bus, battery_backed, ppu_startup_phase })
     }
 
 
@@ -94,6 +109,7 @@ impl NesMachine {
     /// CPU RAM and cartridge RAM are preserved, matching a console reset rather than a power cycle.
     pub fn reset(&mut self) {
         self.bus.reset();
+        self.bus.tick_ppu(u32::from(self.ppu_startup_phase));
         self.cpu.reset(&mut self.bus);
     }
 
