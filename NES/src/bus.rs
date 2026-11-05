@@ -156,7 +156,7 @@ impl CpuBus {
     }
 
     fn record_bus_access(&mut self, kind: CpuBusAccessKind, address: u16, value: u8) {
-        const TRACE_CAPACITY: usize = 2048;
+        const TRACE_CAPACITY: usize = 32_768;
         if self.bus_trace.len() == TRACE_CAPACITY {
             self.bus_trace.pop_front();
         }
