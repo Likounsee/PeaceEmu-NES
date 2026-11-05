@@ -108,11 +108,15 @@ PEACEEMU_NES_APU_TEST_ROM_DIR=/chemin/vers/nes-test-roms cargo test --manifest-p
 PEACEEMU_NES_PPU_TEST_ROM_DIR=/chemin/vers/nes-test-roms cargo test --manifest-path NES/Cargo.toml --test rom_conformance --locked -- --nocapture blargg_ppu_diagnostics_experimental
 ```
 
-La suite CPU valide seize cas. Les huit ROMs APU et les dix ROMs PPU sont
-exécutées dans des jobs expérimentaux distincts : leurs échecs restent visibles
-et bloquent le job correspondant, sans être présentés comme une compatibilité
-matérielle complète. Les tests PPU avertissent que la phase du diviseur d'horloge
-au démarrage peut décaler certains résultats d'un ou plusieurs dots. Le protocole
-commun lit la signature `$DE $B0 $61`, l'état à `$6000` et le message à partir de
-`$6004`. nestest avec comparaison de trace et la compatibilité des mappers restent
-à valider séparément.
+La suite CPU valide les 16 ROMs de diagnostic sur Linux et Windows. Les
+8 ROMs APU passent également sur les deux plateformes. Les 10 ROMs PPU sont
+exécutées dans un job expérimental non bloquant pour la compilation du module :
+sur le commit validé le 5 novembre 2026, 5/10 passent (`01`, `03`, `04`,
+`09`, `10`) et 5 restent en échec (`02`, `05`, `06`, `07`, `08`).
+Ces échecs restent affichés dans les logs et ne doivent pas être présentés comme
+une compatibilité matérielle complète. Le test `02` reste sensible à la phase
+CPU/PPU au démarrage ; les tests `05` à `08` demandent encore une synchronisation
+plus précise des fronts NMI et des lectures de `$2002`. Le protocole commun lit
+la signature `$DE $B0 $61`, l'état à `$6000` et le message à partir de `$6004`.
+nestest avec comparaison de trace et la compatibilité des mappers restent à
+valider séparément.
