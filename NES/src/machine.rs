@@ -124,6 +124,7 @@ impl NesMachine {
     }
 
     /// Returns the bounded PPU VBlank/NMI timing history, oldest first.
+    #[cfg(feature = "ppu-timing-diagnostics")]
     pub fn ppu_timing_events(&self) -> Vec<crate::ppu::PpuTimingEvent> {
         self.bus.ppu_timing_events()
     }
