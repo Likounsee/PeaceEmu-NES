@@ -36,6 +36,13 @@ pub struct CpuBusTraceEntry {
     pub value: u8,
     /// Bus master and direction for this transaction.
     pub kind: CpuBusAccessKind,
+    /// PPU beam position immediately after the transaction's side effect.
+    pub ppu_scanline: u16,
+    pub ppu_dot: u16,
+    /// PPU NMI output level after the transaction's side effect.
+    pub ppu_nmi_line: bool,
+    /// CPU-side NMI latch before the end-of-access sample.
+    pub cpu_nmi_pending: bool,
 }
 
 /// CPU bus with 2 KiB internal RAM and an optional mapper-backed cartridge.
@@ -152,11 +159,16 @@ impl CpuBus {
         if self.bus_trace.len() == TRACE_CAPACITY {
             self.bus_trace.pop_front();
         }
+        let (ppu_scanline, ppu_dot) = self.ppu.position();
         self.bus_trace.push_back(CpuBusTraceEntry {
             cycle: self.cpu_cycle,
             address,
             value,
             kind,
+            ppu_scanline,
+            ppu_dot,
+            ppu_nmi_line: self.ppu.nmi_line(),
+            cpu_nmi_pending: self.nmi_pending,
         });
     }
 
