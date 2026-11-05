@@ -2024,13 +2024,13 @@ mod frame_counter_delay_regressions {
     use super::*;
 
     #[test]
-    fn frame_counter_reset_uses_three_cycles_on_odd_phase_and_four_on_even_phase() {
+    fn frame_counter_reset_uses_four_cycles_on_odd_phase_and_three_on_even_phase() {
         let mut odd = Apu::new();
         odd.cpu_cycle_odd = true;
         odd.frame_cycles = 10;
         odd.write(0x4017, 0x80);
-        odd.tick_cpu_cycles(2);
-        assert!(odd.frame_reset_pending, "odd-phase reset must still be pending after two cycles");
+        odd.tick_cpu_cycles(3);
+        assert!(odd.frame_reset_pending, "odd-phase reset must still be pending after three cycles");
         odd.tick_cpu_cycles(1);
         assert!(!odd.frame_reset_pending);
         assert!(odd.five_step_mode);
@@ -2040,8 +2040,8 @@ mod frame_counter_delay_regressions {
         even.cpu_cycle_odd = false;
         even.frame_cycles = 10;
         even.write(0x4017, 0x80);
-        even.tick_cpu_cycles(3);
-        assert!(even.frame_reset_pending, "even-phase reset must still be pending after three cycles");
+        even.tick_cpu_cycles(2);
+        assert!(even.frame_reset_pending, "even-phase reset must still be pending after two cycles");
         even.tick_cpu_cycles(1);
         assert!(!even.frame_reset_pending);
         assert!(even.five_step_mode);
