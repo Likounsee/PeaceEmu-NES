@@ -322,11 +322,16 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.open_bus = value;
         self.record_bus_access(CpuBusAccessKind::Read, address, value);
+        if timed_access && ppu_register {
+            // A register's data strobe can occur before the end of its CPU
+            // cycle. The CPU samples interrupt inputs at the cycle boundary,
+            // after the remaining PPU dots have elapsed. Sampling here (before
+            // the trailing dots) misses an NMI edge that propagates just after
+            // the register strobe and delays recognition by a full CPU cycle.
+            self.tick_ppu(3 - ppu_dots_before_access);
+        }
         if timed_access && !poll_before_access {
             self.sample_nmi_line();
-        }
-        if timed_access && ppu_register {
-            self.tick_ppu(3 - ppu_dots_before_access);
         }
         value
     }
