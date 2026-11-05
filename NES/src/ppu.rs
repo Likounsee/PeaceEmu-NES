@@ -2912,17 +2912,16 @@ mod tests {
         ppu.dot = 0;
         ppu.ctrl = 0x80;
 
-        ppu.tick(1);
-        assert_eq!(ppu.position(), (241, 1));
-        assert_eq!(ppu.status & 0x80, 0, "dot 0 has not set VBlank");
+        assert_eq!(ppu.position(), (241, 0));
+        assert_eq!(ppu.status & 0x80, 0, "VBlank has not started yet");
 
         ppu.tick(1);
-        assert_eq!(ppu.position(), (241, 2));
+        assert_eq!(ppu.position(), (241, 1));
         assert_ne!(ppu.status & 0x80, 0, "VBlank flag sets at dot 1");
         assert!(!ppu.nmi_line, "NMI output has not propagated yet");
 
         ppu.tick(1);
-        assert_eq!(ppu.position(), (241, 3));
+        assert_eq!(ppu.position(), (241, 2));
         assert!(ppu.nmi_line, "NMI output rises one dot after the VBlank flag");
         assert!(ppu.take_nmi_request());
     }
