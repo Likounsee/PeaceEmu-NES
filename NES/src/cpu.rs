@@ -1131,6 +1131,7 @@ mod tests {
         cpu.step(&mut bus).unwrap(); // Clear I before either interrupt.
         bus.tick_ppu(243 * 341 + 1);
         bus.write(0x2000, 0x80);
+        bus.sample_nmi_line(); // Seed the CPU-side NMI latch at this fixture boundary.
         bus.tick_apu(29_834);
         assert!(bus.irq_pending());
         let result = cpu.step(&mut bus).unwrap();
@@ -1376,6 +1377,7 @@ mod tests {
         cpu.set_pc(0x8600);
         bus.tick_ppu(243 * 341 + 1);
         bus.write(0x2000, 0x80);
+        bus.sample_nmi_line(); // Seed the CPU-side NMI latch at this fixture boundary.
         let result = cpu.step(&mut bus).unwrap();
         assert_eq!(result.cycles, 7);
         assert_eq!(result.opcode, 0xFF);
@@ -1843,6 +1845,7 @@ mod interrupt_bus_cycle_regression_tests {
         cpu.set_pc(0x4016); // Reads here shift the controller serial port.
         bus.tick_ppu(243 * 341 + 1);
         bus.write(0x2000, 0x80);
+        bus.sample_nmi_line(); // Seed the CPU-side NMI latch at this fixture boundary.
 
         assert_eq!(cpu.step(&mut bus).unwrap().cycles, 7);
         assert_eq!(cpu.state().pc, 0x9000);
@@ -2462,6 +2465,7 @@ mod nmi_irq_poll_priority_regressions {
         // the old SEI poll sample must not leak into the handler's first step.
         bus.tick_ppu(243 * 341 + 1);
         bus.write(0x2000, 0x80);
+        bus.sample_nmi_line(); // Seed the CPU-side NMI latch at this fixture boundary.
         assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0xFF);
         assert_eq!(cpu.state().pc, 0x9000);
 
