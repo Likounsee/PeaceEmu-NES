@@ -95,7 +95,17 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                             entry.value, entry.ppu_nmi_line, entry.cpu_nmi_pending
                         ))
                         .collect();
-                    format!("\\nCPU bus trace near VBlank/pre-render (including soft-reset history):\\n{}", relevant.join("\\n"))
+                    let mut timing_events = ppu_timing_history.clone();
+                    timing_events.extend(machine.ppu_timing_events());
+                    let timing: Vec<_> = timing_events.iter().rev().take(120).collect::<Vec<_>>()
+                        .into_iter().rev()
+                        .map(|event| format!(
+                            "cycle={} beam={}:{} {} status=${:02X} ctrl=${:02X} nmi_line={} nmi_pending={} delay={} suppress={}",
+                            event.cycle, event.scanline, event.dot, event.kind, event.status,
+                            event.ctrl, event.nmi_line, event.nmi_pending,
+                            event.nmi_vblank_delay, event.suppress_vblank
+                        )).collect();
+                    format!("\\nCPU bus trace near VBlank/pre-render (including soft-reset history):\\n{}\\nPPU internal VBlank/NMI events (including soft-reset history):\\n{}", relevant.join("\\n"), timing.join("\\n"))
                 } else {
                     String::new()
                 };
