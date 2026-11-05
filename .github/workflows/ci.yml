@@ -51,6 +51,10 @@ jobs:
         env:
           PEACEEMU_NES_PPU_TEST_ROM_DIR: ${{ github.workspace }}/test-roms
         run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_ppu_diagnostics_experimental
+      - name: Run experimental Blargg PPU register diagnostic ROMs
+        env:
+          PEACEEMU_NES_PPU_TEST_ROM_DIR: ${{ github.workspace }}/test-roms
+        run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_ppu_register_diagnostics_experimental
       - name: Build desktop module
         run: cargo build --manifest-path NES/Cargo.toml --bin peaceemu-nes-desktop --release --locked
       - name: Upload desktop build artifact
