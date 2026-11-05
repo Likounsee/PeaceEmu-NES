@@ -138,10 +138,13 @@ impl CpuBus {
     }
 
     fn ppu_register_dots_before_access(&self) -> u32 {
+        // The CPU's PPU-register data strobe is one PPU dot earlier than
+        // the end-of-cycle sample used for ordinary memory accesses. Rotate
+        // that strobe through the three possible CPU/PPU divider alignments.
         match self.ppu_bus_phase {
-            0 => 2,
-            1 => 3,
-            _ => 1,
+            0 => 1,
+            1 => 2,
+            _ => 3,
         }
     }
 
@@ -2202,9 +2205,9 @@ mod nmi_sampling_boundary_regressions {
             let first_cycle = bus.end_cpu_instruction();
             assert_eq!(first_cycle, 1, "phase {phase}: first CPU access is one cycle");
 
-            if phase == 2 {
+            if phase == 0 {
                 assert!(!bus.take_nmi_request(),
-                    "phase 2: the first access reaches dot 1, before the delayed NMI output rises");
+                    "phase 0: the first access reaches dot 1, before the delayed NMI output rises");
                 bus.begin_cpu_instruction();
                 let _ = bus.read(0x2001);
                 assert_eq!(bus.end_cpu_instruction(), 1);
