@@ -2382,7 +2382,7 @@ mod sei_irq_poll_regressions {
     fn frame_irq_near_assertion() -> CpuBus {
         let mut bus = CpuBus::new();
         bus.write(0x4017, 0x00);
-        bus.tick_apu(29_832);
+        bus.tick_apu(29_831);
         assert!(!bus.irq_pending(), "fixture must begin just before frame IRQ assertion");
         bus
     }
