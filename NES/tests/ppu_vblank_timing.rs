@@ -14,14 +14,14 @@ fn at_vblank_start() -> Ppu {
 }
 
 #[test]
-fn vblank_is_set_on_scanline_241_dot_1_and_nmi_follows_on_dot_2() {
+fn status_read_on_dot_1_observes_the_race_and_cancels_nmi() {
     let mut ppu = at_vblank_start();
     ppu.cpu_write_register(0, 0x80, None);
 
     ppu.tick(1);
     assert_eq!(ppu.position(), (241, 1));
-    assert_ne!(ppu.cpu_read_register(2, None) & 0x80, 0,
-        "a status read must see VBlank once dot 1 has completed");
+    assert_eq!(ppu.cpu_read_register(2, None) & 0x80, 0,
+        "a status read on the VBlank-set dot must still observe bit 7 low");
     assert!(!ppu.take_nmi_request(),
         "the NMI output must not rise during the one-dot propagation delay");
 
