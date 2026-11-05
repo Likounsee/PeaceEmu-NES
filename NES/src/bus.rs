@@ -251,9 +251,7 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        let ppu_ctrl_write = ppu_register && address & 7 == 0;
         self.clock_instruction_bus_access(false, if ppu_register { 2 } else { 3 });
-        if timed_access && ppu_ctrl_write { self.sample_nmi_line(); }
         self.open_bus = value;
         match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF] = value,
@@ -295,7 +293,7 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
         if timed_access && ppu_register { self.tick_ppu(1); }
-        if timed_access && !ppu_ctrl_write { self.sample_nmi_line(); }
+        if timed_access { self.sample_nmi_line(); }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
     /// The values are latched by the next strobe write to $4016.
