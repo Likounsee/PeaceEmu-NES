@@ -530,3 +530,50 @@ fn blargg_oam_read_diagnostics_experimental() {
         Err(error) => panic!("experimental OAM-read diagnostic failed: {error}"),
     }
 }
+
+
+#[test]
+fn blargg_apu_reset_diagnostics_experimental() {
+    let Some(root) = std::env::var_os("PEACEEMU_NES_TEST_ROM_DIR") else {
+        eprintln!("Skipping experimental APU reset ROM tests: PEACEEMU_NES_TEST_ROM_DIR is not set");
+        return;
+    };
+    let root = PathBuf::from(root);
+    // These reset-focused ROMs explicitly use the $6000 result protocol.
+    // run_blargg_rom also services their $81 delayed-reset requests.
+    const ROMS: &[&str] = &[
+        "apu_reset/4015_cleared.nes",
+        "apu_reset/4017_timing.nes",
+        "apu_reset/4017_written.nes",
+        "apu_reset/irq_flag_cleared.nes",
+        "apu_reset/len_ctrs_enabled.nes",
+        "apu_reset/works_immediately.nes",
+    ];
+
+    let mut failures = Vec::new();
+    let mut passed = 0;
+    for relative in ROMS {
+        let path = root.join(relative);
+        if !path.is_file() {
+            failures.push(format!("missing APU reset ROM: {}", path.display()));
+            continue;
+        }
+        match run_blargg_rom(&path) {
+            Ok(message) => {
+                passed += 1;
+                println!("EXPERIMENTAL APU RESET PASS {} — {}", relative, message);
+            }
+            Err(error) => {
+                eprintln!("EXPERIMENTAL APU RESET FAIL {}", error);
+                failures.push(error);
+            }
+        }
+    }
+    println!("Blargg APU reset diagnostics: {passed}/{} passed", ROMS.len());
+    assert!(
+        failures.is_empty(),
+        "APU reset diagnostics reported {} failure(s):\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
