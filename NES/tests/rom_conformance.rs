@@ -89,8 +89,9 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                     // dot-1/2/3 race; status reads alone omit the NMI-enable strobe.
                     let ppu_accesses: Vec<_> = entries.iter()
                         .filter(|entry| {
-                            matches!(entry.address & 0xE007, 0x2000 | 0x2002)
-                                && matches!(entry.ppu_scanline, 240..=242 | 261)
+                            (entry.address & 0xE007) == 0x2000
+                                || ((entry.address & 0xE007) == 0x2002
+                                    && matches!(entry.ppu_scanline, 239..=242 | 261))
                         })
                         .rev()
                         .take(240)
@@ -107,7 +108,8 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                     timing_events.extend(machine.ppu_timing_events());
                     let timing: Vec<_> = timing_events.iter()
                         .filter(|event| {
-                            (event.scanline == 241 && event.dot <= 30)
+                            event.kind == "PPUCTRL_WRITE"
+                                || (event.scanline == 241 && event.dot <= 30)
                                 || (event.scanline == 261 && event.dot <= 3)
                         })
                         .rev()
