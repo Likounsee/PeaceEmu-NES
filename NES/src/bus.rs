@@ -145,6 +145,17 @@ impl CpuBus {
         }
     }
 
+    /// CPU read data is sampled at the end of the bus cycle, one PPU dot
+    /// later than the write strobe. Keep this distinct from write timing:
+    /// moving both strobes together breaks PPUCTRL/NMI edge timing.
+    fn ppu_register_read_dots_before_access(&self) -> u32 {
+        match self.ppu_bus_phase {
+            0 => 3,
+            1 => 1,
+            _ => 2,
+        }
+    }
+
     /// Starts tracking CPU bus cycles during one instruction.
     pub(crate) fn begin_cpu_instruction(&mut self) {
         self.instruction_timing = true;
@@ -250,6 +261,12 @@ impl CpuBus {
         // Decode the same mirrors and I/O registers as a CPU read, but do not
         // advance instruction timing here: the DMA stall is accounted for by
         // tick_apu and must not recursively clock the bus.
+        // The CPU samples the interrupt line with the read-data strobe.
+        // Do this before a PPUSTATUS read clears the PPU's NMI output.
+        let status_read = ppu_register && address & 7 == 2;
+        if timed_access && status_read {
+            self.sample_nmi_line();
+        }
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x2000..=0x3FFF => self.ppu.cpu_read_register(address & 7, self.cartridge.as_ref()),
@@ -274,7 +291,11 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
+        let ppu_dots_before_access = if ppu_register {
+            self.ppu_register_read_dots_before_access()
+        } else {
+            3
+        };
         self.clock_instruction_bus_access(true, ppu_dots_before_access);
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
@@ -289,7 +310,7 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.open_bus = value;
         self.record_bus_access(CpuBusAccessKind::Read, address, value);
-        if timed_access { self.sample_nmi_line(); }
+        if timed_access && !status_read { self.sample_nmi_line(); }
         if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
         value
     }
@@ -1542,17 +1563,18 @@ mod instruction_bus_timing_regressions {
     }
 
     #[test]
-    fn cpu_samples_nmi_after_status_read_can_suppress_the_edge() {
+    fn cpu_samples_nmi_at_the_read_strobe_before_ppustatus_clears_the_line() {
         let mut bus = CpuBus::new();
         bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
         bus.write(0x2000, 0x80); // Enable NMI before VBlank begins.
 
         bus.begin_cpu_instruction();
-        let status = bus.read(0x2002); // The two pre-access dots cross VBlank dot 1.
+        let status = bus.read(0x2002); // The read-data strobe reaches dot 3.
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert_ne!(status & 0x80, 0, "the status read sees VBlank set");
-        assert!(!bus.take_nmi_request(),
-            "reading PPUSTATUS before the CPU samples the line suppresses this NMI edge");
+        assert!(bus.take_nmi_request(),
+            "the CPU captures the NMI edge at the read strobe before PPUSTATUS clears the line");
+        assert!(!bus.take_nmi_request());
     }
 
     #[test]
