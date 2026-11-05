@@ -275,6 +275,12 @@ impl CpuBus {
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
         let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
         self.clock_instruction_bus_access(true, ppu_dots_before_access);
+        // The CPU samples the NMI input before the read's device side effect.
+        // In particular, a same-cycle $2002 read must not erase an edge that
+        // was already visible to the CPU before it clears the VBlank flag.
+        if timed_access {
+            self.sample_nmi_line();
+        }
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x6000..=0x7FFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
@@ -288,7 +294,6 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.open_bus = value;
         self.record_bus_access(CpuBusAccessKind::Read, address, value);
-        if timed_access { self.sample_nmi_line(); }
         if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
         value
     }
