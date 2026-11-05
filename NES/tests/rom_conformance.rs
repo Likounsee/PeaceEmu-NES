@@ -70,7 +70,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                                 && matches!(entry.address & 7, 0 | 2)
                         })
                         .map(|entry| format!(
-                            "cycle={} beam={}:{} reg=\${:04X} value=\${:02X} ppu_nmi={} cpu_nmi_pending={}",
+                            "cycle={} beam={}:{} reg=${:04X} value=${:02X} ppu_nmi={} cpu_nmi_pending={}",
                             entry.cycle, entry.ppu_scanline, entry.ppu_dot, entry.address,
                             entry.value, entry.ppu_nmi_line, entry.cpu_nmi_pending
                         ))
