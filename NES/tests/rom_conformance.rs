@@ -65,7 +65,10 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                     let entries = machine.bus_trace();
                     let relevant: Vec<_> = entries.iter()
                         .rev()
-                        .filter(|entry| (0x2000..=0x3FFF).contains(&entry.address))
+                        .filter(|entry| {
+                            (0x2000..=0x3FFF).contains(&entry.address)
+                                && matches!(entry.address & 7, 0 | 2)
+                        })
                         .take(100)
                         .collect::<Vec<_>>()
                         .into_iter()
