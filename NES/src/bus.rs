@@ -145,16 +145,6 @@ impl CpuBus {
         }
     }
 
-    /// PPUSTATUS's flag/NMI race resolves one PPU dot later than ordinary
-    /// register transfers. Rotate the divider phase only for reads of $2002.
-    fn ppu_status_dots_before_access(&self) -> u32 {
-        match self.ppu_bus_phase {
-            0 => 3,
-            1 => 1,
-            _ => 2,
-        }
-    }
-
     /// Starts tracking CPU bus cycles during one instruction.
     pub(crate) fn begin_cpu_instruction(&mut self) {
         self.instruction_timing = true;
@@ -283,15 +273,7 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        let ppu_dots_before_access = if ppu_register {
-            if address & 7 == 2 {
-                self.ppu_status_dots_before_access()
-            } else {
-                self.ppu_register_dots_before_access()
-            }
-        } else {
-            3
-        };
+        let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
         self.clock_instruction_bus_access(true, ppu_dots_before_access);
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
@@ -625,23 +607,6 @@ impl CpuBus {
 mod tests {
     use super::*;
 
-
-    #[test]
-    fn ppu_status_read_uses_its_one_dot_later_aperture_for_each_divider_phase() {
-        for (phase, expected_dot) in [(0, 3), (1, 1), (2, 2)] {
-            let mut bus = CpuBus::new();
-            bus.tick_ppu(242 * 341);
-            bus.set_ppu_bus_phase(phase);
-            bus.begin_cpu_instruction();
-            let _ = bus.read(0x2002);
-            assert_eq!(bus.end_cpu_instruction(), 1);
-            assert_eq!(
-                bus.bus_trace().last().unwrap().ppu_dot,
-                expected_dot,
-                "PPUSTATUS divider phase {phase}"
-            );
-        }
-    }
 
     #[test]
     fn bus_trace_records_cpu_transactions_in_cycle_order() {
