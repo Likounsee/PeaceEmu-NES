@@ -14,15 +14,16 @@ fn at_vblank_start() -> Ppu {
 }
 
 #[test]
-fn status_read_on_dot_1_observes_the_race_and_cancels_nmi() {
+fn status_read_on_dot_1_returns_old_value_but_keeps_vblank_nmi() {
     let mut ppu = at_vblank_start();
     ppu.cpu_write_register(0, 0x80, None);
     ppu.tick(1);
     assert_eq!(ppu.position(), (241, 1));
     assert_eq!(ppu.cpu_read_register(2, None) & 0x80, 0);
-    assert!(!ppu.take_nmi_request());
+    assert!(!ppu.take_nmi_request(), "NMI output still has its one-dot propagation delay");
     ppu.tick(1);
     assert_eq!(ppu.position(), (241, 2));
+    assert!(ppu.take_nmi_request(), "the dot-1 read must not cancel the VBlank set");
     assert!(!ppu.take_nmi_request());
 }
 
