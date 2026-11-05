@@ -27,6 +27,7 @@ fn enabling_nmi_during_vblank_generates_a_rising_edge() {
     // Do not read status here: that would clear the flag being tested.
     ppu.tick(1);
     advance_to_vblank(&mut ppu);
+    ppu.tick(1); // Let the one-dot NMI output propagation complete.
     assert!(!ppu.take_nmi_request());
 
     ppu.cpu_write_register(0, 0x80, None);
@@ -40,9 +41,8 @@ fn status_read_during_vblank_cancels_the_pending_nmi_edge() {
     ppu.cpu_write_register(0, 0x80, None);
     advance_to_vblank(&mut ppu);
 
-    assert!(ppu.take_nmi_request());
-    // Dot 1 is the documented vblank/status race; read on dot 2 to test
-    // ordinary status clearing without conflating the race result.
+    // Dot 1 sets the flag; dot 2 asserts NMI. Reading on dot 2 returns bit 7
+    // but suppresses the edge before the CPU has sampled it.
     ppu.tick(1);
     assert_ne!(ppu.cpu_read_register(2, None) & 0x80, 0);
     assert!(!ppu.take_nmi_request());
@@ -52,6 +52,7 @@ fn status_read_during_vblank_cancels_the_pending_nmi_edge() {
 fn disabling_and_reenabling_nmi_while_vblank_is_set_creates_a_new_edge() {
     let mut ppu = Ppu::new();
     advance_to_vblank(&mut ppu);
+    ppu.tick(1); // Move past the one-dot NMI output delay.
     ppu.cpu_write_register(0, 0x80, None);
     assert!(ppu.take_nmi_request());
 
