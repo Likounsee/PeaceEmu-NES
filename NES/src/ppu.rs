@@ -199,16 +199,23 @@ impl Ppu {
                     self.record_timing_event("VBLANK_SUPPRESSED");
                     value &= !0x80;
                 } else if self.scanline == 241 && self.dot == 1 {
-                    // A read on the set dot still observes bit 7 low.
+                    // A read on the set dot observes bit 7 low. If the
+                    // VBlank-to-NMI propagation delay was just armed by this
+                    // dot, preserve it: the delayed NMI edge can still reach
+                    // the CPU even though this read has already cleared bit 7.
                     value &= !0x80;
-                    self.nmi_pending = false;
+                    if !self.nmi_vblank_delay {
+                        self.nmi_pending = false;
+                    }
                 } else if self.scanline == 241 && self.dot == 2 {
-                    // One dot after the set, bit 7 is visible but the CPU may
-                    // still suppress the not-yet-sampled NMI output edge.
+                    // One dot after the set, bit 7 is visible. A same-dot
+                    // read may cancel an edge that was already queued.
                     self.nmi_pending = false;
                 }
                 self.status &= !0x80;
-                self.nmi_vblank_delay = false;
+                if !(self.scanline == 241 && self.dot == 1 && self.nmi_vblank_delay) {
+                    self.nmi_vblank_delay = false;
+                }
                 self.vblank_clear_race = false;
                 self.update_nmi_line();
                 self.write_latch = false;
@@ -525,7 +532,18 @@ impl Ppu {
             }
             if self.scanline == 241 && self.dot == 2 && self.nmi_vblank_delay {
                 self.nmi_vblank_delay = false;
-                self.update_nmi_line();
+                // The 2C02's NMI propagation is already in flight once the
+                // VBlank-set dot has armed it. A $2002 read on dot 1 clears
+                // the status flag but does not retract that delayed edge.
+                if self.ctrl & 0x80 != 0 {
+                    if !self.nmi_line {
+                        self.nmi_pending = true;
+                        self.nmi_line = true;
+                        self.record_timing_event("NMI_RISE");
+                    }
+                } else {
+                    self.update_nmi_line();
+                }
             }
             if self.scanline == 261 && self.dot == 1 {
                 self.vblank_clear_race = self.status & 0x80 != 0;
