@@ -1501,20 +1501,22 @@ mod instruction_bus_timing_regressions {
     }
 
     #[test]
-    fn enabling_nmi_with_ppuctrl_is_sampled_on_the_following_cpu_cycle() {
+    fn enabling_nmi_with_ppuctrl_is_deferred_until_after_the_next_instruction() {
         let mut bus = CpuBus::new();
         bus.tick_ppu(242 * 341 + 1); // VBlank is already active.
         bus.begin_cpu_instruction();
         bus.write(0x2000, 0x80);
         assert_eq!(bus.end_cpu_instruction(), 1);
+        bus.finish_cpu_instruction();
         assert!(!bus.take_nmi_request(),
-            "the PPUCTRL write occurs after this cycle's NMI input sample");
+            "an NMI sampled on the final write cycle is deferred by the CPU poll");
 
         bus.begin_cpu_instruction();
         let _ = bus.read(0x8000);
         assert_eq!(bus.end_cpu_instruction(), 1);
+        bus.finish_cpu_instruction();
         assert!(bus.take_nmi_request(),
-            "the newly asserted NMI line is captured at the next CPU-cycle sample");
+            "the deferred NMI becomes pending after the following instruction");
     }
 
     #[test]
