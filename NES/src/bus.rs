@@ -65,6 +65,7 @@ pub struct CpuBus {
     /// Instruction execution enables one PPU cycle per CPU bus access.
     instruction_timing: bool,
     /// PPU-dot phase at which CPU register accesses occur (0..=2).
+    ppu_bus_phase: u8,
     instruction_bus_cycles: u16,
     /// Absolute CPU-cycle timeline shared with cycle-sensitive cartridge mappers.
     cpu_cycle: u64,
@@ -86,7 +87,7 @@ pub struct CpuBus {
     bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, bus_trace: VecDeque::with_capacity(2048) } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, bus_trace: VecDeque::with_capacity(2048) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -109,6 +110,7 @@ impl CpuBus {
         // previous cycle count would make timed mapper writes observe a stale
         // timeline after the CPU has restarted from its reset vector.
         self.instruction_timing = false;
+        self.ppu_bus_phase = 0;
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
         self.pending_dmc_dma = None;
@@ -127,14 +129,28 @@ impl CpuBus {
     /// Attaches a parsed cartridge.
     pub fn insert_cartridge(&mut self, cartridge: Cartridge) { self.cartridge = Some(cartridge); }
 
-    /// Applies the initial CPU/PPU divider alignment once, before CPU execution.
-    ///
-    /// Thereafter every CPU bus cycle advances exactly three PPU dots before
-    /// the read/write transaction. Keeping the phase as a startup offset avoids
-    /// moving PPU register side effects into the middle of a CPU cycle.
     pub(crate) fn set_ppu_bus_phase(&mut self, phase: u8) {
         assert!(phase < 3, "PPU bus phase must be 0, 1, or 2");
-        self.tick_ppu(u32::from(phase));
+        self.ppu_bus_phase = phase;
+    }
+
+    fn ppu_register_dots_before_access(&self) -> u32 {
+        match self.ppu_bus_phase {
+            0 => 2,
+            1 => 3,
+            _ => 1,
+        }
+    }
+
+    /// PPUSTATUS's read aperture is one PPU dot later than ordinary register
+    /// transfers. Rotate the three divider phases so the flag/NMI race is
+    /// sampled at the correct dot without shifting PPUCTRL writes or PPUDATA.
+    fn ppu_status_dots_before_access(&self) -> u32 {
+        match self.ppu_bus_phase {
+            0 => 3,
+            1 => 1,
+            _ => 2,
+        }
     }
 
     /// Starts tracking CPU bus cycles during one instruction.
@@ -183,26 +199,22 @@ impl CpuBus {
         self.bus_trace.clear();
     }
 
-    /// Advances one complete CPU bus cycle before its data transfer.
-    ///
-    /// The PPU always receives all three dots before a CPU read/write resolves;
-    /// the configured startup phase is represented by the PPU's initial offset,
-    /// not by moving individual register accesses within later CPU cycles.
-    fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool) {
+    /// Advances the PPU to the sampling point of the current CPU bus access.
+    fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool, ppu_dots_before_access: u32) {
         if self.instruction_timing {
             self.instruction_bus_cycles = self.instruction_bus_cycles.saturating_add(1);
             self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
-            self.tick_ppu(3);
-
             // Clock the APU in the same order as CPU bus accesses. In particular,
             // $4017's delayed frame-counter reset must sample the current CPU parity,
             // not the stale parity left over from the previous instruction.
+            self.tick_ppu(ppu_dots_before_access);
             let dmc_stalls = self.tick_apu_with_dma_access(1, dmc_dma_can_halt);
             self.instruction_dmc_stalls = self.instruction_dmc_stalls.saturating_add(dmc_stalls);
 
             // A DMC halt suspends the CPU at this exact readable bus access.
-            // Stolen cycles advance the shared device timeline before the next
-            // instruction bus transaction can be issued.
+            // Advance the shared device timeline before the instruction can issue
+            // its next access; deferring these cycles to the instruction boundary
+            // makes later PPU register reads observe events too early.
             let mut pending_stall_cycles = dmc_stalls;
             while pending_stall_cycles != 0 {
                 pending_stall_cycles -= 1;
@@ -212,7 +224,6 @@ impl CpuBus {
                 self.instruction_dmc_stalls = self.instruction_dmc_stalls
                     .saturating_add(additional_stalls);
                 pending_stall_cycles = pending_stall_cycles.saturating_add(additional_stalls);
-                self.sample_nmi_line();
             }
         }
     }
@@ -261,7 +272,17 @@ impl CpuBus {
     pub fn read(&mut self, address: u16) -> u8 {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
-        self.clock_instruction_bus_access(true);
+        let ppu_register = (0x2000..=0x3FFF).contains(&address);
+        let ppu_dots_before_access = if ppu_register {
+            if address & 7 == 2 {
+                self.ppu_status_dots_before_access()
+            } else {
+                self.ppu_register_dots_before_access()
+            }
+        } else {
+            3
+        };
+        self.clock_instruction_bus_access(true, ppu_dots_before_access);
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x6000..=0x7FFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
@@ -276,13 +297,16 @@ impl CpuBus {
         self.open_bus = value;
         self.record_bus_access(CpuBusAccessKind::Read, address, value);
         if timed_access { self.sample_nmi_line(); }
+        if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
         value
     }
     /// Writes a byte to the CPU address space. Cartridge ROM is not writable.
     pub fn write(&mut self, address: u16, value: u8) {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
-        self.clock_instruction_bus_access(false);
+        let ppu_register = (0x2000..=0x3FFF).contains(&address);
+        let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
+        self.clock_instruction_bus_access(false, ppu_dots_before_access);
         self.open_bus = value;
         match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF] = value,
@@ -324,6 +348,7 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
         if timed_access { self.sample_nmi_line(); }
+        if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
     /// The values are latched by the next strobe write to $4016.
@@ -2121,23 +2146,23 @@ mod dmc_controller_read_conflict_regressions {
 
 
 #[cfg(test)]
-mod cpu_ppu_bus_cycle_regressions {
+mod ppu_status_read_phase_regressions {
     use super::*;
 
     #[test]
-    fn ppu_status_reads_resolve_after_three_dots_for_each_startup_phase() {
-        for phase in 0..3 {
+    fn ppu_status_reads_use_the_status_specific_divider_phase() {
+        let expected_dots = [3, 1, 2];
+        for (phase, expected_dot) in expected_dots.into_iter().enumerate() {
             let mut bus = CpuBus::new();
             bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
-            bus.set_ppu_bus_phase(phase);
-
+            bus.set_ppu_bus_phase(phase as u8);
             bus.begin_cpu_instruction();
-            let status = bus.read(0x2002);
+            let _ = bus.read(0x2002);
             assert_eq!(bus.end_cpu_instruction(), 1);
-            assert_ne!(
-                status & 0x80,
-                0,
-                "phase {phase}: the PPU must advance through the VBlank-set dot before the CPU read resolves"
+            assert_eq!(
+                bus.bus_trace().last().unwrap().ppu_dot,
+                expected_dot,
+                "phase {phase}: PPUSTATUS must resolve at its shifted read aperture"
             );
         }
     }
