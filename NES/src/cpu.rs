@@ -143,7 +143,11 @@ impl Cpu {
     pub fn step(&mut self, bus: &mut CpuBus) -> Result<StepResult, CpuError> {
         let pc = self.state.pc;
         if self.jammed {
-            // A jammed CPU does not fetch, change registers, or respond to IRQ/NMI.
+            // A jammed 2A03 keeps issuing reads at the locked PC address. This
+            // is still a real CPU bus cycle: PPU/APU time advances and mapped
+            // reads retain their normal side effects, while registers and
+            // interrupt state remain frozen.
+            let _ = bus.read(self.state.pc);
             self.cycles = self.cycles.saturating_add(1);
             return Ok(StepResult { pc, opcode: self.jam_opcode, cycles: 1 });
         }
