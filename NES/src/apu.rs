@@ -216,7 +216,7 @@ impl Apu {
             self.pending_five_step_mode = value & 0x80 != 0;
             if self.frame_irq_inhibit { self.frame_irq = false; }
             // IRQ inhibition is immediate; the frame-sequencer reset is delayed.
-            self.frame_reset_delay = if self.cpu_cycle_odd { 3 } else { 4 };
+            self.frame_reset_delay = if self.cpu_cycle_odd { 4 } else { 3 };
             self.frame_reset_pending = true;
         } else if address != 0x4014 && address != 0x4016 {
             self.registers[(address - 0x4000) as usize] = value;
