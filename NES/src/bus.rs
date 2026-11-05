@@ -308,7 +308,10 @@ impl CpuBus {
                 (scanline, target_dot)
             };
             if target_scanline == 241 && target_dot <= 1 {
-                ppu_dots_before_access = ppu_dots_before_access.saturating_sub(1);
+                // The status-data latch is fixed at the same one-dot offset
+                // for all three divider phases; normalize the access point
+                // instead of applying the same relative decrement to each phase.
+                ppu_dots_before_access = 1;
             }
         }
         // The 2A03 polls the interrupt lines at the end of the penultimate
