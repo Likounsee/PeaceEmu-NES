@@ -499,7 +499,9 @@ impl CpuBus {
 
     /// Reads one source byte during a machine-timed OAM DMA transfer.
     pub(crate) fn read_oam_dma_source(&mut self, page: u8, offset: u8) -> u8 {
-        self.read((u16::from(page) << 8) | u16::from(offset))
+        let value = self.read((u16::from(page) << 8) | u16::from(offset));
+        self.sample_nmi_line();
+        value
     }
 
     /// Writes one byte into primary OAM as the DMA bus master.
@@ -1450,6 +1452,37 @@ mod instruction_bus_timing_regressions {
         assert_ne!(status & 0x80, 0, "vblank begins before the fourth-cycle status sample");
         assert_eq!(bus.read(0x2002) & 0x80, 0, "a second $2002 read sees the cleared vblank flag");
         assert_eq!(bus.ppu_position(), (241, 12));
+    }
+
+    #[test]
+    fn cpu_samples_nmi_after_status_read_can_suppress_the_edge() {
+        let mut bus = CpuBus::new();
+        bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
+        bus.write(0x2000, 0x80); // Enable NMI before VBlank begins.
+
+        bus.begin_cpu_instruction();
+        let status = bus.read(0x2002); // The two pre-access dots cross VBlank dot 1.
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        assert_ne!(status & 0x80, 0, "the status read sees VBlank set");
+        assert!(!bus.take_nmi_request(),
+            "reading PPUSTATUS before the CPU samples the line suppresses this NMI edge");
+    }
+
+    #[test]
+    fn enabling_nmi_with_ppuctrl_is_sampled_on_the_following_cpu_cycle() {
+        let mut bus = CpuBus::new();
+        bus.tick_ppu(242 * 341 + 1); // VBlank is already active.
+        bus.begin_cpu_instruction();
+        bus.write(0x2000, 0x80);
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        assert!(!bus.take_nmi_request(),
+            "the PPUCTRL write occurs after this cycle's NMI input sample");
+
+        bus.begin_cpu_instruction();
+        let _ = bus.read(0x8000);
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        assert!(bus.take_nmi_request(),
+            "the newly asserted NMI line is captured at the next CPU-cycle sample");
     }
 
     #[test]
