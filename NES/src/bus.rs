@@ -56,6 +56,8 @@ pub struct CpuBus {
     controller_strobe: bool,
     /// Instruction execution enables one PPU cycle per CPU bus access.
     instruction_timing: bool,
+    /// PPU-dot phase at which CPU register accesses occur (0..=2).
+    ppu_bus_phase: u8,
     instruction_bus_cycles: u16,
     /// Absolute CPU-cycle timeline shared with cycle-sensitive cartridge mappers.
     cpu_cycle: u64,
@@ -77,7 +79,7 @@ pub struct CpuBus {
     bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, bus_trace: VecDeque::with_capacity(2048) } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, bus_trace: VecDeque::with_capacity(2048) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -100,6 +102,7 @@ impl CpuBus {
         // previous cycle count would make timed mapper writes observe a stale
         // timeline after the CPU has restarted from its reset vector.
         self.instruction_timing = false;
+        self.ppu_bus_phase = 0;
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
         self.pending_dmc_dma = None;
@@ -117,6 +120,19 @@ impl CpuBus {
     }
     /// Attaches a parsed cartridge.
     pub fn insert_cartridge(&mut self, cartridge: Cartridge) { self.cartridge = Some(cartridge); }
+
+    pub(crate) fn set_ppu_bus_phase(&mut self, phase: u8) {
+        assert!(phase < 3, "PPU bus phase must be 0, 1, or 2");
+        self.ppu_bus_phase = phase;
+    }
+
+    fn ppu_register_dots_before_access(&self) -> u32 {
+        match self.ppu_bus_phase {
+            0 => 2,
+            1 => 3,
+            _ => 1,
+        }
+    }
 
     /// Starts tracking CPU bus cycles during one instruction.
     pub(crate) fn begin_cpu_instruction(&mut self) {
@@ -228,7 +244,7 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        self.clock_instruction_bus_access(true, if ppu_register { 2 } else { 3 });
+        self.clock_instruction_bus_access(true, if ppu_register { self.ppu_register_dots_before_access() } else { 3 });
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x6000..=0x7FFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
@@ -251,7 +267,7 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        self.clock_instruction_bus_access(false, if ppu_register { 2 } else { 3 });
+        self.clock_instruction_bus_access(false, if ppu_register { self.ppu_register_dots_before_access() } else { 3 });
         self.open_bus = value;
         match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF] = value,
