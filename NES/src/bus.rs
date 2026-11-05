@@ -65,7 +65,10 @@ pub struct CpuBus {
     controller_strobe: bool,
     /// Instruction execution enables one PPU cycle per CPU bus access.
     instruction_timing: bool,
-    /// PPU-dot phase at which CPU register accesses occur (0..=2).
+    /// CPU/PPU master-clock sub-dot phase (0..=3), used to place bus strobes
+    /// between PPU dot boundaries.
+    ppu_subdot: u8,
+    /// Divider phase selecting the CPU interrupt-poll point (0..=2).
     ppu_bus_phase: u8,
     instruction_bus_cycles: u16,
     /// Absolute CPU-cycle timeline shared with cycle-sensitive cartridge mappers.
@@ -89,7 +92,7 @@ pub struct CpuBus {
     bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048) } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_subdot: 0, ppu_bus_phase: 0, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -112,6 +115,7 @@ impl CpuBus {
         // previous cycle count would make timed mapper writes observe a stale
         // timeline after the CPU has restarted from its reset vector.
         self.instruction_timing = false;
+        self.ppu_subdot = 0;
         self.ppu_bus_phase = 0;
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
@@ -199,16 +203,53 @@ impl CpuBus {
         self.bus_trace.clear();
     }
 
+    /// Advances PPU time in master clocks (four master clocks per PPU dot).
+    /// CPU bus strobes occur between dot boundaries, so rounding them to whole
+    /// dots loses the VBlank/$2002 race that the timing ROMs exercise.
+    pub(crate) fn advance_ppu_master_clocks(&mut self, clocks: u32) {
+        for _ in 0..clocks {
+            self.ppu_subdot += 1;
+            if self.ppu_subdot == 4 {
+                self.ppu_subdot = 0;
+                self.tick_ppu(1);
+            }
+        }
+    }
+
+    /// CPU interrupt polling point in master clocks from the start of a CPU cycle.
+    fn ppu_sample_master_clocks(&self) -> u32 {
+        match self.ppu_bus_phase {
+            0 => 8,
+            1 => 12,
+            _ => 4,
+        }
+    }
+
+    /// CPU reads sample data three master clocks before the interrupt poll;
+    /// writes strobe one master clock before it (2A03/2C02 bus timing).
+    fn ppu_access_master_clocks_before_sample(&self, is_read: bool) -> u32 {
+        self.ppu_sample_master_clocks() - if is_read { 3 } else { 1 }
+    }
+
+    /// Completes the current bus cycle: advance to the CPU poll point, sample
+    /// NMI, then finish the remaining master clocks in the CPU cycle.
+    fn finish_instruction_bus_access(&mut self, access_master_clocks: u32) {
+        let sample = self.ppu_sample_master_clocks();
+        self.advance_ppu_master_clocks(sample - access_master_clocks);
+        self.sample_nmi_line();
+        self.advance_ppu_master_clocks(12 - sample);
+    }
+
     /// Advances the PPU to the sampling point of the current CPU bus access.
-    fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool, ppu_dots_before_access: u32) {
+    fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool, master_clocks_before_access: u32) {
         if self.instruction_timing {
             self.instruction_bus_cycles = self.instruction_bus_cycles.saturating_add(1);
             self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
             // Clock the APU in the same order as CPU bus accesses. In particular,
             // $4017's delayed frame-counter reset must sample the current CPU parity,
             // not the stale parity left over from the previous instruction.
-            // Clock the PPU to the CPU bus-access point.
-            self.tick_ppu(ppu_dots_before_access);
+            // Clock to the read/write strobe, which may fall between PPU dots.
+            self.advance_ppu_master_clocks(master_clocks_before_access);
             let dmc_stalls = self.tick_apu_with_dma_access(1, dmc_dma_can_halt);
             self.instruction_dmc_stalls = self.instruction_dmc_stalls.saturating_add(dmc_stalls);
 
@@ -220,12 +261,14 @@ impl CpuBus {
             while pending_stall_cycles != 0 {
                 pending_stall_cycles -= 1;
                 self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
-                self.tick_ppu(3);
+                let sample_delta = self.ppu_sample_master_clocks() - master_clocks_before_access;
+                self.advance_ppu_master_clocks(sample_delta);
                 let additional_stalls = self.tick_apu_with_dma_access(1, true);
                 self.instruction_dmc_stalls = self.instruction_dmc_stalls
                     .saturating_add(additional_stalls);
                 pending_stall_cycles = pending_stall_cycles.saturating_add(additional_stalls);
                 self.sample_nmi_line();
+                self.advance_ppu_master_clocks(12 - sample_delta);
             }
         }
     }
