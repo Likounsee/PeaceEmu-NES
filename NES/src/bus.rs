@@ -261,12 +261,6 @@ impl CpuBus {
         // Decode the same mirrors and I/O registers as a CPU read, but do not
         // advance instruction timing here: the DMA stall is accounted for by
         // tick_apu and must not recursively clock the bus.
-        // The CPU samples the interrupt line with the read-data strobe.
-        // Do this before a PPUSTATUS read clears the PPU's NMI output.
-        let status_read = ppu_register && address & 7 == 2;
-        if timed_access && status_read {
-            self.sample_nmi_line();
-        }
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x2000..=0x3FFF => self.ppu.cpu_read_register(address & 7, self.cartridge.as_ref()),
@@ -297,6 +291,12 @@ impl CpuBus {
             3
         };
         self.clock_instruction_bus_access(true, ppu_dots_before_access);
+        // The CPU samples the interrupt line with the read-data strobe.
+        // Do this before a PPUSTATUS read clears the PPU's NMI output.
+        let status_read = ppu_register && address & 7 == 2;
+        if timed_access && status_read {
+            self.sample_nmi_line();
+        }
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x6000..=0x7FFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
