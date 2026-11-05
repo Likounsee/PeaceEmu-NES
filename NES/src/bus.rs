@@ -2212,23 +2212,23 @@ mod nmi_sampling_boundary_regressions {
     }
 
     #[test]
-    fn status_read_after_nmi_edge_propagation_does_not_erase_cpu_edge() {
+    fn status_read_that_lowers_nmi_before_cpu_sample_suppresses_edge() {
         let mut bus = CpuBus::new();
         bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
         bus.write(0x2000, 0x80);
         bus.tick_ppu(2); // The delayed NMI output rises at dot 2.
         assert!(bus.ppu.nmi_line());
 
-        // Place the $2002 data strobe on dot 3: the output edge has already
-        // propagated, so clearing VBlank must not erase the CPU's edge latch.
+        // Put the $2002 data strobe on dot 3. The status read lowers the
+        // output before this CPU cycle's sample, so the CPU must not latch it.
         bus.set_ppu_bus_phase(2);
         bus.begin_cpu_instruction();
         let status = bus.read(0x2002);
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert_ne!(status & 0x80, 0);
         assert!(!bus.ppu.nmi_line(), "the status read lowers the PPU output");
-        assert!(bus.take_nmi_request(),
-            "the already-propagated NMI edge must survive the later falling edge");
+        assert!(!bus.take_nmi_request(),
+            "an NMI pulse that is gone before the CPU sample must not be captured");
     }
 
     #[test]
