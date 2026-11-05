@@ -195,9 +195,8 @@ impl Ppu {
                     value |= 0x80;
                 }
                 if self.scanline == 241 && self.dot == 0 {
-                    // The flag is not set yet. Reading here must not suppress
-                    // the dot-1 VBlank transition; only a read on the set dot
-                    // itself wins the race.
+                    self.suppress_vblank = true;
+                    self.record_timing_event("VBLANK_SUPPRESSED");
                     value &= !0x80;
                 } else if self.scanline == 241 && self.dot == 1 {
                     // A read on the set dot still observes bit 7 low.
