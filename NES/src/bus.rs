@@ -2270,7 +2270,7 @@ mod ppustatus_nmi_race_regressions {
         // 240:332 + 3 CPU cycles -> 241:0, then the read lands on dot 2.
         let (dot_two_status, dot_two_nmi, dot_two_position) =
             status_read_after_three_cpu_cycles(332);
-        assert_eq!(dot_two_position, (241, 2));
+        assert_eq!(dot_two_position, (241, 3), "one trailing PPU dot is clocked after the CPU register strobe");
         assert_ne!(dot_two_status & 0x80, 0,
             "dot 2 exposes the VBlank flag even though it suppresses the NMI edge");
         assert!(!dot_two_nmi, "dot-2 PPUSTATUS read must cancel the unsampled NMI");
@@ -2279,7 +2279,7 @@ mod ppustatus_nmi_race_regressions {
         // on dot 3, after the NMI output has risen and been sampled by the CPU.
         let (dot_three_status, dot_three_nmi, dot_three_position) =
             status_read_after_three_cpu_cycles(333);
-        assert_eq!(dot_three_position, (241, 3));
+        assert_eq!(dot_three_position, (241, 4), "one trailing PPU dot is clocked after the CPU register strobe");
         assert_ne!(dot_three_status & 0x80, 0);
         assert!(dot_three_nmi, "dot-3 PPUSTATUS read must not retract a sampled NMI edge");
     }
