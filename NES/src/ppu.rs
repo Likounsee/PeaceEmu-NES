@@ -199,23 +199,16 @@ impl Ppu {
                     self.record_timing_event("VBLANK_SUPPRESSED");
                     value &= !0x80;
                 } else if self.scanline == 241 && self.dot == 1 {
-                    // A read on the set dot observes bit 7 low. If the
-                    // VBlank-to-NMI propagation delay was just armed by this
-                    // dot, preserve it: the delayed NMI edge can still reach
-                    // the CPU even though this read has already cleared bit 7.
+                    // A read on the set dot still observes bit 7 low.
                     value &= !0x80;
-                    if !self.nmi_vblank_delay {
-                        self.nmi_pending = false;
-                    }
+                    self.nmi_pending = false;
                 } else if self.scanline == 241 && self.dot == 2 {
-                    // One dot after the set, bit 7 is visible. A same-dot
-                    // read may cancel an edge that was already queued.
+                    // One dot after the set, bit 7 is visible but the CPU may
+                    // still suppress the not-yet-sampled NMI output edge.
                     self.nmi_pending = false;
                 }
                 self.status &= !0x80;
-                if !(self.scanline == 241 && self.dot == 1 && self.nmi_vblank_delay) {
-                    self.nmi_vblank_delay = false;
-                }
+                self.nmi_vblank_delay = false;
                 self.vblank_clear_race = false;
                 self.update_nmi_line();
                 self.write_latch = false;
@@ -532,18 +525,7 @@ impl Ppu {
             }
             if self.scanline == 241 && self.dot == 2 && self.nmi_vblank_delay {
                 self.nmi_vblank_delay = false;
-                // The 2C02's NMI propagation is already in flight once the
-                // VBlank-set dot has armed it. A $2002 read on dot 1 clears
-                // the status flag but does not retract that delayed edge.
-                if self.ctrl & 0x80 != 0 {
-                    if !self.nmi_line {
-                        self.nmi_pending = true;
-                        self.nmi_line = true;
-                        self.record_timing_event("NMI_RISE");
-                    }
-                } else {
-                    self.update_nmi_line();
-                }
+                self.update_nmi_line();
             }
             if self.scanline == 261 && self.dot == 1 {
                 self.vblank_clear_race = self.status & 0x80 != 0;
@@ -4222,43 +4204,6 @@ mod vblank_nmi_race_regressions {
         assert_eq!(ppu.status & 0x80, 0, "the read clears the vblank flag");
         assert!(!ppu.nmi_line, "clearing vblank lowers the NMI output");
         assert!(!ppu.take_nmi_request(), "the NMI edge from this same-dot race must not reach the CPU");
-    }
-
-    #[test]
-    fn dot_one_status_read_clears_vblank_but_preserves_the_in_flight_nmi_edge() {
-        let mut ppu = Ppu::new();
-        ppu.ctrl = 0x80;
-        ppu.scanline = 241;
-        ppu.dot = 0;
-
-        ppu.tick(1); // Dot 1 sets VBlank and arms the delayed NMI output.
-        assert_ne!(ppu.status & 0x80, 0);
-        assert!(ppu.nmi_vblank_delay);
-
-        let status = ppu.cpu_read_register(2, None);
-        assert_eq!(status & 0x80, 0, "the dot-1 race reads VBlank clear");
-        assert_eq!(ppu.status & 0x80, 0, "the read clears the status flag");
-        assert!(ppu.nmi_vblank_delay, "the already-started NMI propagation must survive");
-
-        ppu.tick(1); // Dot 2 completes the delayed NMI propagation.
-        assert!(ppu.nmi_line, "the NMI output rises despite the dot-1 status clear");
-        assert!(ppu.take_nmi_request(), "the delayed edge must be available to the CPU");
-    }
-
-    #[test]
-    fn disabling_nmi_before_dot_two_cancels_the_preserved_delayed_edge() {
-        let mut ppu = Ppu::new();
-        ppu.ctrl = 0x80;
-        ppu.scanline = 241;
-        ppu.dot = 0;
-
-        ppu.tick(1);
-        let _ = ppu.cpu_read_register(2, None);
-        ppu.cpu_write_register(0, 0x00, None);
-        ppu.tick(1);
-
-        assert!(!ppu.nmi_line);
-        assert!(!ppu.take_nmi_request());
     }
 
     #[test]
