@@ -276,17 +276,18 @@ impl CpuBus {
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
         let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
-        self.clock_instruction_bus_access(true, ppu_dots_before_access);
-        // The 2A03 polls NMI before the final cycle of an instruction. When
-        // an absolute PPU register read is that final cycle, poll before its
-        // read side effect (not after $2002 has lowered /NMI).
+        // The 2A03's interrupt poll occurs on the penultimate cycle. For an
+        // absolute $2002 read (BIT/LDA $2002), the next bus access is cycle 4,
+        // so poll at the end of cycle 3: before advancing PPU time for the
+        // status-read cycle and before its side effect can cancel /NMI.
         let poll_before_access = timed_access
             && ppu_register
             && address & 7 == 2
-            && self.instruction_bus_cycles >= 4;
+            && self.instruction_bus_cycles >= 3;
         if poll_before_access {
             self.sample_nmi_line();
         }
+        self.clock_instruction_bus_access(true, ppu_dots_before_access);
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x6000..=0x7FFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
