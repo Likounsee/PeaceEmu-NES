@@ -145,16 +145,6 @@ impl CpuBus {
         }
     }
 
-    fn ppu_status_read_dots_before_access(&self) -> u32 {
-        // $2002 returns the PPU's status at the CPU read-sampling point,
-        // which precedes the ordinary PPU-register write strobe by one dot.
-        match self.ppu_bus_phase {
-            0 => 1,
-            1 => 2,
-            _ => 3,
-        }
-    }
-
     /// Starts tracking CPU bus cycles during one instruction.
     pub(crate) fn begin_cpu_instruction(&mut self) {
         self.instruction_timing = true;
@@ -284,15 +274,7 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        let ppu_dots_before_access = if ppu_register {
-            if (address & 7) == 2 {
-                self.ppu_status_read_dots_before_access()
-            } else {
-                self.ppu_register_dots_before_access()
-            }
-        } else {
-            3
-        };
+        let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
         self.clock_instruction_bus_access(true, ppu_dots_before_access);
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
@@ -307,8 +289,11 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.open_bus = value;
         self.record_bus_access(CpuBusAccessKind::Read, address, value);
-        if timed_access { self.sample_nmi_line(); }
+        // The PPU register transaction happens mid-cycle. The 2A03 samples
+        // the NMI input at the CPU-cycle boundary, after the remaining PPU
+        // dots have elapsed, not at the earlier register data strobe.
         if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
+        if timed_access { self.sample_nmi_line(); }
         value
     }
     /// Writes a byte to the CPU address space. Cartridge ROM is not writable.
@@ -358,8 +343,8 @@ impl CpuBus {
         }
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
-        if timed_access { self.sample_nmi_line(); }
         if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
+        if timed_access { self.sample_nmi_line(); }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
     /// The values are latched by the next strobe write to $4016.
@@ -1565,9 +1550,8 @@ mod instruction_bus_timing_regressions {
         bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
         bus.write(0x2000, 0x80); // Enable NMI before VBlank begins.
 
-        bus.set_ppu_bus_phase(1); // The status-read strobe lands after two PPU dots.
         bus.begin_cpu_instruction();
-        let status = bus.read(0x2002);
+        let status = bus.read(0x2002); // The two pre-access dots cross VBlank dot 1.
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert_ne!(status & 0x80, 0, "the status read sees VBlank set");
         assert!(!bus.take_nmi_request(),
@@ -2221,14 +2205,8 @@ mod nmi_sampling_boundary_regressions {
             let first_cycle = bus.end_cpu_instruction();
             assert_eq!(first_cycle, 1, "phase {phase}: first CPU access is one cycle");
 
-            if phase == 2 {
-                assert!(!bus.take_nmi_request(),
-                    "phase 2: the first access reaches dot 1, before the delayed NMI output rises");
-                bus.begin_cpu_instruction();
-                let _ = bus.read(0x2001);
-                assert_eq!(bus.end_cpu_instruction(), 1);
-            }
-
+            assert_eq!(bus.ppu_position(), (241, 3),
+                "phase {phase}: NMI is sampled at the end of the complete CPU cycle");
             assert!(bus.take_nmi_request(),
                 "phase {phase}: the CPU must capture the VBlank NMI at its first sample after the line rises");
             assert!(!bus.take_nmi_request(),
