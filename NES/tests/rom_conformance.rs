@@ -84,29 +84,44 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                     entries.extend(machine.bus_trace().into_iter().filter(|entry| {
                         matches!(entry.ppu_scanline, 240..=242 | 261)
                     }));
-                    let relevant: Vec<_> = entries.iter()
+                    // Keep the failure report focused on the CPU-visible status
+                    // reads. Dumping hundreds of unrelated opcode fetches hid the
+                    // exact $2002 sampling point in CI's truncated log output.
+                    let status_reads: Vec<_> = entries.iter()
+                        .filter(|entry| {
+                            entry.address & 0xE007 == 0x2002
+                                && matches!(entry.ppu_scanline, 240..=242 | 261)
+                        })
                         .rev()
-                        .take(400)
+                        .take(120)
                         .collect::<Vec<_>>()
                         .into_iter()
                         .rev()
                         .map(|entry| format!(
-                            "cycle={} beam={}:{} {:?} addr=${:04X} value=${:02X} ppu_nmi={} cpu_nmi_pending={}",
-                            entry.cycle, entry.ppu_scanline, entry.ppu_dot, entry.kind, entry.address,
-                            entry.value, entry.ppu_nmi_line, entry.cpu_nmi_pending
+                            "cycle={} beam={}:{} value=${:02X} ppu_nmi={} cpu_nmi_pending={}",
+                            entry.cycle, entry.ppu_scanline, entry.ppu_dot, entry.value,
+                            entry.ppu_nmi_line, entry.cpu_nmi_pending
                         ))
                         .collect();
                     let mut timing_events = ppu_timing_history.clone();
                     timing_events.extend(machine.ppu_timing_events());
-                    let timing: Vec<_> = timing_events.iter().rev().take(120).collect::<Vec<_>>()
-                        .into_iter().rev()
+                    let timing: Vec<_> = timing_events.iter()
+                        .filter(|event| {
+                            (event.scanline == 241 && event.dot <= 4)
+                                || (event.scanline == 261 && event.dot <= 3)
+                        })
+                        .rev()
+                        .take(100)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
                         .map(|event| format!(
                             "cycle={} beam={}:{} {} status=${:02X} ctrl=${:02X} nmi_line={} nmi_pending={} delay={} suppress={}",
                             event.cycle, event.scanline, event.dot, event.kind, event.status,
                             event.ctrl, event.nmi_line, event.nmi_pending,
                             event.nmi_vblank_delay, event.suppress_vblank
                         )).collect();
-                    format!("\\nCPU bus trace near VBlank/pre-render (including soft-reset history):\\n{}\\nPPU internal VBlank/NMI events (including soft-reset history):\\n{}", relevant.join("\\n"), timing.join("\\n"))
+                    format!("\\nCPU $2002 reads near VBlank/pre-render (including soft-reset history):\\n{}\\nPPU VBlank/NMI edge events (including soft-reset history):\\n{}", status_reads.join("\\n"), timing.join("\\n"))
                 } else {
                     String::new()
                 };
