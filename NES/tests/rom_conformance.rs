@@ -64,6 +64,11 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                         let excess = ppu_trace_history.len() - 8_000;
                         ppu_trace_history.drain(..excess);
                     }
+                    ppu_timing_history.extend(machine.ppu_timing_events());
+                    if ppu_timing_history.len() > 8_000 {
+                        let excess = ppu_timing_history.len() - 8_000;
+                        ppu_timing_history.drain(..excess);
+                    }
                     machine.reset();
                     reset_delay = None;
                 } else {
