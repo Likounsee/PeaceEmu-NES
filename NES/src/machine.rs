@@ -1,6 +1,8 @@
 //! Small top-level NES machine wrapper for loading and stepping cartridge programs.
 
-use crate::bus::{CpuBus, CpuBusTraceEntry};
+use crate::bus::CpuBus;
+#[cfg(any(test, feature = "ppu-timing-diagnostics"))]
+use crate::bus::CpuBusTraceEntry;
 use crate::cartridge::{Cartridge, CartridgeError};
 use crate::cpu::{Cpu, CpuError, CpuState, StepResult};
 use core::fmt;
@@ -119,6 +121,7 @@ impl NesMachine {
     /// halt/dummy/alignment phases are visible as transactions, but the current
     /// instruction-granular CPU core does not yet assign each phase an independent
     /// scheduler callback.
+    #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
     pub fn bus_trace(&self) -> Vec<CpuBusTraceEntry> {
         self.bus.bus_trace()
     }
@@ -130,6 +133,7 @@ impl NesMachine {
     }
 
     /// Clears diagnostic bus history without changing emulated machine state.
+    #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
     pub fn clear_bus_trace(&mut self) {
         self.bus.clear_bus_trace();
     }
