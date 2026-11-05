@@ -64,6 +64,8 @@ pub struct Ppu {
     nmi_pending: bool,
     nmi_line: bool,
     suppress_vblank: bool,
+    /// Preserves the pre-clear VBlank value for a CPU read on pre-render dot 1.
+    vblank_clear_race: bool,
     /// Completed 256x240 background image, stored as 6-bit NES palette indices.
     framebuffer: Vec<u8>,
     background_opaque: Vec<bool>,
@@ -111,7 +113,7 @@ impl Default for Ppu {
             fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
             scanline: 261, dot: 0, odd_frame: false, frame_scroll_v: 0, frame_fine_x: 0,
             frame_scroll_valid: false, line_scroll_v: 0, line_scroll_start_x: 0,
-            nmi_pending: false, nmi_line: false, suppress_vblank: false,
+            nmi_pending: false, nmi_line: false, suppress_vblank: false, vblank_clear_race: false,
             framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
             bg_tile_cache_valid: false, bg_tile_cache_tile_addr: 0,
             bg_tile_cache_pattern_base: 0,
@@ -146,6 +148,11 @@ impl Ppu {
                 // The vblank flag is set at scanline 241 dot 1. A $2002 read
                 // on dot 0 suppresses that event; a read on dot 1 races the set
                 // and must still return bit 7 clear even if the event just fired.
+                if self.scanline == 261 && self.dot == 1 && self.vblank_clear_race {
+                    // The CPU read on the clear dot sees the old flag value; the
+                    // PPU's internal status bit has already been cleared below.
+                    value |= 0x80;
+                }
                 if self.scanline == 241 && self.dot == 0 {
                     self.suppress_vblank = true;
                     value &= !0x80;
@@ -159,6 +166,7 @@ impl Ppu {
                     self.nmi_pending = false;
                 }
                 self.status &= !0x80;
+                self.vblank_clear_race = false;
                 self.update_nmi_line();
                 self.write_latch = false;
                 value
@@ -345,6 +353,8 @@ impl Ppu {
     pub(crate) fn tick_with_cartridge(&mut self, dots: u32, cartridge: Option<&Cartridge>) -> u32 {
         let mut crossed_scanlines = 0;
         for _ in 0..dots {
+            // The clear-dot read window lasts only until the next PPU dot.
+            self.vblank_clear_race = false;
             self.ppu_cycle = self.ppu_cycle.wrapping_add(1);
             // NTSC skips pre-render dot 340 on odd frames while rendering is active.
             if self.scanline == 261 && self.dot == 339 && self.odd_frame && self.mask & 0x18 != 0 {
@@ -460,6 +470,7 @@ impl Ppu {
                 self.suppress_vblank = false;
             }
             if self.scanline == 261 && self.dot == 1 {
+                self.vblank_clear_race = self.status & 0x80 != 0;
                 self.status &= !0xE0;
                 self.update_nmi_line();
             }
@@ -2697,6 +2708,24 @@ mod tests {
         ppu.tick(1);
         assert_eq!(ppu.status & 0x80, 0, "reading status at scanline 241 dot 0 suppresses vblank");
         assert!(!ppu.take_nmi_request(), "suppressed vblank must not raise NMI");
+    }
+
+    #[test]
+    fn vblank_status_read_on_prerender_clear_dot_returns_the_preclear_flag() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 261;
+        ppu.dot = 0;
+        ppu.status |= 0x80;
+
+        ppu.tick(1);
+        assert_eq!(ppu.position(), (261, 1));
+        assert_eq!(ppu.status & 0x80, 0, "the internal flag clears on pre-render dot 1");
+        assert!(ppu.vblank_clear_race, "the CPU read window retains the previous flag value");
+
+        let status = ppu.cpu_read_register(2, None);
+        assert_ne!(status & 0x80, 0, "a read on the clear dot sees the pre-clear value");
+        assert_eq!(ppu.status & 0x80, 0, "the read leaves VBlank cleared");
+        assert!(!ppu.vblank_clear_race);
     }
 
     #[test]
