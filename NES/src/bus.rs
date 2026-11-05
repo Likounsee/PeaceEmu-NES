@@ -63,6 +63,10 @@ pub struct CpuBus {
     cpu_bus_address: u16,
     /// DMC stalls discovered while the instruction's bus accesses clock the APU.
     instruction_dmc_stalls: u32,
+    /// CPU-side NMI edge latch, updated at CPU-cycle sampling points.
+    nmi_pending: bool,
+    /// Last sampled PPU NMI output level; pulses between samples are not latched.
+    nmi_line_sampled: bool,
     /// In-flight DMC transfer; one phase is serviced per elapsed CPU cycle.
     pending_dmc_dma: Option<PendingDmcDma>,
     /// Set when the most recent APU tick completed a DMC sample-memory GET.
@@ -71,7 +75,7 @@ pub struct CpuBus {
     bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, pending_dmc_dma: None, dmc_dma_get_occurred: false, bus_trace: VecDeque::with_capacity(2048) } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_line_sampled: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, bus_trace: VecDeque::with_capacity(2048) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -97,6 +101,8 @@ impl CpuBus {
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
         self.pending_dmc_dma = None;
+        self.nmi_pending = false;
+        self.nmi_line_sampled = false;
         self.dmc_dma_get_occurred = false;
         self.bus_trace.clear();
         // Keep the absolute CPU timeline monotonic: MMC1 consecutive-write
@@ -146,14 +152,14 @@ impl CpuBus {
     }
 
     /// Advances the PPU to the sampling point of the current CPU bus access.
-    fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool) {
+    fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool, ppu_dots_before_access: u32) {
         if self.instruction_timing {
             self.instruction_bus_cycles = self.instruction_bus_cycles.saturating_add(1);
             self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
             // Clock the APU in the same order as CPU bus accesses. In particular,
             // $4017's delayed frame-counter reset must sample the current CPU parity,
             // not the stale parity left over from the previous instruction.
-            self.tick_ppu(3);
+            self.tick_ppu(ppu_dots_before_access);
             let dmc_stalls = self.tick_apu_with_dma_access(1, dmc_dma_can_halt);
             self.instruction_dmc_stalls = self.instruction_dmc_stalls.saturating_add(dmc_stalls);
 
@@ -210,13 +216,16 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.open_bus = value;
         self.record_bus_access(CpuBusAccessKind::DmcRead, address, value);
+        self.sample_nmi_line();
         value
     }
 
     /// Reads a byte from the CPU address space.
     pub fn read(&mut self, address: u16) -> u8 {
         self.cpu_bus_address = address;
-        self.clock_instruction_bus_access(true);
+        let timed_access = self.instruction_timing;
+        let ppu_register = (0x2000..=0x3FFF).contains(&address);
+        self.clock_instruction_bus_access(true, if ppu_register { 2 } else { 3 });
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x6000..=0x7FFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
@@ -230,12 +239,18 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.open_bus = value;
         self.record_bus_access(CpuBusAccessKind::Read, address, value);
+        if timed_access && ppu_register { self.tick_ppu(1); }
+        if timed_access { self.sample_nmi_line(); }
         value
     }
     /// Writes a byte to the CPU address space. Cartridge ROM is not writable.
     pub fn write(&mut self, address: u16, value: u8) {
         self.cpu_bus_address = address;
-        self.clock_instruction_bus_access(false);
+        let timed_access = self.instruction_timing;
+        let ppu_register = (0x2000..=0x3FFF).contains(&address);
+        let ppu_ctrl_write = ppu_register && address & 7 == 0;
+        self.clock_instruction_bus_access(false, if ppu_register { 2 } else { 3 });
+        if timed_access && ppu_ctrl_write { self.sample_nmi_line(); }
         self.open_bus = value;
         match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF] = value,
@@ -276,6 +291,8 @@ impl CpuBus {
         }
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
+        if timed_access && ppu_register { self.tick_ppu(1); }
+        if timed_access && !ppu_ctrl_write { self.sample_nmi_line(); }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
     /// The values are latched by the next strobe write to $4016.
@@ -428,6 +445,7 @@ impl CpuBus {
                     self.dmc_dma_get_occurred = true;
                     self.apu.supply_dmc_byte(value);
                 }
+                self.sample_nmi_line();
                 stall_cycles = stall_cycles.saturating_add(1);
                 if self.pending_dmc_dma.as_ref().is_some_and(|pending| pending.phases.is_empty()) {
                     self.pending_dmc_dma = None;
@@ -450,8 +468,19 @@ impl CpuBus {
     }
     /// Returns the level-triggered APU IRQ line without clearing it.
     pub fn irq_pending(&self) -> bool { self.apu.irq_pending() || self.cartridge.as_ref().is_some_and(Cartridge::irq_pending) }
-    /// Takes a pending NMI edge raised by the PPU.
-    pub fn take_nmi_request(&mut self) -> bool { self.ppu.take_nmi_request() }
+    /// Samples the PPU NMI output at a CPU-cycle boundary.
+    ///
+    /// The 2A03 detects the NMI edge from its sampled input level. A PPU pulse
+    /// that rises and falls between CPU samples must not become a CPU interrupt.
+    pub(crate) fn sample_nmi_line(&mut self) {
+        let line = self.ppu.nmi_line();
+        if line && !self.nmi_line_sampled { self.nmi_pending = true; }
+        self.nmi_line_sampled = line;
+        let _ = self.ppu.take_nmi_request();
+    }
+
+    /// Takes the CPU-side NMI edge latch.
+    pub fn take_nmi_request(&mut self) -> bool { core::mem::take(&mut self.nmi_pending) }
     /// Takes a pending OAM DMA page requested by a write to $4014.
     pub fn take_oam_dma_request(&mut self) -> Option<u8> { self.pending_oam_dma.take() }
     /// Copies a full 256-byte page into PPU OAM, starting at the current OAM address.
@@ -1845,7 +1874,7 @@ mod dmc_register_conflict_regressions {
         // From the PPU's pre-render origin, this reaches scanline 241 dot 1.
         bus.tick_ppu(242 * 341 + 1);
         bus.write(0x2000, 0x80); // Enable NMI while vblank is active.
-        assert!(bus.take_nmi_request(), "fixture must consume the initial vblank NMI edge");
+        assert!(!bus.take_nmi_request(), "the CPU has not sampled the newly enabled NMI line yet");
         bus.write(0x4015, 0x10);
 
         bus.begin_cpu_instruction();
