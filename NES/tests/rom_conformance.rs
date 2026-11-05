@@ -142,3 +142,33 @@ fn blargg_apu_diagnostics_experimental() {
         }
     }
 }
+
+#[test]
+fn blargg_ppu_diagnostics_experimental() {
+    let Some(root) = std::env::var_os("PEACEEMU_NES_PPU_TEST_ROM_DIR") else {
+        eprintln!("Skipping experimental PPU ROM tests: PEACEEMU_NES_PPU_TEST_ROM_DIR is not set");
+        return;
+    };
+    let root = PathBuf::from(root);
+    let roms = [
+        "ppu_vbl_nmi/rom_singles/01-vbl_basics.nes",
+        "ppu_vbl_nmi/rom_singles/02-vbl_set_time.nes",
+        "ppu_vbl_nmi/rom_singles/03-vbl_clear_time.nes",
+        "ppu_vbl_nmi/rom_singles/04-nmi_control.nes",
+        "ppu_vbl_nmi/rom_singles/05-nmi_timing.nes",
+        "ppu_vbl_nmi/rom_singles/06-suppression.nes",
+        "ppu_vbl_nmi/rom_singles/07-nmi_on_timing.nes",
+        "ppu_vbl_nmi/rom_singles/08-nmi_off_timing.nes",
+        "ppu_vbl_nmi/rom_singles/09-even_odd_frames.nes",
+        "ppu_vbl_nmi/rom_singles/10-even_odd_timing.nes",
+    ];
+
+    for relative in roms {
+        let path = root.join(relative);
+        assert!(path.is_file(), "missing experimental PPU ROM: {}", path.display());
+        match run_blargg_rom(&path) {
+            Ok(message) => println!("EXPERIMENTAL PASS {} — {}", relative, message),
+            Err(error) => panic!("experimental PPU diagnostic failed: {error}"),
+        }
+    }
+}
