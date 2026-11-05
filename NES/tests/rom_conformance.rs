@@ -25,8 +25,12 @@ fn read_blargg_message(machine: &mut NesMachine) -> String {
 }
 
 fn run_blargg_rom(path: &Path) -> Result<String, String> {
+    run_blargg_rom_with_ppu_phase(path, 0)
+}
+
+fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, String> {
     let image = fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let mut machine = NesMachine::from_ines(&image)
+    let mut machine = NesMachine::from_ines_with_ppu_startup_phase(&image, ppu_phase)
         .map_err(|error| format!("{}: cartridge load failed: {error}", path.display()))?;
     let mut reset_delay = None;
 
@@ -168,12 +172,36 @@ fn blargg_ppu_diagnostics_experimental() {
         let path = root.join(relative);
         assert!(path.is_file(), "missing experimental PPU ROM: {}", path.display());
         match run_blargg_rom(&path) {
-            Ok(message) => println!("EXPERIMENTAL PASS {} — {}", relative, message),
+            Ok(message) => println!("EXPERIMENTAL PASS phase=0 {} — {}", relative, message),
             Err(error) => {
-                eprintln!("EXPERIMENTAL FAIL {} — {}", relative, error);
+                eprintln!("EXPERIMENTAL FAIL phase=0 {} — {}", relative, error);
                 failures.push(error);
             }
         }
     }
-    assert!(failures.is_empty(), "experimental PPU diagnostics reported {} failure(s)", failures.len());
+
+    // Blargg warns that the real console's CPU/PPU divider can start in any
+    // of three phases. Re-run only the two remaining phase-sensitive cases
+    // with the alternate alignments to distinguish a valid phase offset from
+    // a genuine PPU timing defect.
+    let phase_sensitive_roms = [
+        "ppu_vbl_nmi/rom_singles/02-vbl_set_time.nes",
+        "ppu_vbl_nmi/rom_singles/06-suppression.nes",
+    ];
+    for phase in 1..=2 {
+        let mut phase_passes = 0;
+        for relative in phase_sensitive_roms {
+            let path = root.join(relative);
+            match run_blargg_rom_with_ppu_phase(&path, phase) {
+                Ok(message) => {
+                    phase_passes += 1;
+                    println!("EXPERIMENTAL PHASE PASS phase={} {} — {}", phase, relative, message);
+                }
+                Err(error) => eprintln!("EXPERIMENTAL PHASE FAIL phase={} {}", phase, error),
+            }
+        }
+        println!("EXPERIMENTAL PPU startup phase {}: {}/2 phase-sensitive ROMs passed", phase, phase_passes);
+    }
+
+    assert!(failures.is_empty(), "default-phase PPU diagnostics reported {} failure(s)", failures.len());
 }
