@@ -60,10 +60,30 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
             }
             0x00 => return Ok(read_blargg_message(&mut machine)),
             failure @ 0x01..=0x7F => {
+                let message = read_blargg_message(&mut machine);
+                let trace = if path.to_string_lossy().contains("ppu_vbl_nmi") {
+                    let entries = machine.bus_trace();
+                    let relevant: Vec<_> = entries.iter()
+                        .filter(|entry| {
+                            (entry.ppu_scanline == 241 || entry.ppu_scanline == 261)
+                                && (0x2000..=0x3FFF).contains(&entry.address)
+                                && matches!(entry.address & 7, 0 | 2)
+                        })
+                        .map(|entry| format!(
+                            "cycle={} beam={}:{} reg=\${:04X} value=\${:02X} ppu_nmi={} cpu_nmi_pending={}",
+                            entry.cycle, entry.ppu_scanline, entry.ppu_dot, entry.address,
+                            entry.value, entry.ppu_nmi_line, entry.cpu_nmi_pending
+                        ))
+                        .collect();
+                    format!("\nPPU timing trace (VBlank/pre-render):\n{}", relevant.join("\n"))
+                } else {
+                    String::new()
+                };
                 return Err(format!(
-                    "{}: Blargg failure code 0x{failure:02X}: {}",
+                    "{}: Blargg failure code 0x{failure:02X}: {}{}",
                     path.display(),
-                    read_blargg_message(&mut machine)
+                    message,
+                    trace
                 ));
             }
             other => {
