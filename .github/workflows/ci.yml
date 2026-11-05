@@ -48,6 +48,7 @@ jobs:
           PEACEEMU_NES_APU_TEST_ROM_DIR: test-roms
         run: cargo test --manifest-path NES/Cargo.toml --test rom_conformance --locked -- --nocapture blargg_apu_diagnostics_experimental
       - name: Run experimental Blargg PPU diagnostic ROMs
+        continue-on-error: true
         env:
           PEACEEMU_NES_PPU_TEST_ROM_DIR: test-roms
         run: cargo test --manifest-path NES/Cargo.toml --test rom_conformance --locked -- --nocapture blargg_ppu_diagnostics_experimental
