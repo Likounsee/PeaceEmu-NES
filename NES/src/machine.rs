@@ -848,6 +848,33 @@ mod tests {
     }
 
     #[test]
+    fn nmi_edge_sampled_on_instruction_final_cycle_waits_for_next_instruction() {
+        let mut image = nrom_with_program(&[
+            0xEA,             // NOP: VBlank begins on this instruction's final cycle.
+            0xA9, 0x42,       // LDA #$42 must execute before NMI entry.
+            0x85, 0x00,       // STA $00
+            0x4C, 0x04, 0x80, // JMP $8004
+        ]);
+        image[16 + 0x3FFA] = 0x00;
+        image[16 + 0x3FFB] = 0x90;
+        let mut machine = NesMachine::from_ines(&image).unwrap();
+
+        machine.write_cpu(0x2000, 0x80); // Enable NMI before VBlank.
+        machine.bus.tick_ppu(241 * 341 + 336);
+        assert_eq!(machine.ppu_position(), (240, 336));
+
+        assert_eq!(machine.step().unwrap().opcode, 0xEA);
+        assert_eq!(machine.ppu_position(), (241, 1));
+        assert_eq!(machine.step().unwrap().opcode, 0xA9,
+            "the instruction after a final-cycle NMI edge must execute first");
+        assert_eq!(machine.cpu_state().a, 0x42);
+
+        assert_eq!(machine.step().unwrap().opcode, 0xFF,
+            "the deferred NMI must be serviced at the following instruction boundary");
+        assert_eq!(machine.cpu_state().pc, 0x9000);
+    }
+
+    #[test]
     fn nmi_edge_raised_during_oam_dma_is_delivered_after_dma_finishes() {
         let mut image = nrom_with_program(&[0xEA]);
         // Point the NMI vector at a distinct handler address.
