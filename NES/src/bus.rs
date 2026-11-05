@@ -295,14 +295,7 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        let mut ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
-        // PPUSTATUS's read-data latch is one PPU dot earlier than the other
-        // register strobes. Keeping it at the generic register point makes the
-        // two-read VBlank boundary sweep (and the NMI suppression boundary)
-        // cross the race window one dot too late.
-        if ppu_register && address & 7 == 2 {
-            ppu_dots_before_access = ppu_dots_before_access.saturating_sub(1);
-        }
+        let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
         // The 2A03 polls the interrupt lines at the end of the penultimate
         // instruction cycle. For an absolute LDA $2002, that is immediately
         // before the fourth (data-read) cycle begins. Sampling after advancing
@@ -1596,13 +1589,11 @@ mod instruction_bus_timing_regressions {
     #[test]
     fn cpu_samples_nmi_after_status_read_can_suppress_the_edge() {
         let mut bus = CpuBus::new();
-        // PPUSTATUS strobes one dot before the generic register point. Start
-        // at dot 1 so this read's adjusted strobe lands on dot 2, after VBlank.
-        bus.tick_ppu(242 * 341 + 1);
+        bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
         bus.write(0x2000, 0x80); // Enable NMI before VBlank begins.
 
         bus.begin_cpu_instruction();
-        let status = bus.read(0x2002); // The adjusted pre-access dot reaches VBlank dot 2.
+        let status = bus.read(0x2002); // The two pre-access dots cross VBlank dot 1.
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert_ne!(status & 0x80, 0, "the status read sees VBlank set");
         assert!(!bus.take_nmi_request(),
