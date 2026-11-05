@@ -188,28 +188,22 @@ impl CpuBus {
         self.bus_trace.clear();
     }
 
-    /// Advances one CPU bus cycle and samples the PPU NMI input one PPU dot
-    /// before the data-bus transaction. The 2A03 samples interrupt inputs before
-    /// the final data-transfer phase; sampling after a $2002 read incorrectly lets
-    /// reads two dots after VBlank begins retract an NMI that the CPU has already seen.
-    fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool, ppu_dots_before_access: u32, sample_before_access: bool) {
+    /// Advances the PPU to the sampling point of the current CPU bus access.
+    fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool, ppu_dots_before_access: u32) {
         if self.instruction_timing {
             self.instruction_bus_cycles = self.instruction_bus_cycles.saturating_add(1);
             self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
-            // Stop one dot before the CPU's data-bus phase. This preserves the
-            // selected CPU/PPU phase while allowing a $2002 read to race the NMI
-            // input sample at dot-level precision.
-            let sample_dots = ppu_dots_before_access.saturating_sub(1);
-            self.tick_ppu(sample_dots);
-
             // Clock the APU in the same order as CPU bus accesses. In particular,
             // $4017's delayed frame-counter reset must sample the current CPU parity,
             // not the stale parity left over from the previous instruction.
+            self.tick_ppu(ppu_dots_before_access);
             let dmc_stalls = self.tick_apu_with_dma_access(1, dmc_dma_can_halt);
             self.instruction_dmc_stalls = self.instruction_dmc_stalls.saturating_add(dmc_stalls);
 
             // A DMC halt suspends the CPU at this exact readable bus access.
-            // Stolen cycles advance the beam without changing its modulo-three phase.
+            // Advance the shared device timeline before the instruction can issue
+            // its next access; deferring these cycles to the instruction boundary
+            // makes later PPU register reads observe events too early.
             let mut pending_stall_cycles = dmc_stalls;
             while pending_stall_cycles != 0 {
                 pending_stall_cycles -= 1;
@@ -219,16 +213,7 @@ impl CpuBus {
                 self.instruction_dmc_stalls = self.instruction_dmc_stalls
                     .saturating_add(additional_stalls);
                 pending_stall_cycles = pending_stall_cycles.saturating_add(additional_stalls);
-                self.sample_nmi_line();
             }
-
-            // PPUSTATUS reads must sample the NMI input before their clearing
-            // side effect. PPUCTRL writes retain post-write sampling so enabling
-            // NMI during an already-active VBlank is visible in that bus cycle.
-            if sample_before_access {
-                self.sample_nmi_line();
-            }
-            self.tick_ppu(ppu_dots_before_access - sample_dots);
         }
     }
 
@@ -278,7 +263,7 @@ impl CpuBus {
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
         let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
-        self.clock_instruction_bus_access(true, ppu_dots_before_access, true);
+        self.clock_instruction_bus_access(true, ppu_dots_before_access);
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x6000..=0x7FFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
@@ -292,6 +277,7 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.open_bus = value;
         self.record_bus_access(CpuBusAccessKind::Read, address, value);
+        if timed_access { self.sample_nmi_line(); }
         if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
         value
     }
@@ -301,7 +287,7 @@ impl CpuBus {
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
         let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
-        self.clock_instruction_bus_access(false, ppu_dots_before_access, false);
+        self.clock_instruction_bus_access(false, ppu_dots_before_access);
         self.open_bus = value;
         match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF] = value,
@@ -342,10 +328,8 @@ impl CpuBus {
         }
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
-        if timed_access {
-            self.sample_nmi_line();
-            if ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
-        }
+        if timed_access { self.sample_nmi_line(); }
+        if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
     /// The values are latched by the next strobe write to $4016.
@@ -1540,31 +1524,17 @@ mod instruction_bus_timing_regressions {
     }
 
     #[test]
-    fn cpu_samples_nmi_before_the_final_dot_of_a_status_read_cycle() {
+    fn cpu_samples_nmi_after_status_read_can_suppress_the_edge() {
         let mut bus = CpuBus::new();
         bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
         bus.write(0x2000, 0x80); // Enable NMI before VBlank begins.
 
         bus.begin_cpu_instruction();
-        let status = bus.read(0x2002); // Read at dot 2; sample occurred at dot 1.
+        let status = bus.read(0x2002); // The two pre-access dots cross VBlank dot 1.
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert_ne!(status & 0x80, 0, "the status read sees VBlank set");
         assert!(!bus.take_nmi_request(),
-            "the CPU samples before the NMI edge rises, so this read suppresses it");
-    }
-
-    #[test]
-    fn status_read_two_dots_after_vblank_set_cannot_retract_sampled_nmi() {
-        let mut bus = CpuBus::new();
-        bus.tick_ppu(242 * 341 + 1); // Scanline 241, dot 1: VBlank flag is set.
-        bus.write(0x2000, 0x80); // Enable NMI while its one-dot propagation delay is active.
-
-        bus.begin_cpu_instruction();
-        let status = bus.read(0x2002); // Sample at dot 2, then read at dot 3.
-        assert_eq!(bus.end_cpu_instruction(), 1);
-        assert_ne!(status & 0x80, 0, "the status read still sees VBlank set");
-        assert!(bus.take_nmi_request(),
-            "the NMI edge was sampled before PPUSTATUS cleared the flag");
+            "reading PPUSTATUS before the CPU samples the line suppresses this NMI edge");
     }
 
     #[test]
