@@ -27,10 +27,20 @@ fn status_read_on_dot_1_observes_the_race_and_cancels_nmi() {
 }
 
 #[test]
-fn status_read_on_dot_0_suppresses_vblank_and_dot_2_read_cancels_nmi() {
+fn status_read_on_dot_0_suppresses_vblank() {
     let mut ppu = at_vblank_start();
     ppu.cpu_write_register(0, 0x80, None);
     assert_eq!(ppu.cpu_read_register(2, None) & 0x80, 0);
+    ppu.tick(2);
+    assert_eq!(ppu.position(), (241, 2));
+    assert_eq!(ppu.cpu_read_register(2, None) & 0x80, 0);
+    assert!(!ppu.take_nmi_request());
+}
+
+#[test]
+fn status_read_on_dot_2_observes_vblank_and_cancels_nmi() {
+    let mut ppu = at_vblank_start();
+    ppu.cpu_write_register(0, 0x80, None);
     ppu.tick(2);
     assert_eq!(ppu.position(), (241, 2));
     assert_ne!(ppu.cpu_read_register(2, None) & 0x80, 0);
