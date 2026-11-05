@@ -107,7 +107,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                     timing_events.extend(machine.ppu_timing_events());
                     let timing: Vec<_> = timing_events.iter()
                         .filter(|event| {
-                            (event.scanline == 241 && event.dot <= 4)
+                            (event.scanline == 241 && event.dot <= 12)
                                 || (event.scanline == 261 && event.dot <= 3)
                         })
                         .rev()
