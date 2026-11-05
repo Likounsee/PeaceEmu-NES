@@ -1,5 +1,6 @@
 //! Host-facing session API for embedding the NES core inside PeaceEmu.
 
+#[cfg(any(test, feature = "ppu-timing-diagnostics"))]
 use crate::bus::CpuBusTraceEntry;
 use crate::cpu::CpuState;
 use crate::machine::{MachineError, NesMachine};
@@ -154,11 +155,13 @@ impl NesSession {
     /// Returns recent CPU-bus transactions for frontend debugger and DMA diagnostics.
     ///
     /// The bounded trace contains CPU reads/writes and DMC DMA reads in observation order.
+    #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
     pub fn bus_trace(&self) -> Vec<CpuBusTraceEntry> {
         self.machine.bus_trace()
     }
 
     /// Clears diagnostic bus history without changing the running game.
+    #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
     pub fn clear_bus_trace(&mut self) {
         self.machine.clear_bus_trace();
     }
