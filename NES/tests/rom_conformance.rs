@@ -57,7 +57,24 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 let remaining = reset_delay.get_or_insert(RESET_DELAY_INSTRUCTIONS);
                 if *remaining == 0 {
                     ppu_trace_history.extend(machine.bus_trace().into_iter().filter(|entry| {
-                        (0x2000..=0x3FFF                    let mut entries = ppu_trace_history.clone();
+                        (0x2000..=0x3FFF).contains(&entry.address)
+                            && matches!(entry.address & 7, 0 | 1 | 2)
+                    }));
+                    if ppu_trace_history.len() > 2_000 {
+                        let excess = ppu_trace_history.len() - 2_000;
+                        ppu_trace_history.drain(..excess);
+                    }
+                    machine.reset();
+                    reset_delay = None;
+                } else {
+                    *remaining -= 1;
+                }
+            }
+            0x00 => return Ok(read_blargg_message(&mut machine)),
+            failure @ 0x01..=0x7F => {
+                let message = read_blargg_message(&mut machine);
+                let trace = if path.to_string_lossy().contains("ppu_vbl_nmi") {
+                    let mut entries = ppu_trace_history.clone();
                     entries.extend(machine.bus_trace().into_iter().filter(|entry| {
                         (0x2000..=0x3FFF).contains(&entry.address)
                             && matches!(entry.address & 7, 0 | 1 | 2)
