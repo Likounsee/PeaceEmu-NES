@@ -145,6 +145,16 @@ impl CpuBus {
         }
     }
 
+    fn ppu_status_read_dots_before_access(&self) -> u32 {
+        // $2002 returns the PPU's status at the CPU read-sampling point,
+        // which precedes the ordinary PPU-register write strobe by one dot.
+        match self.ppu_bus_phase {
+            0 => 1,
+            1 => 2,
+            _ => 3,
+        }
+    }
+
     /// Starts tracking CPU bus cycles during one instruction.
     pub(crate) fn begin_cpu_instruction(&mut self) {
         self.instruction_timing = true;
@@ -274,7 +284,15 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
+        let ppu_dots_before_access = if ppu_register {
+            if (address & 7) == 2 {
+                self.ppu_status_read_dots_before_access()
+            } else {
+                self.ppu_register_dots_before_access()
+            }
+        } else {
+            3
+        };
         self.clock_instruction_bus_access(true, ppu_dots_before_access);
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
@@ -1547,8 +1565,9 @@ mod instruction_bus_timing_regressions {
         bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
         bus.write(0x2000, 0x80); // Enable NMI before VBlank begins.
 
+        bus.set_ppu_bus_phase(1); // The status-read strobe lands after two PPU dots.
         bus.begin_cpu_instruction();
-        let status = bus.read(0x2002); // The two pre-access dots cross VBlank dot 1.
+        let status = bus.read(0x2002);
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert_ne!(status & 0x80, 0, "the status read sees VBlank set");
         assert!(!bus.take_nmi_request(),
