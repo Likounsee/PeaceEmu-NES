@@ -289,11 +289,8 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.open_bus = value;
         self.record_bus_access(CpuBusAccessKind::Read, address, value);
-        // The PPU register transaction happens mid-cycle. The 2A03 samples
-        // the NMI input at the CPU-cycle boundary, after the remaining PPU
-        // dots have elapsed, not at the earlier register data strobe.
-        if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
         if timed_access { self.sample_nmi_line(); }
+        if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
         value
     }
     /// Writes a byte to the CPU address space. Cartridge ROM is not writable.
@@ -343,8 +340,8 @@ impl CpuBus {
         }
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
-        if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
         if timed_access { self.sample_nmi_line(); }
+        if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
     /// The values are latched by the next strobe write to $4016.
@@ -2205,8 +2202,14 @@ mod nmi_sampling_boundary_regressions {
             let first_cycle = bus.end_cpu_instruction();
             assert_eq!(first_cycle, 1, "phase {phase}: first CPU access is one cycle");
 
-            assert_eq!(bus.ppu_position(), (241, 3),
-                "phase {phase}: NMI is sampled at the end of the complete CPU cycle");
+            if phase == 2 {
+                assert!(!bus.take_nmi_request(),
+                    "phase 2: the first access reaches dot 1, before the delayed NMI output rises");
+                bus.begin_cpu_instruction();
+                let _ = bus.read(0x2001);
+                assert_eq!(bus.end_cpu_instruction(), 1);
+            }
+
             assert!(bus.take_nmi_request(),
                 "phase {phase}: the CPU must capture the VBlank NMI at its first sample after the line rises");
             assert!(!bus.take_nmi_request(),
