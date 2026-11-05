@@ -4225,6 +4225,43 @@ mod vblank_nmi_race_regressions {
     }
 
     #[test]
+    fn dot_one_status_read_clears_vblank_but_preserves_the_in_flight_nmi_edge() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x80;
+        ppu.scanline = 241;
+        ppu.dot = 0;
+
+        ppu.tick(1); // Dot 1 sets VBlank and arms the delayed NMI output.
+        assert_ne!(ppu.status & 0x80, 0);
+        assert!(ppu.nmi_vblank_delay);
+
+        let status = ppu.cpu_read_register(2, None);
+        assert_eq!(status & 0x80, 0, "the dot-1 race reads VBlank clear");
+        assert_eq!(ppu.status & 0x80, 0, "the read clears the status flag");
+        assert!(ppu.nmi_vblank_delay, "the already-started NMI propagation must survive");
+
+        ppu.tick(1); // Dot 2 completes the delayed NMI propagation.
+        assert!(ppu.nmi_line, "the NMI output rises despite the dot-1 status clear");
+        assert!(ppu.take_nmi_request(), "the delayed edge must be available to the CPU");
+    }
+
+    #[test]
+    fn disabling_nmi_before_dot_two_cancels_the_preserved_delayed_edge() {
+        let mut ppu = Ppu::new();
+        ppu.ctrl = 0x80;
+        ppu.scanline = 241;
+        ppu.dot = 0;
+
+        ppu.tick(1);
+        let _ = ppu.cpu_read_register(2, None);
+        ppu.cpu_write_register(0, 0x00, None);
+        ppu.tick(1);
+
+        assert!(!ppu.nmi_line);
+        assert!(!ppu.take_nmi_request());
+    }
+
+    #[test]
     fn status_read_on_dot_zero_suppresses_vblank_and_its_nmi_edge() {
         let mut ppu = Ppu::new();
         ppu.ctrl = 0x80; // Enable NMI on vblank.
