@@ -640,14 +640,15 @@ mod tests {
     #[test]
     fn bus_trace_is_bounded_and_can_be_cleared_without_resetting_ram() {
         let mut bus = CpuBus::new();
-        for _ in 0..5 {
+        // Generate more accesses than the diagnostic ring can retain.
+        for _ in 0..=66 {
             for value in 0..=255u8 {
                 bus.write(0x0000, value);
                 bus.read(0x0000);
             }
         }
         let trace = bus.bus_trace();
-        assert_eq!(trace.len(), 2048);
+        assert_eq!(trace.len(), 32_768);
         assert_eq!(trace.last().unwrap().kind, CpuBusAccessKind::Read);
         bus.clear_bus_trace();
         assert!(bus.bus_trace().is_empty());
