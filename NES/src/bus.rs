@@ -38,6 +38,7 @@ pub struct CpuBusTraceEntry {
     pub kind: CpuBusAccessKind,
     /// PPU beam position immediately after the transaction's side effect.
     pub ppu_scanline: u16,
+    /// PPU dot within the scanline.
     pub ppu_dot: u16,
     /// PPU NMI output level after the transaction's side effect.
     pub ppu_nmi_line: bool,
