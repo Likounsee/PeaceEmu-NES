@@ -42,16 +42,16 @@ jobs:
       - name: Run Blargg CPU diagnostic ROMs
         env:
           PEACEEMU_NES_TEST_ROM_DIR: test-roms
-        run: cargo test --manifest-path NES/Cargo.toml --test rom_conformance --locked -- --nocapture
+        run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture
       - name: Run experimental Blargg APU diagnostic ROMs
         env:
           PEACEEMU_NES_APU_TEST_ROM_DIR: test-roms
-        run: cargo test --manifest-path NES/Cargo.toml --test rom_conformance --locked -- --nocapture blargg_apu_diagnostics_experimental
+        run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_apu_diagnostics_experimental
       - name: Run experimental Blargg PPU diagnostic ROMs
         continue-on-error: true
         env:
           PEACEEMU_NES_PPU_TEST_ROM_DIR: test-roms
-        run: cargo test --manifest-path NES/Cargo.toml --test rom_conformance --locked -- --nocapture blargg_ppu_diagnostics_experimental
+        run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_ppu_diagnostics_experimental
       - name: Build desktop module
         run: cargo build --manifest-path NES/Cargo.toml --bin peaceemu-nes-desktop --release --locked
       - name: Upload desktop build artifact
