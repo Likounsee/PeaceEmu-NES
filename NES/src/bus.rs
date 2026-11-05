@@ -87,9 +87,13 @@ pub struct CpuBus {
     /// Bounded diagnostic history; oldest entries are discarded when full.
     #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
     bus_trace: VecDeque<CpuBusTraceEntry>,
+    /// Dedicated bounded history for PPUCTRL/PPUSTATUS accesses; host ROM-status
+    /// polling must not evict the transactions needed to diagnose PPU races.
+    #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
+    ppu_bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048) } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -122,6 +126,8 @@ impl CpuBus {
         self.dmc_dma_get_occurred = false;
         #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
         self.bus_trace.clear();
+        #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
+        self.ppu_bus_trace.clear();
         // Keep the absolute CPU timeline monotonic: MMC1 consecutive-write
         // suppression and delayed APU events compare absolute cycle numbers.
         self.cpu_bus_address = 0;
@@ -165,7 +171,7 @@ impl CpuBus {
             self.bus_trace.pop_front();
         }
         let (ppu_scanline, ppu_dot) = self.ppu.position();
-        self.bus_trace.push_back(CpuBusTraceEntry {
+        let entry = CpuBusTraceEntry {
             cycle: self.cpu_cycle,
             address,
             value,
@@ -174,7 +180,15 @@ impl CpuBus {
             ppu_dot,
             ppu_nmi_line: self.ppu.nmi_line(),
             cpu_nmi_pending: self.nmi_pending,
-        });
+        };
+        self.bus_trace.push_back(entry);
+        if matches!(address & 0xE007, 0x2000 | 0x2002) {
+            const PPU_TRACE_CAPACITY: usize = 16_384;
+            if self.ppu_bus_trace.len() == PPU_TRACE_CAPACITY {
+                self.ppu_bus_trace.pop_front();
+            }
+            self.ppu_bus_trace.push_back(entry);
+        }
     }
 
     #[cfg(not(any(test, feature = "ppu-timing-diagnostics")))]
@@ -191,6 +205,12 @@ impl CpuBus {
     #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
     pub fn bus_trace(&self) -> Vec<CpuBusTraceEntry> {
         self.bus_trace.iter().copied().collect()
+    }
+
+    /// Returns the dedicated PPUCTRL/PPUSTATUS transaction history.
+    #[cfg(feature = "ppu-timing-diagnostics")]
+    pub fn ppu_bus_trace(&self) -> Vec<CpuBusTraceEntry> {
+        self.ppu_bus_trace.iter().copied().collect()
     }
 
     /// Clears the diagnostic bus trace without changing emulated hardware state.
