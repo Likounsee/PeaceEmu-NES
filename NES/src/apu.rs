@@ -263,7 +263,7 @@ impl Apu {
         const FIVE_STEP_PERIOD: u32 = 37_282;
         const HALF_FRAME_PERIOD: u32 = 14_913;
         const NOISE_PERIODS: [u16; 16] = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068];
-        const DMC_PERIODS: [u16; 16] = [428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106,  85,  72,  54];
+        const DMC_PERIODS: [u16; 16] = [428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106,  84,  72,  54];
         if self.noise_shift == 0 { self.noise_shift = 1; }
         for _ in 0..cycles {
             self.dmc_request_delay = self.dmc_request_delay.saturating_sub(1);
@@ -916,6 +916,22 @@ mod tests {
 
 
     use super::*;
+
+    #[test]
+    fn dmc_rate_13_clocks_output_every_84_cpu_cycles() {
+        let mut apu = Apu::new();
+        apu.write(0x4010, 0x0D);
+        apu.dmc_silence = false;
+        apu.dmc_shift_register = 0xFF;
+        apu.dmc_bits_remaining = 8;
+
+        apu.tick_cpu_cycles(1);
+        assert_eq!(apu.dmc_bits_remaining, 7);
+        apu.tick_cpu_cycles(83);
+        assert_eq!(apu.dmc_bits_remaining, 7, "rate 13 must not clock before 84 cycles");
+        apu.tick_cpu_cycles(1);
+        assert_eq!(apu.dmc_bits_remaining, 6, "rate 13 clocks on the 84th CPU cycle");
+    }
 
     #[test]
     fn dmc_dma_sequences_expose_halt_dummy_alignment_and_sample_get_slots() {
