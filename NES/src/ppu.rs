@@ -194,21 +194,25 @@ impl Ppu {
                     // PPU's internal status bit has already been cleared below.
                     value |= 0x80;
                 }
+                let read_races_vblank_set = self.scanline == 241 && self.dot == 1;
                 if self.scanline == 241 && self.dot == 0 {
                     self.suppress_vblank = true;
                     self.record_timing_event("VBLANK_SUPPRESSED");
                     value &= !0x80;
-                } else if self.scanline == 241 && self.dot == 1 {
-                    // A read on the set dot still observes bit 7 low.
+                } else if read_races_vblank_set {
+                    // The CPU samples the old status value before the PPU's
+                    // dot-1 set takes effect. Keep the newly-set internal flag
+                    // and its delayed NMI propagation for the following dot.
                     value &= !0x80;
-                    self.nmi_pending = false;
                 } else if self.scanline == 241 && self.dot == 2 {
                     // One dot after the set, bit 7 is visible but the CPU may
                     // still suppress the not-yet-sampled NMI output edge.
                     self.nmi_pending = false;
                 }
-                self.status &= !0x80;
-                self.nmi_vblank_delay = false;
+                if !read_races_vblank_set {
+                    self.status &= !0x80;
+                    self.nmi_vblank_delay = false;
+                }
                 self.vblank_clear_race = false;
                 self.update_nmi_line();
                 self.write_latch = false;
@@ -2854,17 +2858,22 @@ mod tests {
     }
 
     #[test]
-    fn vblank_status_read_after_flag_set_clears_vblank_and_nmi_line() {
+    fn vblank_status_read_on_set_dot_returns_old_flag_and_keeps_new_vblank() {
         let mut ppu = Ppu::new();
         ppu.scanline = 241;
         ppu.dot = 0;
         ppu.cpu_write_register(0, 0x80, None);
         ppu.tick(1);
-        assert_ne!(ppu.status & 0x80, 0, "vblank is set at scanline 241 dot 1 in this timing model");
+        assert_ne!(ppu.status & 0x80, 0, "the PPU has reached its dot-1 VBlank set");
         let status = ppu.cpu_read_register(2, None);
-        assert_eq!(status & 0x80, 0, "a dot-1 race must return vblank clear to the CPU");
-        assert_eq!(ppu.status & 0x80, 0);
-        assert!(!ppu.nmi_line);
+        assert_eq!(status & 0x80, 0, "the CPU sees the pre-set value on the racing dot");
+        assert_ne!(ppu.status & 0x80, 0, "the PPU's dot-1 set survives the racing read");
+        assert!(!ppu.nmi_line, "NMI propagation remains delayed until dot 2");
+        assert!(ppu.nmi_vblank_delay);
+
+        ppu.tick(1);
+        assert!(ppu.nmi_line, "the preserved VBlank flag raises NMI on the following dot");
+        assert!(ppu.take_nmi_request());
     }
 
     #[test]
@@ -4198,21 +4207,26 @@ mod vblank_nmi_race_regressions {
     use super::*;
 
     #[test]
-    fn status_read_on_vblank_set_dot_cancels_the_queued_nmi_edge() {
+    fn status_read_on_vblank_set_dot_observes_old_value_then_allows_nmi() {
         let mut ppu = Ppu::new();
         ppu.ctrl = 0x80;
         ppu.scanline = 241;
         ppu.dot = 1;
         ppu.status = 0x80;
-        ppu.nmi_line = true;
-        ppu.nmi_pending = true;
+        ppu.nmi_line = false;
+        ppu.nmi_pending = false;
+        ppu.nmi_vblank_delay = true;
 
         let status = ppu.cpu_read_register(2, None);
 
-        assert_eq!(status & 0x80, 0, "the racing status read observes vblank as clear");
-        assert_eq!(ppu.status & 0x80, 0, "the read clears the vblank flag");
-        assert!(!ppu.nmi_line, "clearing vblank lowers the NMI output");
-        assert!(!ppu.take_nmi_request(), "the NMI edge from this same-dot race must not reach the CPU");
+        assert_eq!(status & 0x80, 0, "the racing status read observes the old clear value");
+        assert_ne!(ppu.status & 0x80, 0, "the PPU keeps the VBlank set that races after the read");
+        assert!(!ppu.nmi_line, "the one-dot NMI propagation delay is still active");
+        assert!(ppu.nmi_vblank_delay);
+
+        ppu.tick(1);
+        assert!(ppu.nmi_line);
+        assert!(ppu.take_nmi_request(), "the NMI edge reaches the CPU after the racing read");
     }
 
     #[test]
