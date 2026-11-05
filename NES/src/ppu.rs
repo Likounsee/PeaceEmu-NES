@@ -268,8 +268,17 @@ impl Ppu {
         self.open_bus = value;
         match register & 7 {
             0 => {
+                let nmi_was_enabled = self.ctrl & 0x80 != 0;
                 self.ctrl = value;
                 self.t = (self.t & !0x0C00) | (((value as u16) & 3) << 10);
+                // Disabling NMI before the CPU samples the rising edge cancels
+                // that edge. A later PPUSTATUS read is different: once the
+                // output edge has propagated (dot 3 and later), the CPU-side
+                // edge detector must retain it even though the status read
+                // subsequently lowers the PPU output line.
+                if nmi_was_enabled && value & 0x80 == 0 {
+                    self.nmi_pending = false;
+                }
                 self.update_nmi_line();
                 self.record_timing_event("PPUCTRL_WRITE");
             }
