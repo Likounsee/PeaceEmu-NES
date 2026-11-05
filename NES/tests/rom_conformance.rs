@@ -84,7 +84,9 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 let trace = if path.to_string_lossy().contains("ppu_vbl_nmi") {
                     let mut entries = ppu_trace_history.clone();
                     entries.extend(machine.bus_trace().into_iter().filter(|entry| {
-                        matches!(entry.ppu_scanline, 240..=242 | 261)
+                        (entry.address & 0xE007) == 0x2000
+                            || (((entry.address & 0xE007) == 0x2002)
+                                && matches!(entry.ppu_scanline, 239..=242 | 261))
                     }));
                     // Keep all PPUCTRL and PPUSTATUS transactions. Their ordering
                     // relative to CPU_NMI_SAMPLE events is what distinguishes the
