@@ -382,14 +382,24 @@ impl CpuBus {
         }
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
-        if timed_access && ppu_register {
-            // The PPU register strobe is not the end of the CPU cycle. Finish
-            // the remaining dots before polling NMI, just as the read path does:
-            // enabling NMI at dot 1 can make the delayed output rise at dot 2.
-            self.tick_ppu(3 - ppu_dots_before_access);
-        }
         if timed_access {
-            self.sample_nmi_line();
+            // A PPUCTRL write can itself raise the NMI output (when VBlank is
+            // already set), or cancel it by disabling NMI. Let its propagation
+            // dots elapse before the CPU samples that changed line.
+            let ppu_ctrl_write = ppu_register && address & 7 == 0;
+            if ppu_ctrl_write {
+                self.tick_ppu(3 - ppu_dots_before_access);
+                self.sample_nmi_line();
+            } else {
+                // Other writes retain the bus-strobe sampling point. Sampling
+                // after their trailing dots would incorrectly capture an edge
+                // that occurred after the CPU's poll, and breaks DMC-held
+                // PPUSTATUS cancellation.
+                self.sample_nmi_line();
+                if ppu_register {
+                    self.tick_ppu(3 - ppu_dots_before_access);
+                }
+            }
         }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
