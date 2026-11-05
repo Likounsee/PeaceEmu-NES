@@ -1,6 +1,34 @@
 //! NES picture processing unit registers, video memory, timing, and snapshot renderer.
 
 use crate::cartridge::{Cartridge, Mirroring};
+use std::collections::VecDeque;
+
+/// One dot-accurate PPU timing event retained for hardware diagnostics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PpuTimingEvent {
+    /// Absolute PPU dot counter.
+    pub cycle: u64,
+    /// Scanline at the event.
+    pub scanline: u16,
+    /// Dot within the scanline at the event.
+    pub dot: u16,
+    /// Event category (VBLANK_SET, VBLANK_SUPPRESSED, VBLANK_CLEAR, STATUS_READ, NMI_RISE, NMI_FALL).
+    pub kind: &'static str,
+    /// PPUSTATUS after the event's side effect.
+    pub status: u8,
+    /// PPUCTRL at the event.
+    pub ctrl: u8,
+    /// NMI output line after the event.
+    pub nmi_line: bool,
+    /// PPU-internal pending NMI edge after the event.
+    pub nmi_pending: bool,
+    /// Whether the one-dot VBlank-to-NMI propagation delay is active.
+    pub nmi_vblank_delay: bool,
+    /// Whether a dot-0 PPUSTATUS read has suppressed the upcoming VBlank set.
+    pub suppress_vblank: bool,
+}
+
+const TIMING_EVENT_CAPACITY: usize = 4096;
 
 /// PPU register, memory, and NTSC beam state.
 ///
@@ -97,6 +125,8 @@ pub struct Ppu {
     mapper_a12_high: bool,
     mapper_bus_initialized: bool,
     mapper_bus_events: Vec<(u16, u64)>,
+    /// Bounded history of VBlank, PPUSTATUS, and NMI timing transitions.
+    timing_events: VecDeque<PpuTimingEvent>,
 }
 
 impl Default for Ppu {
@@ -129,6 +159,7 @@ impl Default for Ppu {
             bg_next_pattern_low: 0, bg_next_pattern_high: 0,
             bg_pipeline_primed: false,
             ppu_cycle: 0, mapper_a12_high: false, mapper_bus_initialized: false, mapper_bus_events: Vec::new(),
+            timing_events: VecDeque::with_capacity(TIMING_EVENT_CAPACITY),
         }
     }
 }
@@ -148,6 +179,7 @@ impl Ppu {
     pub fn cpu_read_register(&mut self, register: u16, cartridge: Option<&Cartridge>) -> u8 {
         let value = match register & 7 {
             2 => {
+                self.record_timing_event("STATUS_READ");
                 let mut value = (self.status & 0xE0) | (self.open_bus & 0x1F);
                 // The vblank flag is set at scanline 241 dot 1. A $2002 read
                 // on dot 0 suppresses that event; a read on dot 1 races the set
@@ -159,6 +191,7 @@ impl Ppu {
                 }
                 if self.scanline == 241 && self.dot == 0 {
                     self.suppress_vblank = true;
+                    self.record_timing_event("VBLANK_SUPPRESSED");
                     value &= !0x80;
                 } else if self.scanline == 241 && self.dot == 1 {
                     // A read on the set dot still observes bit 7 low.
@@ -174,6 +207,7 @@ impl Ppu {
                 self.vblank_clear_race = false;
                 self.update_nmi_line();
                 self.write_latch = false;
+                self.record_timing_event("STATUS_READ_COMPLETE");
                 value
             }
             4 => {
@@ -476,7 +510,10 @@ impl Ppu {
                 if !self.suppress_vblank {
                     self.status |= 0x80;
                     self.nmi_vblank_delay = true;
+                    self.record_timing_event("VBLANK_SET");
                     self.update_nmi_line();
+                } else {
+                    self.record_timing_event("VBLANK_SET_SUPPRESSED");
                 }
                 self.suppress_vblank = false;
             }
@@ -488,6 +525,7 @@ impl Ppu {
                 self.vblank_clear_race = self.status & 0x80 != 0;
                 self.status &= !0xE0;
                 self.nmi_vblank_delay = false;
+                self.record_timing_event("VBLANK_CLEAR");
                 self.update_nmi_line();
             }
             // Complete the dot's pixel work before publishing the next line's
@@ -1384,13 +1422,45 @@ impl Ppu {
     /// Returns a read-only view of the primary OAM bytes.
     pub fn oam(&self) -> &[u8; 256] { &self.oam }
 
+    /// Records the current PPU beam and interrupt state in the bounded timing history.
+    fn record_timing_event(&mut self, kind: &'static str) {
+        if self.timing_events.len() == TIMING_EVENT_CAPACITY {
+            self.timing_events.pop_front();
+        }
+        self.timing_events.push_back(PpuTimingEvent {
+            cycle: self.ppu_cycle,
+            scanline: self.scanline,
+            dot: self.dot,
+            kind,
+            status: self.status,
+            ctrl: self.ctrl,
+            nmi_line: self.nmi_line,
+            nmi_pending: self.nmi_pending,
+            nmi_vblank_delay: self.nmi_vblank_delay,
+            suppress_vblank: self.suppress_vblank,
+        });
+    }
+
+    /// Returns the bounded PPU timing-event history, oldest first.
+    pub fn timing_events(&self) -> Vec<PpuTimingEvent> {
+        self.timing_events.iter().copied().collect()
+    }
+
     /// Updates the NMI output line and latches only low-to-high transitions.
     fn update_nmi_line(&mut self) {
         let line = self.ctrl & 0x80 != 0
             && self.status & 0x80 != 0
             && !self.nmi_vblank_delay;
-        if line && !self.nmi_line { self.nmi_pending = true; }
-        self.nmi_line = line;
+        if line && !self.nmi_line {
+            self.nmi_pending = true;
+            self.nmi_line = line;
+            self.record_timing_event("NMI_RISE");
+        } else if !line && self.nmi_line {
+            self.nmi_line = line;
+            self.record_timing_event("NMI_FALL");
+        } else {
+            self.nmi_line = line;
+        }
     }
 
     /// Returns the current PPU NMI output level for CPU-cycle sampling.
