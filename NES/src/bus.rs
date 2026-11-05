@@ -65,6 +65,10 @@ pub struct CpuBus {
     instruction_dmc_stalls: u32,
     /// CPU-side NMI edge latch, updated at CPU-cycle sampling points.
     nmi_pending: bool,
+    /// CPU cycle on which the current pending NMI edge was sampled.
+    nmi_sample_cycle: Option<u64>,
+    /// NMI sampled on an instruction's final cycle is serviced after the next instruction.
+    nmi_deferred: bool,
     /// Last sampled PPU NMI output level; pulses between samples are not latched.
     nmi_line_sampled: bool,
     /// In-flight DMC transfer; one phase is serviced per elapsed CPU cycle.
@@ -75,7 +79,7 @@ pub struct CpuBus {
     bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_line_sampled: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, bus_trace: VecDeque::with_capacity(2048) } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, nmi_line_sampled: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, bus_trace: VecDeque::with_capacity(2048) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -102,6 +106,8 @@ impl CpuBus {
         self.instruction_dmc_stalls = 0;
         self.pending_dmc_dma = None;
         self.nmi_pending = false;
+        self.nmi_sample_cycle = None;
+        self.nmi_deferred = false;
         self.nmi_line_sampled = false;
         self.dmc_dma_get_occurred = false;
         self.bus_trace.clear();
@@ -474,13 +480,43 @@ impl CpuBus {
     /// that rises and falls between CPU samples must not become a CPU interrupt.
     pub(crate) fn sample_nmi_line(&mut self) {
         let line = self.ppu.nmi_line();
-        if line && !self.nmi_line_sampled { self.nmi_pending = true; }
+        if line && !self.nmi_line_sampled && !self.nmi_pending && !self.nmi_deferred {
+            self.nmi_pending = true;
+            self.nmi_sample_cycle = Some(self.cpu_cycle);
+        }
         self.nmi_line_sampled = line;
         let _ = self.ppu.take_nmi_request();
     }
 
     /// Takes the CPU-side NMI edge latch.
-    pub fn take_nmi_request(&mut self) -> bool { core::mem::take(&mut self.nmi_pending) }
+    pub fn take_nmi_request(&mut self) -> bool {
+        let pending = core::mem::take(&mut self.nmi_pending);
+        if pending { self.nmi_sample_cycle = None; }
+        pending
+    }
+
+    /// Applies the 2A03 interrupt poll after the instruction's final CPU cycle.
+    /// An edge sampled on that final cycle is not recognized until one instruction later.
+    pub(crate) fn finish_cpu_instruction(&mut self) {
+        if self.nmi_deferred {
+            self.nmi_deferred = false;
+            self.nmi_pending = true;
+            self.nmi_sample_cycle = None;
+        } else if self.nmi_pending && self.nmi_sample_cycle == Some(self.cpu_cycle) {
+            self.nmi_pending = false;
+            self.nmi_sample_cycle = None;
+            self.nmi_deferred = true;
+        }
+    }
+
+    /// DMA stalls the CPU without executing the instruction that normally advances a deferred NMI.
+    pub(crate) fn release_deferred_nmi_after_dma(&mut self) {
+        if self.nmi_deferred {
+            self.nmi_deferred = false;
+            self.nmi_pending = true;
+            self.nmi_sample_cycle = None;
+        }
+    }
     /// Takes a pending OAM DMA page requested by a write to $4014.
     pub fn take_oam_dma_request(&mut self) -> Option<u8> { self.pending_oam_dma.take() }
     /// Copies a full 256-byte page into PPU OAM, starting at the current OAM address.
