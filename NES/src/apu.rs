@@ -815,7 +815,7 @@ mod tests {
         apu.tick_cpu_cycles(1);
         assert!(!apu.frame_reset_pending);
         assert!(apu.five_step_mode);
-        assert_eq!(apu.frame_cycles, 1, "the sequencer resumes on the cycle after reset");
+        assert_eq!(apu.frame_cycles, 0, "the reset cycle is the sequence origin");
     }
 
     #[test]
@@ -1997,7 +1997,7 @@ mod frame_counter_delay_regressions {
         odd.tick_cpu_cycles(1);
         assert!(!odd.frame_reset_pending);
         assert!(odd.five_step_mode);
-        assert_eq!(odd.frame_cycles, 1, "the reset cycle begins the new sequence");
+        assert_eq!(odd.frame_cycles, 0, "the reset cycle is the sequence origin");
 
         let mut even = Apu::new();
         even.cpu_cycle_odd = false;
@@ -2008,7 +2008,7 @@ mod frame_counter_delay_regressions {
         even.tick_cpu_cycles(1);
         assert!(!even.frame_reset_pending);
         assert!(even.five_step_mode);
-        assert_eq!(even.frame_cycles, 1, "the reset cycle begins the new sequence");
+        assert_eq!(even.frame_cycles, 0, "the reset cycle is the sequence origin");
     }
 
     #[test]
