@@ -275,12 +275,7 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        let ppu_dots_before_access = if ppu_register {
-            // PPUSTATUS resolves its read latch one PPU dot after the ordinary
-            // register strobe. At VBlank this lets the CPU sample the dot-2
-            // NMI edge before the dot-3 read side effect clears /NMI.
-            if timed_access && address & 7 == 2 { 3 } else { self.ppu_register_dots_before_access() }
-        } else { 3 };
+        let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
         self.clock_instruction_bus_access(true, ppu_dots_before_access);
         // The 2A03 polls NMI before the final cycle of an instruction. When
         // an absolute PPU register read is that final cycle, poll before its
