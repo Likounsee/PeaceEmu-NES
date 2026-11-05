@@ -59,7 +59,9 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 let remaining = reset_delay.get_or_insert(RESET_DELAY_INSTRUCTIONS);
                 if *remaining == 0 {
                     ppu_trace_history.extend(machine.bus_trace().into_iter().filter(|entry| {
-                        matches!(entry.ppu_scanline, 239..=242 | 261)
+                        (entry.address & 0xE007) == 0x2000
+                            || (((entry.address & 0xE007) == 0x2002)
+                                && matches!(entry.ppu_scanline, 239..=242 | 261))
                     }));
                     if ppu_trace_history.len() > 8_000 {
                         let excess = ppu_trace_history.len() - 8_000;
