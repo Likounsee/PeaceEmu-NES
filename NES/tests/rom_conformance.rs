@@ -501,3 +501,32 @@ fn blargg_mmc3_mapper_diagnostics_experimental() {
         failures.join("\n")
     );
 }
+
+
+#[test]
+fn blargg_cpu_dummy_writes_ppumem_diagnostics_experimental() {
+    let Some(root) = std::env::var_os("PEACEEMU_NES_TEST_ROM_DIR") else {
+        eprintln!("Skipping experimental CPU dummy-write ROM test: PEACEEMU_NES_TEST_ROM_DIR is not set");
+        return;
+    };
+    let path = PathBuf::from(root).join("cpu_dummy_writes/cpu_dummy_writes_ppumem.nes");
+    assert!(path.is_file(), "missing CPU dummy-write ROM: {}", path.display());
+    match run_blargg_rom(&path) {
+        Ok(message) => println!("EXPERIMENTAL CPU DUMMY-WRITES PPUMEM PASS — {}", message),
+        Err(error) => panic!("experimental CPU dummy-write PPUMEM diagnostic failed: {error}"),
+    }
+}
+
+#[test]
+fn blargg_oam_read_diagnostics_experimental() {
+    let Some(root) = std::env::var_os("PEACEEMU_NES_TEST_ROM_DIR") else {
+        eprintln!("Skipping experimental OAM-read ROM test: PEACEEMU_NES_TEST_ROM_DIR is not set");
+        return;
+    };
+    let path = PathBuf::from(root).join("oam_read/oam_read.nes");
+    assert!(path.is_file(), "missing OAM-read ROM: {}", path.display());
+    match run_blargg_rom(&path) {
+        Ok(message) => println!("EXPERIMENTAL OAM READ PASS — {}", message),
+        Err(error) => panic!("experimental OAM-read diagnostic failed: {error}"),
+    }
+}
