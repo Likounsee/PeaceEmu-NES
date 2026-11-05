@@ -2,11 +2,11 @@
 
 use crate::cartridge::{Cartridge, Mirroring};
 
-/// Minimal PPU register and memory state.
+/// PPU register, memory, and NTSC beam state.
 ///
 /// Implements CPU-visible registers, pattern/nametable/palette access, OAM storage,
-/// vblank/NMI state, NTSC scanline/dot counting, and frame-based background/sprite rendering.
-/// Rendering is an approximation, not a dot-accurate PPU pipeline.
+/// VBlank/NMI state, dot-stepped scanline timing, and per-dot background/sprite output.
+/// The rendering pipeline is substantially modeled but is not yet cycle-perfect 2C02 logic.
 #[derive(Debug, Clone)]
 pub struct Ppu {
     ctrl: u8,
