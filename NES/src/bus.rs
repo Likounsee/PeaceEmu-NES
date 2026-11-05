@@ -142,17 +142,6 @@ impl CpuBus {
         }
     }
 
-    /// PPUSTATUS's read aperture is one PPU dot later than ordinary register
-    /// transfers. Rotate the three divider phases so the flag/NMI race is
-    /// sampled at the correct dot without shifting PPUCTRL writes or PPUDATA.
-    fn ppu_status_dots_before_access(&self) -> u32 {
-        match self.ppu_bus_phase {
-            0 => 3,
-            1 => 1,
-            _ => 2,
-        }
-    }
-
     /// Starts tracking CPU bus cycles during one instruction.
     pub(crate) fn begin_cpu_instruction(&mut self) {
         self.instruction_timing = true;
@@ -273,15 +262,7 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        let ppu_dots_before_access = if ppu_register {
-            if address & 7 == 2 {
-                self.ppu_status_dots_before_access()
-            } else {
-                self.ppu_register_dots_before_access()
-            }
-        } else {
-            3
-        };
+        let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
         self.clock_instruction_bus_access(true, ppu_dots_before_access);
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
@@ -2142,28 +2123,4 @@ mod dmc_controller_read_conflict_regressions {
             [held_address, held_address, 0xC000]);
     }
 
-}
-
-
-#[cfg(test)]
-mod ppu_status_read_phase_regressions {
-    use super::*;
-
-    #[test]
-    fn ppu_status_reads_use_the_status_specific_divider_phase() {
-        let expected_dots = [3, 1, 2];
-        for (phase, expected_dot) in expected_dots.into_iter().enumerate() {
-            let mut bus = CpuBus::new();
-            bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
-            bus.set_ppu_bus_phase(phase as u8);
-            bus.begin_cpu_instruction();
-            let _ = bus.read(0x2002);
-            assert_eq!(bus.end_cpu_instruction(), 1);
-            assert_eq!(
-                bus.bus_trace().last().unwrap().ppu_dot,
-                expected_dot,
-                "phase {phase}: PPUSTATUS must resolve at its shifted read aperture"
-            );
-        }
-    }
 }
