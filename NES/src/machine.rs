@@ -85,11 +85,11 @@ impl NesMachine {
         Self::from_ines_with_ppu_startup_phase(image, 0)
     }
 
-    /// Loads an iNES image with a selected CPU/PPU bus-access phase (0, 1, or 2).
+    /// Loads an iNES image with a selected initial PPU clock-divider offset (0, 1, or 2 dots).
     ///
-    /// The CPU's register-access point can align with any of the three PPU dots
-    /// in a CPU cycle. The default constructor selects phase 0; this variant is
-    /// useful for deterministic hardware-timing diagnostics and reset testing.
+    /// Real consoles can begin with any of the three PPU-dot alignments relative
+    /// to the CPU clock. Model that as an initial beam offset while keeping the
+    /// CPU bus-access strobe fixed; this is useful for hardware-timing diagnostics.
     pub fn from_ines_with_ppu_startup_phase(
         image: &[u8],
         ppu_startup_phase: u8,
@@ -99,7 +99,11 @@ impl NesMachine {
         let battery_backed = image.get(6).is_some_and(|flags| flags & 0x02 != 0);
         let mut bus = CpuBus::new();
         bus.insert_cartridge(cartridge);
-        bus.set_ppu_bus_phase(ppu_startup_phase);
+        bus.set_ppu_bus_phase(0);
+        // The divider's startup phase is an initial PPU-beam offset, not a
+        // different register-access strobe. Keeping those concepts separate
+        // lets the diagnostic ROMs exercise all three real CPU/PPU alignments.
+        bus.tick_ppu(u32::from(ppu_startup_phase));
         let mut cpu = Cpu::new();
         cpu.reset(&mut bus);
         Ok(Self { cpu, bus, battery_backed, ppu_startup_phase })
@@ -111,7 +115,8 @@ impl NesMachine {
     /// CPU RAM and cartridge RAM are preserved, matching a console reset rather than a power cycle.
     pub fn reset(&mut self) {
         self.bus.reset();
-        self.bus.set_ppu_bus_phase(self.ppu_startup_phase);
+        self.bus.set_ppu_bus_phase(0);
+        self.bus.tick_ppu(u32::from(self.ppu_startup_phase));
         self.cpu.reset(&mut self.bus);
     }
 
@@ -1262,10 +1267,10 @@ mod tests {
     fn selected_ppu_startup_phase_survives_console_reset() {
         let image = nrom_with_program(&[0xEA]);
         let mut machine = NesMachine::from_ines_with_ppu_startup_phase(&image, 2).unwrap();
-        assert_eq!(machine.ppu_position(), (261, 0));
+        assert_eq!(machine.ppu_position(), (261, 2));
         assert_eq!(machine.ppu_startup_phase, 2);
         machine.reset();
-        assert_eq!(machine.ppu_position(), (261, 0));
+        assert_eq!(machine.ppu_position(), (261, 2));
         assert_eq!(machine.ppu_startup_phase, 2);
     }
 
