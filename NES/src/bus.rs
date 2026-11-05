@@ -295,7 +295,14 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
+        let mut ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
+        // PPUSTATUS's read-data latch is one PPU dot earlier than the other
+        // register strobes. Keeping it at the generic register point makes the
+        // two-read VBlank boundary sweep (and the NMI suppression boundary)
+        // cross the race window one dot too late.
+        if ppu_register && address & 7 == 2 {
+            ppu_dots_before_access = ppu_dots_before_access.saturating_sub(1);
+        }
         // The 2A03 polls the interrupt lines at the end of the penultimate
         // instruction cycle. For an absolute LDA $2002, that is immediately
         // before the fourth (data-read) cycle begins. Sampling after advancing
