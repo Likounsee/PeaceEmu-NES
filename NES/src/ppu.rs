@@ -2662,10 +2662,10 @@ mod tests {
     fn odd_ntsc_frame_skips_pre_render_dot_when_rendering_is_enabled() {
         let mut ppu = Ppu::new();
         ppu.scanline = 261;
-        ppu.dot = 339;
+        ppu.dot = 338;
         ppu.odd_frame = true;
         ppu.mask = 0x08;
-        ppu.tick(1);
+        ppu.tick(2);
         assert_eq!(ppu.scanline, 0);
         assert_eq!(ppu.dot, 0);
         assert!(!ppu.odd_frame);
@@ -2696,10 +2696,10 @@ mod tests {
     fn odd_frame_skip_counts_as_a_scanline_boundary() {
         let mut ppu = Ppu::new();
         ppu.scanline = 261;
-        ppu.dot = 339;
+        ppu.dot = 338;
         ppu.odd_frame = true;
         ppu.mask = 0x08;
-        assert_eq!(ppu.tick(1), 1);
+        assert_eq!(ppu.tick(2), 1);
         assert_eq!(ppu.position(), (0, 0));
     }
 
@@ -2792,18 +2792,18 @@ mod tests {
     fn odd_frame_skips_one_prerender_dot_only_when_rendering_is_enabled() {
         let mut ppu = Ppu::new();
         ppu.scanline = 261;
-        ppu.dot = 339;
+        ppu.dot = 338;
         ppu.odd_frame = true;
         ppu.mask = 0x08;
-        ppu.tick(1);
+        ppu.tick(2);
         assert_eq!(ppu.position(), (0, 0));
         assert!(!ppu.odd_frame);
 
         ppu.scanline = 261;
-        ppu.dot = 339;
+        ppu.dot = 338;
         ppu.odd_frame = true;
         ppu.mask = 0;
-        ppu.tick(1);
+        ppu.tick(2);
         assert_eq!(ppu.position(), (261, 340));
         assert!(ppu.odd_frame);
     }
@@ -3653,19 +3653,19 @@ mod sprite_pattern_address_regressions {
     fn odd_frame_skip_only_occurs_when_rendering_is_enabled() {
         let mut rendered = Ppu::new();
         rendered.scanline = 261;
-        rendered.dot = 339;
+        rendered.dot = 338;
         rendered.odd_frame = true;
         rendered.mask = 0x08;
-        rendered.tick(1);
+        rendered.tick(2);
         assert_eq!(rendered.position(), (0, 0));
         assert!(!rendered.odd_frame);
 
         let mut blanked = Ppu::new();
         blanked.scanline = 261;
-        blanked.dot = 339;
+        blanked.dot = 338;
         blanked.odd_frame = true;
         blanked.mask = 0;
-        blanked.tick(1);
+        blanked.tick(2);
         assert_eq!(blanked.position(), (261, 340));
         assert!(blanked.odd_frame);
     }
