@@ -37,6 +37,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
     // machine reset intentionally clears its live bus ring, but these ROMs use
     // status 0x81 to restart individual timing subtests before reporting a result.
     let mut ppu_trace_history = Vec::new();
+    let mut ppu_timing_history = Vec::new();
 
     for instruction in 0..MAX_INSTRUCTIONS {
         machine.step().map_err(|error| {
