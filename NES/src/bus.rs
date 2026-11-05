@@ -145,6 +145,17 @@ impl CpuBus {
         }
     }
 
+    /// $2002's data latch is sampled at the read phase of the CPU cycle.
+    /// Keep this separate from writes and other PPU ports so the VBlank
+    /// race can be represented without moving PPUCTRL's NMI-enable edge.
+    fn ppustatus_read_dots_before_access(&self) -> u32 {
+        match self.ppu_bus_phase {
+            0 => 3,
+            1 => 1,
+            _ => 2,
+        }
+    }
+
     /// Starts tracking CPU bus cycles during one instruction.
     pub(crate) fn begin_cpu_instruction(&mut self) {
         self.instruction_timing = true;
@@ -274,7 +285,15 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
+        let ppu_dots_before_access = if ppu_register {
+            if address & 7 == 2 {
+                self.ppustatus_read_dots_before_access()
+            } else {
+                self.ppu_register_dots_before_access()
+            }
+        } else {
+            3
+        };
         self.clock_instruction_bus_access(true, ppu_dots_before_access);
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
