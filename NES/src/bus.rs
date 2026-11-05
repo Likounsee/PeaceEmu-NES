@@ -1550,8 +1550,9 @@ mod instruction_bus_timing_regressions {
         bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
         bus.write(0x2000, 0x80); // Enable NMI before VBlank begins.
 
+        bus.set_ppu_bus_phase(1); // Two PPU dots: the access lands on dot 2.
         bus.begin_cpu_instruction();
-        let status = bus.read(0x2002); // The two pre-access dots cross VBlank dot 1.
+        let status = bus.read(0x2002);
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert_ne!(status & 0x80, 0, "the status read sees VBlank set");
         assert!(!bus.take_nmi_request(),
@@ -2179,7 +2180,7 @@ mod nmi_sampling_boundary_regressions {
         // not sampled this edge yet.
         assert!(!bus.take_nmi_request());
 
-        bus.set_ppu_bus_phase(2); // One PPU dot before this register access.
+        bus.set_ppu_bus_phase(0); // One PPU dot before this register access.
         bus.begin_cpu_instruction();
         bus.write(0x2000, 0x00);
         assert_eq!(bus.end_cpu_instruction(), 1);
