@@ -244,7 +244,8 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        self.clock_instruction_bus_access(true, if ppu_register { self.ppu_register_dots_before_access() } else { 3 });
+        let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
+        self.clock_instruction_bus_access(true, ppu_dots_before_access);
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x6000..=0x7FFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
@@ -259,7 +260,7 @@ impl CpuBus {
         self.open_bus = value;
         self.record_bus_access(CpuBusAccessKind::Read, address, value);
         if timed_access { self.sample_nmi_line(); }
-        if timed_access && ppu_register { self.tick_ppu(1); }
+        if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
         value
     }
     /// Writes a byte to the CPU address space. Cartridge ROM is not writable.
@@ -267,7 +268,8 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        self.clock_instruction_bus_access(false, if ppu_register { self.ppu_register_dots_before_access() } else { 3 });
+        let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
+        self.clock_instruction_bus_access(false, ppu_dots_before_access);
         self.open_bus = value;
         match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF] = value,
@@ -309,7 +311,7 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
         if timed_access { self.sample_nmi_line(); }
-        if timed_access && ppu_register { self.tick_ppu(1); }
+        if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
     /// The values are latched by the next strobe write to $4016.
