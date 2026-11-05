@@ -139,9 +139,13 @@ impl CpuBus {
 
     fn ppu_register_dots_before_access(&self) -> u32 {
         match self.ppu_bus_phase {
-            0 => 2,
-            1 => 3,
-            _ => 1,
+            // The CPU's readable/writable bus strobe is at the end of its
+            // three-dot PPU interval. Sampling after only two dots makes
+            // $2002 one PPU dot early and fails the VBlank set/suppression
+            // boundary ROMs (02-vbl_set_time and 06-suppression).
+            0 => 3,
+            1 => 1,
+            _ => 2,
         }
     }
 
