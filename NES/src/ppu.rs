@@ -55,6 +55,8 @@ pub struct Ppu {
     scanline: u16,
     dot: u16,
     odd_frame: bool,
+    /// Odd-frame dot-skip decision sampled one dot before the omitted dot.
+    odd_frame_skip_pending: bool,
     frame_scroll_v: u16,
     frame_fine_x: u8,
     frame_scroll_valid: bool,
@@ -111,7 +113,7 @@ impl Default for Ppu {
             eval_indices: [0xFF; 8], eval_count: 0,
             nametables: [0; 4096], palette: [0; 32], v: 0, t: 0,
             fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
-            scanline: 261, dot: 0, odd_frame: false, frame_scroll_v: 0, frame_fine_x: 0,
+            scanline: 261, dot: 0, odd_frame: false, odd_frame_skip_pending: false, frame_scroll_v: 0, frame_fine_x: 0,
             frame_scroll_valid: false, line_scroll_v: 0, line_scroll_start_x: 0,
             nmi_pending: false, nmi_line: false, suppress_vblank: false, vblank_clear_race: false,
             framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
@@ -356,8 +358,13 @@ impl Ppu {
             // The clear-dot read window lasts only until the next PPU dot.
             self.vblank_clear_race = false;
             self.ppu_cycle = self.ppu_cycle.wrapping_add(1);
-            // NTSC skips pre-render dot 340 on odd frames while rendering is active.
-            if self.scanline == 261 && self.dot == 339 && self.odd_frame && self.mask & 0x18 != 0 {
+            // The odd-frame skip decision is sampled at pre-render dot 338;
+            // the following dot (340) is omitted when the decision was latched.
+            if self.scanline == 261 && self.dot == 338 {
+                self.odd_frame_skip_pending = self.odd_frame && self.mask & 0x18 != 0;
+            }
+            if self.scanline == 261 && self.dot == 339 && self.odd_frame_skip_pending {
+                self.odd_frame_skip_pending = false;
                 self.dot = 0;
                 self.scanline = 0;
                 self.odd_frame = false;
@@ -2756,6 +2763,29 @@ mod tests {
         assert!(!ppu.take_nmi_request(), "the edge is consumed exactly once");
         ppu.cpu_write_register(0, 0x80, None);
         assert!(!ppu.take_nmi_request(), "writing the same control value must not retrigger NMI");
+    }
+
+    #[test]
+    fn odd_frame_skip_decision_is_latched_at_pre_render_dot_338() {
+        let mut enabled_at_338 = Ppu::new();
+        enabled_at_338.odd_frame = true;
+        enabled_at_338.mask = 0x08;
+        enabled_at_338.tick(338);
+        assert_eq!(enabled_at_338.position(), (261, 338));
+        enabled_at_338.tick(1);
+        assert_eq!(enabled_at_338.position(), (261, 339));
+        enabled_at_338.tick(1);
+        assert_eq!(enabled_at_338.position(), (0, 0),
+            "a rendering enable present at dot 338 must latch the odd-frame skip");
+
+        let mut enabled_after_338 = Ppu::new();
+        enabled_after_338.odd_frame = true;
+        enabled_after_338.tick(339);
+        assert_eq!(enabled_after_338.position(), (261, 339));
+        enabled_after_338.mask = 0x08;
+        enabled_after_338.tick(1);
+        assert_eq!(enabled_after_338.position(), (261, 340),
+            "enabling rendering after dot 338 must not retroactively request the skip");
     }
 
     #[test]
