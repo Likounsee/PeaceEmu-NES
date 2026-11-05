@@ -2184,3 +2184,32 @@ mod nmi_sampling_boundary_regressions {
             "disabling PPUCTRL before the CPU sampling point must cancel the unsampled edge");
     }
 }
+
+
+    #[test]
+    fn vblank_nmi_capture_respects_all_three_cpu_ppu_divider_phases() {
+        for phase in 0..=2 {
+            let mut bus = CpuBus::new();
+            bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
+            bus.write(0x2000, 0x80);
+            bus.set_ppu_bus_phase(phase);
+            bus.begin_cpu_instruction();
+
+            let _ = bus.read(0x8000);
+            let first_cycle = bus.end_cpu_instruction();
+            assert_eq!(first_cycle, 1, "phase {phase}: first CPU access is one cycle");
+
+            if phase == 2 {
+                assert!(!bus.take_nmi_request(),
+                    "phase 2: dot 1 has set VBlank but the delayed NMI line is not high yet");
+                bus.begin_cpu_instruction();
+                let _ = bus.read(0x8000);
+                assert_eq!(bus.end_cpu_instruction(), 1);
+            }
+
+            assert!(bus.take_nmi_request(),
+                "phase {phase}: the CPU must capture the VBlank NMI at its first sample after the line rises");
+            assert!(!bus.take_nmi_request(),
+                "phase {phase}: the same edge must never be delivered twice");
+        }
+    }
