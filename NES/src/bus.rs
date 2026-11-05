@@ -276,16 +276,6 @@ impl CpuBus {
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
         let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
         self.clock_instruction_bus_access(true, ppu_dots_before_access);
-        // On the 2A03, the NMI input is sampled at the CPU-cycle boundary.
-        // A $2002 read that lands on scanline 241 dot 3 is already too late
-        // to retract the edge raised at dot 2: capture it before the register
-        // read clears VBlank and lowers the PPU NMI output. Reads on dot 1/2
-        // remain on the suppressible side of the race.
-        if timed_access && ppu_register && (address & 7) == 2
-            && self.ppu_position() == (241, 3)
-        {
-            self.sample_nmi_line();
-        }
         let value = match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF],
             0x6000..=0x7FFF => self.cartridge.as_ref().and_then(|c| c.cpu_read(address)).unwrap_or(self.open_bus),
@@ -2157,35 +2147,6 @@ mod dmc_controller_read_conflict_regressions {
 #[cfg(test)]
 mod nmi_sampling_boundary_regressions {
     use super::*;
-
-    #[test]
-    fn status_read_on_dot_3_cannot_retract_the_nmi_already_sampled_by_cpu() {
-        let mut bus = CpuBus::new();
-        bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
-        bus.write(0x2000, 0x80);
-        bus.set_ppu_bus_phase(1); // This CPU bus access lands on PPU dot 3.
-        bus.begin_cpu_instruction();
-        let status = bus.read(0x2002);
-        assert_eq!(bus.end_cpu_instruction(), 1);
-        assert_ne!(status & 0x80, 0, "VBlank is visible on dot 3");
-        assert!(bus.take_nmi_request(),
-            "the dot-2 NMI edge must be captured before PPUSTATUS clears the line");
-        assert!(!bus.take_nmi_request());
-    }
-
-    #[test]
-    fn status_read_on_dot_2_still_suppresses_the_unsampled_nmi() {
-        let mut bus = CpuBus::new();
-        bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
-        bus.write(0x2000, 0x80);
-        bus.set_ppu_bus_phase(0); // This CPU bus access lands on PPU dot 2.
-        bus.begin_cpu_instruction();
-        let status = bus.read(0x2002);
-        assert_eq!(bus.end_cpu_instruction(), 1);
-        assert_ne!(status & 0x80, 0, "VBlank is visible on dot 2");
-        assert!(!bus.take_nmi_request(),
-            "a dot-2 PPUSTATUS read must cancel the not-yet-sampled NMI");
-    }
 
     #[test]
     fn cpu_captures_vblank_nmi_raised_between_cpu_sampling_points() {
