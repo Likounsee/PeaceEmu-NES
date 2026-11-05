@@ -365,3 +365,48 @@ fn blargg_extended_hardware_diagnostics() {
         failures.join("\\n")
     );
 }
+
+#[test]
+fn blargg_ppu_register_diagnostics_experimental() {
+    let Some(root) = std::env::var_os("PEACEEMU_NES_PPU_TEST_ROM_DIR") else {
+        eprintln!("Skipping experimental PPU register ROM tests: PEACEEMU_NES_PPU_TEST_ROM_DIR is not set");
+        return;
+    };
+    let root = PathBuf::from(root);
+    // The 2005.09.15b suite covers PPU palette RAM, power-up state,
+    // OAM access, VBlank clearing and PPUDATA/VRAM access.
+    const ROMS: &[&str] = &[
+        "blargg_ppu_tests_2005.09.15b/palette_ram.nes",
+        "blargg_ppu_tests_2005.09.15b/power_up_palette.nes",
+        "blargg_ppu_tests_2005.09.15b/sprite_ram.nes",
+        "blargg_ppu_tests_2005.09.15b/vbl_clear_time.nes",
+        "blargg_ppu_tests_2005.09.15b/vram_access.nes",
+    ];
+
+    let mut failures = Vec::new();
+    let mut passed = 0;
+    for relative in ROMS {
+        let path = root.join(relative);
+        if !path.is_file() {
+            failures.push(format!("missing PPU register ROM: {}", path.display()));
+            continue;
+        }
+        match run_blargg_rom(&path) {
+            Ok(message) => {
+                passed += 1;
+                println!("EXPERIMENTAL PPU REGISTER PASS {} — {}", relative, message);
+            }
+            Err(error) => {
+                eprintln!("EXPERIMENTAL PPU REGISTER FAIL {}", error);
+                failures.push(error);
+            }
+        }
+    }
+    println!("Blargg PPU register diagnostics: {passed}/{} passed", ROMS.len());
+    assert!(
+        failures.is_empty(),
+        "PPU register diagnostics reported {} failure(s):\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
