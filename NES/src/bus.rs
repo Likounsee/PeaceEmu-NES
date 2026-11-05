@@ -2142,3 +2142,45 @@ mod dmc_controller_read_conflict_regressions {
     }
 
 }
+
+
+#[cfg(test)]
+mod nmi_sampling_boundary_regressions {
+    use super::*;
+
+    #[test]
+    fn cpu_captures_vblank_nmi_raised_between_cpu_sampling_points() {
+        let mut bus = CpuBus::new();
+        bus.tick_ppu(242 * 341);
+        assert_eq!(bus.ppu_position(), (241, 0));
+        bus.write(0x2000, 0x80);
+
+        bus.begin_cpu_instruction();
+        let _ = bus.read(0x8000);
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        assert_eq!(bus.ppu_position(), (241, 3));
+
+        assert!(bus.take_nmi_request(),
+            "the CPU must capture the PPU edge at the end of the cycle in which it rises");
+        assert!(!bus.take_nmi_request(),
+            "one PPU edge must produce only one CPU-side NMI request");
+    }
+
+    #[test]
+    fn ppuctrl_disable_before_cpu_sample_cancels_unsampled_nmi_edge() {
+        let mut bus = CpuBus::new();
+        bus.tick_ppu(242 * 341 + 2);
+        assert_eq!(bus.ppu_position(), (241, 2));
+        bus.write(0x2000, 0x80);
+        // The line rises when NMI is enabled during VBlank, but the CPU has
+        // not sampled this edge yet.
+        assert!(!bus.take_nmi_request());
+
+        bus.set_ppu_bus_phase(2); // One PPU dot before this register access.
+        bus.begin_cpu_instruction();
+        bus.write(0x2000, 0x00);
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        assert!(!bus.take_nmi_request(),
+            "disabling PPUCTRL before the CPU sampling point must cancel the unsampled edge");
+    }
+}
