@@ -1479,8 +1479,8 @@ impl Ppu {
     pub(crate) fn nmi_line(&self) -> bool { self.nmi_line }
 
     /// Records CPU-side NMI sampling only around the VBlank race window.
-    /// Ordinary builds inline the PPU timing recorder to a no-op, while ROM
-    /// diagnostics can correlate CPU samples with dot-level transitions.
+    /// Compiled only for diagnostic builds, never into public release builds.
+    #[cfg(feature = "ppu-timing-diagnostics")]
     pub(crate) fn record_cpu_nmi_sample(&mut self, captured_edge: bool) {
         if (self.scanline == 241 && self.dot <= 12)
             || (self.scanline == 261 && self.dot <= 3)
