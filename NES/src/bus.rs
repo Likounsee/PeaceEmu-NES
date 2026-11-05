@@ -2251,7 +2251,7 @@ mod ppustatus_nmi_race_regressions {
         let mut bus = CpuBus::new();
         // Place the beam so three ordinary CPU cycles land immediately before
         // the requested PPUSTATUS strobe on VBlank scanline 241.
-        bus.tick_ppu(240 * 341 + u32::from(start_dot));
+        bus.tick_ppu(241 * 341 + u32::from(start_dot));
         bus.write(0x2000, 0x80);
         bus.begin_cpu_instruction();
         for address in [0x8000, 0x8001, 0x8002] {
