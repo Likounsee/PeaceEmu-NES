@@ -2150,11 +2150,15 @@ mod exact_frame_sequence_timing_regressions {
         assert!(!apu.irq_pending(), "four-step frame IRQ must not fire before cycle 29,828");
         assert_eq!(apu.frame_cycles, 29_827);
         apu.tick_cpu_cycles(1);
-        assert!(apu.irq_pending(), "frame IRQ is first asserted at cycle 29,828");
+        assert!(apu.irq_pending(), "frame IRQ remains asserted at cycle 29,828");
 
         apu.tick_cpu_cycles(1);
-        assert!(apu.irq_pending(), "four-step frame IRQ must fire at cycle 29830");
-        assert_eq!(apu.frame_cycles, 0, "the four-step sequence resets on its terminal event");
+        assert!(apu.irq_pending(), "frame IRQ remains asserted at cycle 29,829");
+        assert_eq!(apu.frame_cycles, 29_829);
+
+        apu.tick_cpu_cycles(1);
+        assert!(apu.irq_pending(), "frame IRQ remains asserted through the terminal cycle");
+        assert_eq!(apu.frame_cycles, 0, "the four-step sequence resets at cycle 29,830");
     }
 
     #[test]
@@ -2165,7 +2169,7 @@ mod exact_frame_sequence_timing_regressions {
         apu.tick_cpu_cycles(4);
         assert!(apu.five_step_mode);
 
-        apu.tick_cpu_cycles(37_280);
+        apu.tick_cpu_cycles(37_281);
         assert!(!apu.irq_pending(), "five-step mode must not assert frame IRQ");
         assert_eq!(apu.frame_cycles, 37_281, "the sequence must be one cycle short of its terminal event");
 
