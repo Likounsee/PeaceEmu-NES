@@ -1242,6 +1242,15 @@ mod tests {
         assert_eq!(b, [0, 1, 0, 0, 0, 0, 0, 0]);
     }
     #[test]
+    fn selected_ppu_startup_phase_survives_console_reset() {
+        let image = nrom_with_program(&[0xEA]);
+        let mut machine = NesMachine::from_ines_with_ppu_startup_phase(&image, 2).unwrap();
+        assert_eq!(machine.ppu_position(), (261, 2));
+        machine.reset();
+        assert_eq!(machine.ppu_position(), (261, 2));
+    }
+
+    #[test]
     fn machine_reset_recovers_jammed_cpu_and_preserves_ram_cartridge_and_audio_rate() {
         let image = nrom_with_program(&[0x02, 0xEA]); // KIL followed by NOP.
         let mut machine = NesMachine::from_ines(&image).unwrap();
