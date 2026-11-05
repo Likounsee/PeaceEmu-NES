@@ -27,13 +27,14 @@ fn status_read_on_dot_1_observes_the_race_and_cancels_nmi() {
 }
 
 #[test]
-fn status_read_on_dot_0_suppresses_vblank() {
+fn status_read_on_dot_0_does_not_suppress_vblank() {
     let mut ppu = at_vblank_start();
     ppu.cpu_write_register(0, 0x80, None);
     assert_eq!(ppu.cpu_read_register(2, None) & 0x80, 0);
     ppu.tick(2);
     assert_eq!(ppu.position(), (241, 2));
-    assert_eq!(ppu.cpu_read_register(2, None) & 0x80, 0);
+    assert_ne!(ppu.cpu_read_register(2, None) & 0x80, 0,
+        "a dot-0 read happens before the VBlank flag is set and cannot suppress it");
     assert!(!ppu.take_nmi_request());
 }
 
