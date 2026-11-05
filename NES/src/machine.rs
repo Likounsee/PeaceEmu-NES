@@ -282,9 +282,11 @@ impl NesMachine {
             self.cpu.add_stall_cycles(dmc_stalls.min(u32::from(u16::MAX)) as u16);
         }
         self.clock_devices_for_cpu_cycles(instruction_cycles.saturating_sub(bus_cycles));
+        self.bus.finish_cpu_instruction();
 
         if let Some(page) = self.bus.take_oam_dma_request() {
             self.perform_oam_dma(page);
+            self.bus.release_deferred_nmi_after_dma();
         }
         Ok(result)
     }
