@@ -121,7 +121,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                             event.ctrl, event.nmi_line, event.nmi_pending,
                             event.nmi_vblank_delay, event.suppress_vblank
                         )).collect();
-                    format!("\\nCPU $2002 reads near VBlank/pre-render (including soft-reset history):\\n{}\\nPPU VBlank/NMI edge events (including soft-reset history):\\n{}", status_reads.join("\\n"), timing.join("\\n"))
+                    format!("\\nCPU PPUCTRL/PPUSTATUS bus accesses near VBlank/pre-render (including soft-reset history):\\n{}\\nPPU VBlank/NMI edge events (including soft-reset history):\\n{}", ppu_accesses.join("\\n"), timing.join("\\n"))
                 } else {
                     String::new()
                 };
