@@ -256,20 +256,33 @@ fn blargg_ppu_diagnostics_experimental() {
         "ppu_vbl_nmi/rom_singles/02-vbl_set_time.nes",
         "ppu_vbl_nmi/rom_singles/06-suppression.nes",
     ];
+    let mut phase_failures = Vec::new();
     for phase in 1..=2 {
         let mut phase_passes = 0;
         for relative in phase_sensitive_roms {
             let path = root.join(relative);
+            if !path.is_file() {
+                let error = format!("missing phase-sensitive PPU ROM: {}", path.display());
+                eprintln!("EXPERIMENTAL PHASE FAIL phase={} {}", phase, error);
+                phase_failures.push(error);
+                continue;
+            }
             match run_blargg_rom_with_ppu_phase(&path, phase) {
                 Ok(message) => {
                     phase_passes += 1;
                     println!("EXPERIMENTAL PHASE PASS phase={} {} — {}", phase, relative, message);
                 }
-                Err(error) => eprintln!("EXPERIMENTAL PHASE FAIL phase={} {}", phase, error),
+                Err(error) => {
+                    eprintln!("EXPERIMENTAL PHASE FAIL phase={} {}", phase, error);
+                    phase_failures.push(format!("phase {phase}: {error}"));
+                }
             }
         }
         println!("EXPERIMENTAL PPU startup phase {}: {}/2 phase-sensitive ROMs passed", phase, phase_passes);
     }
 
     assert!(failures.is_empty(), "default-phase PPU diagnostics reported {} failure(s)", failures.len());
+    assert!(phase_failures.is_empty(),
+        "alternate-phase PPU diagnostics reported {} failure(s):\n{}",
+        phase_failures.len(), phase_failures.join("\n"));
 }
