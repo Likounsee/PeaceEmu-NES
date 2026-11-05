@@ -259,8 +259,11 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.open_bus = value;
         self.record_bus_access(CpuBusAccessKind::Read, address, value);
-        if timed_access { self.sample_nmi_line(); }
         if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
+        // The CPU samples the NMI input at the end of the full CPU cycle,
+        // after the remaining PPU dots. Sampling immediately after the register
+        // side effect collapses the $2002 suppression window to a single point.
+        if timed_access { self.sample_nmi_line(); }
         value
     }
     /// Writes a byte to the CPU address space. Cartridge ROM is not writable.
@@ -310,8 +313,8 @@ impl CpuBus {
         }
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
-        if timed_access { self.sample_nmi_line(); }
         if timed_access && ppu_register { self.tick_ppu(3 - ppu_dots_before_access); }
+        if timed_access { self.sample_nmi_line(); }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
     /// The values are latched by the next strobe write to $4016.
