@@ -65,6 +65,8 @@ pub struct Ppu {
     line_scroll_start_x: usize,
     nmi_pending: bool,
     nmi_line: bool,
+    /// One-dot propagation delay from the VBlank flag to the NMI output.
+    nmi_vblank_delay: bool,
     suppress_vblank: bool,
     /// Preserves the pre-clear VBlank value for a CPU read on pre-render dot 1.
     vblank_clear_race: bool,
@@ -115,7 +117,7 @@ impl Default for Ppu {
             fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
             scanline: 261, dot: 0, odd_frame: false, odd_frame_skip_pending: false, frame_scroll_v: 0, frame_fine_x: 0,
             frame_scroll_valid: false, line_scroll_v: 0, line_scroll_start_x: 0,
-            nmi_pending: false, nmi_line: false, suppress_vblank: false, vblank_clear_race: false,
+            nmi_pending: false, nmi_line: false, nmi_vblank_delay: false, suppress_vblank: false, vblank_clear_race: false,
             framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
             bg_tile_cache_valid: false, bg_tile_cache_tile_addr: 0,
             bg_tile_cache_pattern_base: 0,
@@ -168,6 +170,7 @@ impl Ppu {
                     self.nmi_pending = false;
                 }
                 self.status &= !0x80;
+                self.nmi_vblank_delay = false;
                 self.vblank_clear_race = false;
                 self.update_nmi_line();
                 self.write_latch = false;
@@ -472,13 +475,19 @@ impl Ppu {
             if self.scanline == 241 && self.dot == 1 {
                 if !self.suppress_vblank {
                     self.status |= 0x80;
+                    self.nmi_vblank_delay = true;
                     self.update_nmi_line();
                 }
                 self.suppress_vblank = false;
             }
+            if self.scanline == 241 && self.dot == 2 && self.nmi_vblank_delay {
+                self.nmi_vblank_delay = false;
+                self.update_nmi_line();
+            }
             if self.scanline == 261 && self.dot == 1 {
                 self.vblank_clear_race = self.status & 0x80 != 0;
                 self.status &= !0xE0;
+                self.nmi_vblank_delay = false;
                 self.update_nmi_line();
             }
             // Complete the dot's pixel work before publishing the next line's
@@ -1377,7 +1386,9 @@ impl Ppu {
 
     /// Updates the NMI output line and latches only low-to-high transitions.
     fn update_nmi_line(&mut self) {
-        let line = self.ctrl & 0x80 != 0 && self.status & 0x80 != 0;
+        let line = self.ctrl & 0x80 != 0
+            && self.status & 0x80 != 0
+            && !self.nmi_vblank_delay;
         if line && !self.nmi_line { self.nmi_pending = true; }
         self.nmi_line = line;
     }
