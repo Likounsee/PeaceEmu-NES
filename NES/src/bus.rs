@@ -295,7 +295,22 @@ impl CpuBus {
         self.cpu_bus_address = address;
         let timed_access = self.instruction_timing;
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
-        let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
+        let mut ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
+        // PPUSTATUS reads that land on the VBlank-set boundary are sampled
+        // one dot earlier than ordinary register strobes. This keeps the dot-0
+        // suppression and dot-1 old-value race distinct for every divider phase.
+        if timed_access && ppu_register && address & 7 == 2 {
+            let (scanline, dot) = self.ppu_position();
+            let target_dot = dot + ppu_dots_before_access as u16;
+            let (target_scanline, target_dot) = if target_dot >= 341 {
+                ((scanline + 1) % 262, target_dot - 341)
+            } else {
+                (scanline, target_dot)
+            };
+            if target_scanline == 241 && target_dot <= 1 {
+                ppu_dots_before_access = ppu_dots_before_access.saturating_sub(1);
+            }
+        }
         // The 2A03 polls the interrupt lines at the end of the penultimate
         // instruction cycle. For an absolute LDA $2002, that is immediately
         // before the fourth (data-read) cycle begins. Sampling after advancing
