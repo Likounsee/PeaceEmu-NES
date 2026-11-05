@@ -22,7 +22,7 @@ pub struct PpuTimingEvent {
     pub nmi_line: bool,
     /// PPU-internal pending NMI edge after the event.
     pub nmi_pending: bool,
-    /// Reserved diagnostic field; the NMI output now follows VBlank/PPUCTRL directly.
+    /// Whether the one-dot VBlank-to-NMI propagation delay is active.
     pub nmi_vblank_delay: bool,
     /// Whether a dot-0 PPUSTATUS read has suppressed the upcoming VBlank set.
     pub suppress_vblank: bool,
@@ -93,6 +93,8 @@ pub struct Ppu {
     line_scroll_start_x: usize,
     nmi_pending: bool,
     nmi_line: bool,
+    /// One-dot propagation delay from the VBlank flag to the NMI output.
+    nmi_vblank_delay: bool,
     suppress_vblank: bool,
     /// Preserves the pre-clear VBlank value for a CPU read on pre-render dot 1.
     vblank_clear_race: bool,
@@ -145,7 +147,7 @@ impl Default for Ppu {
             fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
             scanline: 261, dot: 0, odd_frame: false, odd_frame_skip_pending: false, frame_scroll_v: 0, frame_fine_x: 0,
             frame_scroll_valid: false, line_scroll_v: 0, line_scroll_start_x: 0,
-            nmi_pending: false, nmi_line: false, suppress_vblank: false, vblank_clear_race: false,
+            nmi_pending: false, nmi_line: false, nmi_vblank_delay: false, suppress_vblank: false, vblank_clear_race: false,
             framebuffer: vec![0; 256 * 240], background_opaque: vec![false; 256 * 240],
             bg_tile_cache_valid: false, bg_tile_cache_tile_addr: 0,
             bg_tile_cache_pattern_base: 0,
@@ -201,6 +203,7 @@ impl Ppu {
                     self.nmi_pending = false;
                 }
                 self.status &= !0x80;
+                self.nmi_vblank_delay = false;
                 self.vblank_clear_race = false;
                 self.update_nmi_line();
                 self.write_latch = false;
@@ -506,6 +509,7 @@ impl Ppu {
             if self.scanline == 241 && self.dot == 1 {
                 if !self.suppress_vblank {
                     self.status |= 0x80;
+                    self.nmi_vblank_delay = true;
                     self.record_timing_event("VBLANK_SET");
                     self.update_nmi_line();
                 } else {
@@ -513,9 +517,14 @@ impl Ppu {
                 }
                 self.suppress_vblank = false;
             }
+            if self.scanline == 241 && self.dot == 2 && self.nmi_vblank_delay {
+                self.nmi_vblank_delay = false;
+                self.update_nmi_line();
+            }
             if self.scanline == 261 && self.dot == 1 {
                 self.vblank_clear_race = self.status & 0x80 != 0;
                 self.status &= !0xE0;
+                self.nmi_vblank_delay = false;
                 self.record_timing_event("VBLANK_CLEAR");
                 self.update_nmi_line();
             }
@@ -1427,7 +1436,7 @@ impl Ppu {
             ctrl: self.ctrl,
             nmi_line: self.nmi_line,
             nmi_pending: self.nmi_pending,
-            nmi_vblank_delay: false,
+            nmi_vblank_delay: self.nmi_vblank_delay,
             suppress_vblank: self.suppress_vblank,
         });
     }
@@ -1441,7 +1450,7 @@ impl Ppu {
     fn update_nmi_line(&mut self) {
         let line = self.ctrl & 0x80 != 0
             && self.status & 0x80 != 0
-;
+            && !self.nmi_vblank_delay;
         if line && !self.nmi_line {
             self.nmi_pending = true;
             self.nmi_line = line;
@@ -2979,7 +2988,11 @@ mod tests {
         ppu.tick(1);
         assert_eq!(ppu.position(), (241, 1));
         assert_ne!(ppu.status & 0x80, 0, "VBlank flag sets at dot 1");
-        assert!(ppu.nmi_line, "NMI output follows the VBlank flag immediately");
+        assert!(!ppu.nmi_line, "NMI output has not propagated yet");
+
+        ppu.tick(1);
+        assert_eq!(ppu.position(), (241, 2));
+        assert!(ppu.nmi_line, "NMI output rises one dot after the VBlank flag");
         assert!(ppu.take_nmi_request());
     }
 
@@ -2992,7 +3005,8 @@ mod tests {
 
         ppu.tick(1);
         assert_ne!(ppu.status & 0x80, 0);
-        assert!(ppu.nmi_line, "the NMI output rises with the VBlank flag");
+        assert!(!ppu.nmi_line, "the NMI output is delayed one PPU dot after the VBlank flag");
+        ppu.tick(1);
         assert!(ppu.take_nmi_request());
     }
 
