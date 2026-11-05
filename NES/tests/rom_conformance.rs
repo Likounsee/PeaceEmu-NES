@@ -410,3 +410,94 @@ fn blargg_ppu_register_diagnostics_experimental() {
         failures.join("\n")
     );
 }
+
+#[test]
+fn blargg_dmc_dma_register_interaction_diagnostics_experimental() {
+    let Some(root) = std::env::var_os("PEACEEMU_NES_TEST_ROM_DIR") else {
+        eprintln!("Skipping experimental DMC DMA ROM tests: PEACEEMU_NES_TEST_ROM_DIR is not set");
+        return;
+    };
+    let root = PathBuf::from(root);
+    // These ROMs exercise DMC DMA collisions with PPU register accesses
+    // and controller reads. They use Blargg's $6000 result protocol.
+    const ROMS: &[&str] = &[
+        "dmc_dma_during_read4/dma_2007_read.nes",
+        "dmc_dma_during_read4/dma_2007_write.nes",
+        "dmc_dma_during_read4/dma_4016_read.nes",
+        "dmc_dma_during_read4/double_2007_read.nes",
+        "dmc_dma_during_read4/read_write_2007.nes",
+    ];
+
+    let mut failures = Vec::new();
+    let mut passed = 0;
+    for relative in ROMS {
+        let path = root.join(relative);
+        if !path.is_file() {
+            failures.push(format!("missing DMC DMA ROM: {}", path.display()));
+            continue;
+        }
+        match run_blargg_rom(&path) {
+            Ok(message) => {
+                passed += 1;
+                println!("EXPERIMENTAL DMC DMA PASS {} — {}", relative, message);
+            }
+            Err(error) => {
+                eprintln!("EXPERIMENTAL DMC DMA FAIL {}", error);
+                failures.push(error);
+            }
+        }
+    }
+    println!("Blargg DMC DMA/register diagnostics: {passed}/{} passed", ROMS.len());
+    assert!(
+        failures.is_empty(),
+        "DMC DMA/register diagnostics reported {} failure(s):\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+#[test]
+fn blargg_mmc3_mapper_diagnostics_experimental() {
+    let Some(root) = std::env::var_os("PEACEEMU_NES_TEST_ROM_DIR") else {
+        eprintln!("Skipping experimental MMC3 ROM tests: PEACEEMU_NES_TEST_ROM_DIR is not set");
+        return;
+    };
+    let root = PathBuf::from(root);
+    // MMC3 mapper-4 diagnostics exercise IRQ counter clocking, A12 edges,
+    // scanline timing, and board variants. The suite uses the $6000 protocol.
+    const ROMS: &[&str] = &[
+        "mmc3_test_2/rom_singles/1-clocking.nes",
+        "mmc3_test_2/rom_singles/2-details.nes",
+        "mmc3_test_2/rom_singles/3-A12_clocking.nes",
+        "mmc3_test_2/rom_singles/4-scanline_timing.nes",
+        "mmc3_test_2/rom_singles/5-MMC3.nes",
+        "mmc3_test_2/rom_singles/6-MMC3_alt.nes",
+    ];
+
+    let mut failures = Vec::new();
+    let mut passed = 0;
+    for relative in ROMS {
+        let path = root.join(relative);
+        if !path.is_file() {
+            failures.push(format!("missing MMC3 ROM: {}", path.display()));
+            continue;
+        }
+        match run_blargg_rom(&path) {
+            Ok(message) => {
+                passed += 1;
+                println!("EXPERIMENTAL MMC3 PASS {} — {}", relative, message);
+            }
+            Err(error) => {
+                eprintln!("EXPERIMENTAL MMC3 FAIL {}", error);
+                failures.push(error);
+            }
+        }
+    }
+    println!("Blargg MMC3 diagnostics: {passed}/{} passed", ROMS.len());
+    assert!(
+        failures.is_empty(),
+        "MMC3 mapper diagnostics reported {} failure(s):\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
