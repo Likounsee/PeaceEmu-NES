@@ -131,6 +131,12 @@ impl NesMachine {
         self.bus.bus_trace()
     }
 
+    /// Returns the dedicated PPUCTRL/PPUSTATUS bus transactions.
+    #[cfg(feature = "ppu-timing-diagnostics")]
+    pub fn ppu_bus_trace(&self) -> Vec<CpuBusTraceEntry> {
+        self.bus.ppu_bus_trace()
+    }
+
     /// Returns the bounded PPU VBlank/NMI timing history, oldest first.
     #[cfg(feature = "ppu-timing-diagnostics")]
     pub fn ppu_timing_events(&self) -> Vec<crate::ppu::PpuTimingEvent> {
