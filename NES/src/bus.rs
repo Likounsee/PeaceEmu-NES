@@ -2195,6 +2195,21 @@ mod nmi_sampling_boundary_regressions {
 
 
     #[test]
+    fn cpu_captures_vblank_nmi_before_same_dot_ppustatus_read_clears_the_line() {
+        let mut bus = CpuBus::new();
+        bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
+        bus.write(0x2000, 0x80); // Enable NMI without advancing the host bus.
+        bus.begin_cpu_instruction();
+
+        let status = bus.read(0x2002); // Default phase reaches dot 2 before the read.
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        assert_ne!(status & 0x80, 0, "dot 2 exposes the VBlank flag");
+        assert!(bus.take_nmi_request(),
+            "the CPU samples the NMI edge before PPUSTATUS clears the PPU output");
+        assert!(!bus.take_nmi_request());
+    }
+
+    #[test]
     fn vblank_nmi_capture_respects_all_three_cpu_ppu_divider_phases() {
         for phase in 0..=2 {
             let mut bus = CpuBus::new();
