@@ -315,16 +315,6 @@ impl CpuBus {
         let ppu_register = (0x2000..=0x3FFF).contains(&address);
         let ppu_dots_before_access = if ppu_register { self.ppu_register_dots_before_access() } else { 3 };
         self.clock_instruction_bus_access(false, ppu_dots_before_access);
-        // Likewise, poll before a final-cycle PPUCTRL write. Enabling NMI
-        // is then observed on the following CPU poll; disabling it cannot
-        // retroactively erase an edge already sampled by the CPU.
-        let poll_before_access = timed_access
-            && ppu_register
-            && address & 7 == 0
-            && self.instruction_bus_cycles >= 4;
-        if poll_before_access {
-            self.sample_nmi_line();
-        }
         self.open_bus = value;
         match address {
             0x0000..=0x1FFF => self.ram[address as usize & 0x07FF] = value,
@@ -365,7 +355,7 @@ impl CpuBus {
         }
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
-        if timed_access && !poll_before_access {
+        if timed_access {
             self.sample_nmi_line();
         }
         if timed_access && ppu_register {
