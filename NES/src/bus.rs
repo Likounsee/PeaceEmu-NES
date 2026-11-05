@@ -2241,3 +2241,46 @@ mod nmi_sampling_boundary_regressions {
                 "phase {phase}: the same edge must never be delivered twice");
         }
     }
+
+
+#[cfg(test)]
+mod ppustatus_nmi_race_regressions {
+    use super::*;
+
+    fn status_read_after_three_cpu_cycles(start_dot: u16) -> (u8, bool, (u16, u16)) {
+        let mut bus = CpuBus::new();
+        // Place the beam so three ordinary CPU cycles land immediately before
+        // the requested PPUSTATUS strobe on VBlank scanline 241.
+        bus.tick_ppu(240 * 341 + u32::from(start_dot));
+        bus.write(0x2000, 0x80);
+        bus.begin_cpu_instruction();
+        for address in [0x8000, 0x8001, 0x8002] {
+            let _ = bus.read(address);
+        }
+        let status = bus.read(0x2002);
+        let position = bus.ppu_position();
+        assert_eq!(bus.end_cpu_instruction(), 4);
+        let nmi = bus.take_nmi_request();
+        (status, nmi, position)
+    }
+
+    #[test]
+    fn status_read_on_dot_two_suppresses_nmi_but_dot_three_does_not() {
+        // phase 0 advances two PPU dots before the register strobe:
+        // 240:332 + 3 CPU cycles -> 241:0, then the read lands on dot 2.
+        let (dot_two_status, dot_two_nmi, dot_two_position) =
+            status_read_after_three_cpu_cycles(332);
+        assert_eq!(dot_two_position, (241, 2));
+        assert_ne!(dot_two_status & 0x80, 0,
+            "dot 2 exposes the VBlank flag even though it suppresses the NMI edge");
+        assert!(!dot_two_nmi, "dot-2 PPUSTATUS read must cancel the unsampled NMI");
+
+        // Starting one dot later makes the same four-cycle absolute read land
+        // on dot 3, after the NMI output has risen and been sampled by the CPU.
+        let (dot_three_status, dot_three_nmi, dot_three_position) =
+            status_read_after_three_cpu_cycles(333);
+        assert_eq!(dot_three_position, (241, 3));
+        assert_ne!(dot_three_status & 0x80, 0);
+        assert!(dot_three_nmi, "dot-3 PPUSTATUS read must not retract a sampled NMI edge");
+    }
+}
