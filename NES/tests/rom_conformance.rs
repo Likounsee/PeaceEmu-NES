@@ -1,4 +1,5 @@
 //! Headless integration tests for redistributable Blargg NES diagnostic ROMs.
+#![cfg(feature = "ppu-timing-diagnostics")]
 //!
 //! Set PEACEEMU_NES_TEST_ROM_DIR to the checked-out nes-test-roms repository root.
 //! The runner uses Blargg's $6001-$6003 signature and $6000 status protocol.
