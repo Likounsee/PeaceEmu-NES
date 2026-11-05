@@ -2765,7 +2765,7 @@ mod tests {
         let mut ppu = Ppu::new();
         ppu.scanline = 241;
         ppu.dot = 0;
-        ppu.tick(1);
+        ppu.tick(2);
         assert_ne!(ppu.status & 0x80, 0);
         assert!(!ppu.take_nmi_request(), "vblank with NMI disabled must not raise an edge");
 
@@ -2906,6 +2906,28 @@ mod tests {
     }
 
     #[test]
+    fn vblank_flag_precedes_nmi_output_by_one_ppu_dot() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 241;
+        ppu.dot = 0;
+        ppu.ctrl = 0x80;
+
+        ppu.tick(1);
+        assert_eq!(ppu.position(), (241, 1));
+        assert_eq!(ppu.status & 0x80, 0, "dot 0 has not set VBlank");
+
+        ppu.tick(1);
+        assert_eq!(ppu.position(), (241, 2));
+        assert_ne!(ppu.status & 0x80, 0, "VBlank flag sets at dot 1");
+        assert!(!ppu.nmi_line, "NMI output has not propagated yet");
+
+        ppu.tick(1);
+        assert_eq!(ppu.position(), (241, 3));
+        assert!(ppu.nmi_line, "NMI output rises one dot after the VBlank flag");
+        assert!(ppu.take_nmi_request());
+    }
+
+    #[test]
     fn vblank_still_sets_flag_and_nmi_when_status_is_not_read_early() {
         let mut ppu = Ppu::new();
         ppu.scanline = 241;
@@ -2913,8 +2935,9 @@ mod tests {
         ppu.ctrl = 0x80;
 
         ppu.tick(1);
-
         assert_ne!(ppu.status & 0x80, 0);
+        assert!(!ppu.nmi_line, "the NMI output is delayed one PPU dot after the VBlank flag");
+        ppu.tick(1);
         assert!(ppu.take_nmi_request());
     }
 
@@ -4174,7 +4197,7 @@ mod vblank_suppression_recovery_regressions {
         // Model the following frame's VBlank entry.
         ppu.scanline = 241;
         ppu.dot = 0;
-        ppu.tick(1);
+        ppu.tick(2);
         assert_ne!(ppu.status & 0x80, 0);
         assert!(ppu.take_nmi_request(), "the suppression latch must not leak into a later frame");
         assert!(!ppu.take_nmi_request(), "one VBlank entry must generate only one NMI edge");
