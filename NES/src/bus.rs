@@ -156,7 +156,7 @@ impl CpuBus {
     }
 
     fn record_bus_access(&mut self, kind: CpuBusAccessKind, address: u16, value: u8) {
-        const TRACE_CAPACITY: usize = 32_768;
+        const TRACE_CAPACITY: usize = 131_072;
         if self.bus_trace.len() == TRACE_CAPACITY {
             self.bus_trace.pop_front();
         }
@@ -641,14 +641,14 @@ mod tests {
     fn bus_trace_is_bounded_and_can_be_cleared_without_resetting_ram() {
         let mut bus = CpuBus::new();
         // Generate more accesses than the diagnostic ring can retain.
-        for _ in 0..=66 {
+        for _ in 0..=256 {
             for value in 0..=255u8 {
                 bus.write(0x0000, value);
                 bus.read(0x0000);
             }
         }
         let trace = bus.bus_trace();
-        assert_eq!(trace.len(), 32_768);
+        assert_eq!(trace.len(), 131_072);
         assert_eq!(trace.last().unwrap().kind, CpuBusAccessKind::Read);
         bus.clear_bus_trace();
         assert!(bus.bus_trace().is_empty());
