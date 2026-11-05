@@ -1,9 +1,11 @@
 //! NES picture processing unit registers, video memory, timing, and snapshot renderer.
 
 use crate::cartridge::{Cartridge, Mirroring};
+#[cfg(feature = "ppu-timing-diagnostics")]
 use std::collections::VecDeque;
 
 /// One dot-accurate PPU timing event retained for hardware diagnostics.
+#[cfg(feature = "ppu-timing-diagnostics")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PpuTimingEvent {
     /// Absolute PPU dot counter.
@@ -28,6 +30,7 @@ pub struct PpuTimingEvent {
     pub suppress_vblank: bool,
 }
 
+#[cfg(feature = "ppu-timing-diagnostics")]
 const TIMING_EVENT_CAPACITY: usize = 4096;
 
 /// PPU register, memory, and NTSC beam state.
@@ -126,6 +129,7 @@ pub struct Ppu {
     mapper_bus_initialized: bool,
     mapper_bus_events: Vec<(u16, u64)>,
     /// Bounded history of VBlank, PPUSTATUS, and NMI timing transitions.
+    #[cfg(feature = "ppu-timing-diagnostics")]
     timing_events: VecDeque<PpuTimingEvent>,
 }
 
@@ -159,6 +163,7 @@ impl Default for Ppu {
             bg_next_pattern_low: 0, bg_next_pattern_high: 0,
             bg_pipeline_primed: false,
             ppu_cycle: 0, mapper_a12_high: false, mapper_bus_initialized: false, mapper_bus_events: Vec::new(),
+            #[cfg(feature = "ppu-timing-diagnostics")]
             timing_events: VecDeque::with_capacity(TIMING_EVENT_CAPACITY),
         }
     }
@@ -1423,6 +1428,7 @@ impl Ppu {
     pub fn oam(&self) -> &[u8; 256] { &self.oam }
 
     /// Records the current PPU beam and interrupt state in the bounded timing history.
+    #[cfg(feature = "ppu-timing-diagnostics")]
     fn record_timing_event(&mut self, kind: &'static str) {
         if self.timing_events.len() == TIMING_EVENT_CAPACITY {
             self.timing_events.pop_front();
@@ -1441,7 +1447,13 @@ impl Ppu {
         });
     }
 
+    /// Diagnostic call sites compile to a no-op in ordinary builds.
+    #[cfg(not(feature = "ppu-timing-diagnostics"))]
+    #[inline(always)]
+    fn record_timing_event(&mut self, _kind: &'static str) {}
+
     /// Returns the bounded PPU timing-event history, oldest first.
+    #[cfg(feature = "ppu-timing-diagnostics")]
     pub fn timing_events(&self) -> Vec<PpuTimingEvent> {
         self.timing_events.iter().copied().collect()
     }
