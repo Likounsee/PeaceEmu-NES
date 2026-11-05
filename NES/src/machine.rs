@@ -294,7 +294,14 @@ impl NesMachine {
         let bus_cycles = u32::from(self.bus.end_cpu_instruction());
         let result = step_result?;
         let instruction_cycles = u32::from(result.cycles);
-        debug_assert!(bus_cycles <= instruction_cycles, "CPU performed more bus accesses than instruction cycles");
+        debug_assert!(
+            bus_cycles <= instruction_cycles,
+            "CPU performed more bus accesses than instruction cycles"
+        );
+        debug_assert_eq!(
+            bus_cycles, instruction_cycles,
+            "NES CPU instruction left unmodeled cycles; add their real dummy/idle bus phases before advancing the next instruction"
+        );
 
         // DMC stall device cycles are clocked at the exact bus access that
         // requested them. Charge only the CPU's elapsed-cycle counter here.
