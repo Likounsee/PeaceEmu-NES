@@ -61,7 +61,8 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                     ppu_trace_history.extend(machine.ppu_bus_trace().into_iter().filter(|entry| {
                         (entry.address & 0xE007) == 0x2000
                             || (((entry.address & 0xE007) == 0x2002)
-                                && matches!(entry.ppu_scanline, 239..=242 | 261))
+                                && ((entry.ppu_scanline == 241 && entry.ppu_dot <= 12)
+                                    || (entry.ppu_scanline == 261 && entry.ppu_dot <= 3)))
                     }));
                     if ppu_trace_history.len() > 8_000 {
                         let excess = ppu_trace_history.len() - 8_000;
@@ -86,7 +87,8 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                     entries.extend(machine.ppu_bus_trace().into_iter().filter(|entry| {
                         (entry.address & 0xE007) == 0x2000
                             || (((entry.address & 0xE007) == 0x2002)
-                                && matches!(entry.ppu_scanline, 239..=242 | 261))
+                                && ((entry.ppu_scanline == 241 && entry.ppu_dot <= 12)
+                                    || (entry.ppu_scanline == 261 && entry.ppu_dot <= 3)))
                     }));
                     // Keep all PPUCTRL and PPUSTATUS transactions. Their ordering
                     // relative to CPU_NMI_SAMPLE events is what distinguishes the
@@ -95,7 +97,8 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                         .filter(|entry| {
                             (entry.address & 0xE007) == 0x2000
                                 || ((entry.address & 0xE007) == 0x2002
-                                    && matches!(entry.ppu_scanline, 239..=242 | 261))
+                                    && ((entry.ppu_scanline == 241 && entry.ppu_dot <= 12)
+                                        || (entry.ppu_scanline == 261 && entry.ppu_dot <= 3)))
                         })
                         .rev()
                         .take(4000)
