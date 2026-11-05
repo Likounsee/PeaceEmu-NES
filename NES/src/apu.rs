@@ -321,6 +321,7 @@ impl Apu {
                 }
             } else { self.dmc_timer_counter -= 1; }
             self.cpu_cycle_odd = !self.cpu_cycle_odd;
+            let mut frame_counter_restarted = false;
             if self.frame_reset_pending {
                 self.frame_reset_delay = self.frame_reset_delay.saturating_sub(1);
                 if self.frame_reset_delay == 0 {
@@ -329,52 +330,59 @@ impl Apu {
                     self.frame_cycles = 0;
                     self.half_frame_cycles = 0;
                     self.quarter_frame_cycles = 0;
-                    // The five-step sequence clocks both unit groups immediately
-                    // when its delayed reset takes effect.
+                    frame_counter_restarted = true;
+                    // The reset cycle is the sequence origin, not its first counted cycle.
                     if self.five_step_mode {
                         self.clock_quarter_units_once();
                         self.clock_half_units_once();
                     }
                 }
             }
-            // The NTSC frame sequencer runs on CPU-cycle positions: quarter-frame clocks
-            // occur at 7,457 / 22,371 and half-frame clocks at 14,913 / 29,829.
-            // Use explicit sequence positions to preserve the alternating intervals.
-            self.frame_cycles = self.frame_cycles.saturating_add(1);
-            if self.five_step_mode {
-                match self.frame_cycles {
-                    7_457 | 22_371 => self.clock_quarter_units_once(),
-                    14_913 | 37_281 => {
-                        self.clock_quarter_units_once();
-                        self.clock_half_units_once();
+            if !frame_counter_restarted {
+                // NTSC landmarks are CPU-cycle positions. The frame IRQ is asserted
+                // at 29,828 and 29,829, then the sequence wraps at 29,830.
+                // Keeping these events separate preserves the $4017 3/4-cycle jitter.
+                self.frame_cycles = self.frame_cycles.saturating_add(1);
+                if self.five_step_mode {
+                    match self.frame_cycles {
+                        7_457 | 22_371 => self.clock_quarter_units_once(),
+                        14_913 | 37_281 => {
+                            self.clock_quarter_units_once();
+                            self.clock_half_units_once();
+                        }
+                        _ => {}
                     }
-                    _ => {}
-                }
-                if self.frame_cycles >= FIVE_STEP_PERIOD {
-                    self.frame_cycles = 0;
-                }
-            } else {
-                match self.frame_cycles {
-                    7_457 | 22_371 => self.clock_quarter_units_once(),
-                    14_913 | 29_829 => {
-                        self.clock_quarter_units_once();
-                        self.clock_half_units_once();
+                    if self.frame_cycles >= FIVE_STEP_PERIOD {
+                        self.frame_cycles = 0;
                     }
-                    _ => {}
+                } else {
+                    match self.frame_cycles {
+                        7_457 | 22_371 => self.clock_quarter_units_once(),
+                        14_913 => {
+                            self.clock_quarter_units_once();
+                            self.clock_half_units_once();
+                        }
+                        29_828 => {
+                            if !self.frame_irq_inhibit { self.frame_irq = true; }
+                        }
+                        29_829 => {
+                            self.clock_quarter_units_once();
+                            self.clock_half_units_once();
+                            if !self.frame_irq_inhibit { self.frame_irq = true; }
+                        }
+                        _ => {}
+                    }
+                    if self.frame_cycles >= FOUR_STEP_PERIOD {
+                        if !self.frame_irq_inhibit { self.frame_irq = true; }
+                        self.frame_cycles = 0;
+                    }
                 }
-                if self.frame_cycles >= FOUR_STEP_PERIOD {
-                    if !self.frame_irq_inhibit { self.frame_irq = true; }
-                    self.frame_cycles = 0;
-                }
+                // Diagnostic phase counters follow the sequencer and pause on reset.
+                self.quarter_frame_cycles = self.quarter_frame_cycles.saturating_add(1);
+                if self.quarter_frame_cycles >= 7_457 { self.quarter_frame_cycles -= 7_457; }
+                self.half_frame_cycles = self.half_frame_cycles.saturating_add(1);
+                if self.half_frame_cycles >= HALF_FRAME_PERIOD { self.half_frame_cycles -= HALF_FRAME_PERIOD; }
             }
-
-            // Keep these phase counters useful for diagnostics and chunking
-            // regressions, but do not use their rounded periods to schedule clocks.
-            self.quarter_frame_cycles = self.quarter_frame_cycles.saturating_add(1);
-            if self.quarter_frame_cycles >= 7_457 { self.quarter_frame_cycles -= 7_457; }
-            self.half_frame_cycles = self.half_frame_cycles.saturating_add(1);
-            if self.half_frame_cycles >= HALF_FRAME_PERIOD { self.half_frame_cycles -= HALF_FRAME_PERIOD; }
-
             // Resample the running hardware mixer against the configured host PCM rate.
             // The bounded queue prevents a frontend that temporarily stops consuming
             // audio from allowing unbounded memory growth.
@@ -776,9 +784,9 @@ mod tests {
         apu.tick_cpu_cycles(1);
         assert!(!apu.frame_reset_pending);
         assert!(apu.five_step_mode, "the pending mode takes effect with the reset");
-        assert_eq!(apu.frame_cycles, 1, "the sequencer resumes on the cycle after reset");
-        assert_eq!(apu.half_frame_cycles, 1);
-        assert_eq!(apu.quarter_frame_cycles, 1);
+        assert_eq!(apu.frame_cycles, 0, "the reset cycle is the sequence origin");
+        assert_eq!(apu.half_frame_cycles, 0);
+        assert_eq!(apu.quarter_frame_cycles, 0);
     }
 
     #[test]
@@ -1134,10 +1142,10 @@ mod tests {
     #[test]
     fn four_step_frame_irq_is_raised_cleared_and_can_be_inhibited() {
         let mut apu = Apu::new();
-        apu.tick_cpu_cycles(29_829);
+        apu.tick_cpu_cycles(29_827);
         assert!(!apu.frame_irq_pending());
         apu.tick_cpu_cycles(1);
-        assert!(apu.frame_irq_pending());
+        assert!(apu.frame_irq_pending(), "frame IRQ begins on NTSC cycle 29,828");
         assert_eq!(apu.read(0x4015) & 0x40, 0x40);
         assert!(!apu.frame_irq_pending());
         apu.tick_cpu_cycles(29_830);
@@ -2138,9 +2146,11 @@ mod exact_frame_sequence_timing_regressions {
     #[test]
     fn four_step_frame_irq_is_asserted_at_the_end_of_the_ntsc_sequence() {
         let mut apu = Apu::new();
-        apu.tick_cpu_cycles(29_829);
-        assert!(!apu.irq_pending(), "four-step frame IRQ must not fire a cycle early");
-        assert_eq!(apu.frame_cycles, 29_829);
+        apu.tick_cpu_cycles(29_827);
+        assert!(!apu.irq_pending(), "four-step frame IRQ must not fire before cycle 29,828");
+        assert_eq!(apu.frame_cycles, 29_827);
+        apu.tick_cpu_cycles(1);
+        assert!(apu.irq_pending(), "frame IRQ is first asserted at cycle 29,828");
 
         apu.tick_cpu_cycles(1);
         assert!(apu.irq_pending(), "four-step frame IRQ must fire at cycle 29830");
