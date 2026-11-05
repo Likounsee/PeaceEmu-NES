@@ -33,6 +33,10 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
     let mut machine = NesMachine::from_ines_with_ppu_startup_phase(&image, ppu_phase)
         .map_err(|error| format!("{}: cartridge load failed: {error}", path.display()))?;
     let mut reset_delay = None;
+    // Keep PPU-register transactions across Blargg-requested soft resets. The
+    // machine reset intentionally clears its live bus ring, but these ROMs use
+    // status 0x81 to restart individual timing subtests before reporting a result.
+    let mut ppu_trace_history = Vec::new();
 
     for instruction in 0..MAX_INSTRUCTIONS {
         machine.step().map_err(|error| {
@@ -52,24 +56,15 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
             0x81 => {
                 let remaining = reset_delay.get_or_insert(RESET_DELAY_INSTRUCTIONS);
                 if *remaining == 0 {
-                    machine.reset();
-                    reset_delay = None;
-                } else {
-                    *remaining -= 1;
-                }
-            }
-            0x00 => return Ok(read_blargg_message(&mut machine)),
-            failure @ 0x01..=0x7F => {
-                let message = read_blargg_message(&mut machine);
-                let trace = if path.to_string_lossy().contains("ppu_vbl_nmi") {
-                    let entries = machine.bus_trace();
+                    ppu_trace_history.extend(machine.bus_trace().into_iter().filter(|entry| {
+                        (0x2000..=0x3FFF                    let mut entries = ppu_trace_history.clone();
+                    entries.extend(machine.bus_trace().into_iter().filter(|entry| {
+                        (0x2000..=0x3FFF).contains(&entry.address)
+                            && matches!(entry.address & 7, 0 | 1 | 2)
+                    }));
                     let relevant: Vec<_> = entries.iter()
                         .rev()
-                        .filter(|entry| {
-                            (0x2000..=0x3FFF).contains(&entry.address)
-                                && matches!(entry.address & 7, 0 | 2)
-                        })
-                        .take(100)
+                        .take(200)
                         .collect::<Vec<_>>()
                         .into_iter()
                         .rev()
@@ -79,7 +74,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                             entry.value, entry.ppu_nmi_line, entry.cpu_nmi_pending
                         ))
                         .collect();
-                    format!("\nPPU timing trace (VBlank/pre-render):\n{}", relevant.join("\n"))
+                    format!("\\nPPU register trace (including soft-reset history):\\n{}", relevant.join("\\n"))
                 } else {
                     String::new()
                 };
