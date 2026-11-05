@@ -161,12 +161,12 @@ impl Ppu {
                     self.suppress_vblank = true;
                     value &= !0x80;
                 } else if self.scanline == 241 && self.dot == 1 {
-                    // If the CPU samples PPUSTATUS on the vblank-set dot, the
-                    // status bit reads low and the just-generated NMI edge is
-                    // cancelled. tick() may already have raised the edge before
-                    // this register access is decoded, so clear the queued edge
-                    // as well as the visible flag below.
+                    // A read on the set dot still observes bit 7 low.
                     value &= !0x80;
+                    self.nmi_pending = false;
+                } else if self.scanline == 241 && self.dot == 2 {
+                    // One dot after the set, bit 7 is visible but the CPU may
+                    // still suppress the not-yet-sampled NMI output edge.
                     self.nmi_pending = false;
                 }
                 self.status &= !0x80;
