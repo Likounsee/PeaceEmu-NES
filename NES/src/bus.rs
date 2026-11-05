@@ -568,14 +568,13 @@ impl CpuBus {
     /// The 2A03 detects the NMI edge from its sampled input level. A PPU pulse
     /// that rises and falls between CPU samples must not become a CPU interrupt.
     pub(crate) fn sample_nmi_line(&mut self) {
-        // The PPU records the edge at dot precision, while the CPU captures it
-        // only if the NMI output is still asserted at its sampling point. A
-        // PPUSTATUS read or PPUCTRL disable can therefore cancel an unsampled pulse.
+        // The PPU-side latch represents an NMI rising edge that has already
+        // reached the output pin. Once that edge exists, a later falling edge
+        // (for example, a PPUSTATUS read on dot 3) must not erase it before the
+        // 2A03 samples the input. Reads on the actual suppression dots clear the
+        // PPU latch in cpu_read_register(), before this point is reached.
         let edge = self.ppu.take_nmi_request();
-        let captured_edge = edge
-            && self.ppu.nmi_line()
-            && !self.nmi_pending
-            && !self.nmi_deferred;
+        let captured_edge = edge && !self.nmi_pending && !self.nmi_deferred;
         if captured_edge {
             self.nmi_pending = true;
             self.nmi_sample_cycle = Some(self.cpu_cycle);
