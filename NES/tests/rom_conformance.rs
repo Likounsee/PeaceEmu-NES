@@ -58,7 +58,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 if *remaining == 0 {
                     ppu_trace_history.extend(machine.bus_trace().into_iter().filter(|entry| {
                         (0x2000..=0x3FFF).contains(&entry.address)
-                            && matches!(entry.address & 7, 0 | 1 | 2)
+                            && matches!(entry.address & 7, 0..=2)
                     }));
                     if ppu_trace_history.len() > 2_000 {
                         let excess = ppu_trace_history.len() - 2_000;
@@ -77,7 +77,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                     let mut entries = ppu_trace_history.clone();
                     entries.extend(machine.bus_trace().into_iter().filter(|entry| {
                         (0x2000..=0x3FFF).contains(&entry.address)
-                            && matches!(entry.address & 7, 0 | 1 | 2)
+                            && matches!(entry.address & 7, 0..=2)
                     }));
                     let relevant: Vec<_> = entries.iter()
                         .rev()
