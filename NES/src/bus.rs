@@ -16,7 +16,7 @@ struct PendingDmcDma {
 
 /// Kind of decoded CPU-address-space transaction recorded by the optional bus trace.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum CpuBusAccessKind {
+pub enum CpuBusAccessKind {
     /// Read initiated by the CPU or the OAM DMA source port.
     Read,
     /// Write initiated by the CPU.
