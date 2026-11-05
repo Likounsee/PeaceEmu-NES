@@ -32,16 +32,19 @@ fn status_read_on_dot_1_observes_the_race_and_cancels_nmi() {
 }
 
 #[test]
-fn status_read_on_dot_0_suppresses_the_upcoming_vblank_and_nmi() {
+fn status_read_on_dot_0_suppresses_vblank_and_dot_2_read_cancels_nmi() {
     let mut ppu = at_vblank_start();
     ppu.cpu_write_register(0, 0x80, None);
 
+    // Dot 0 read suppresses the upcoming VBlank set.
     assert_eq!(ppu.cpu_read_register(2, None) & 0x80, 0);
     ppu.tick(1);
     ppu.tick(1);
 
+    // A read on dot 2 sees VBlank set, but clears it before the CPU
+    // can retain the pending NMI edge.
     assert_eq!(ppu.position(), (241, 2));
-    assert_eq!(ppu.cpu_read_register(2, None) & 0x80, 0);
+    assert_ne!(ppu.cpu_read_register(2, None) & 0x80, 0);
     assert!(!ppu.take_nmi_request());
 }
 
