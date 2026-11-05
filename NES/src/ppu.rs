@@ -271,6 +271,7 @@ impl Ppu {
                 self.ctrl = value;
                 self.t = (self.t & !0x0C00) | (((value as u16) & 3) << 10);
                 self.update_nmi_line();
+                self.record_timing_event("PPUCTRL_WRITE");
             }
             1 => self.mask = value,
             3 => {
@@ -1482,7 +1483,7 @@ impl Ppu {
     /// Compiled only for diagnostic builds, never into public release builds.
     #[cfg(feature = "ppu-timing-diagnostics")]
     pub(crate) fn record_cpu_nmi_sample(&mut self, captured_edge: bool) {
-        if (self.scanline == 241 && self.dot <= 12)
+        if (self.scanline == 241 && self.dot <= 30)
             || (self.scanline == 261 && self.dot <= 3)
         {
             self.record_timing_event(if captured_edge {
