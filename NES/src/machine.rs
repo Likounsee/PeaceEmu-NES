@@ -123,6 +123,11 @@ impl NesMachine {
         self.bus.bus_trace()
     }
 
+    /// Returns the bounded PPU VBlank/NMI timing history, oldest first.
+    pub fn ppu_timing_events(&self) -> Vec<crate::ppu::PpuTimingEvent> {
+        self.bus.ppu_timing_events()
+    }
+
     /// Clears diagnostic bus history without changing emulated machine state.
     pub fn clear_bus_trace(&mut self) {
         self.bus.clear_bus_trace();
