@@ -2118,3 +2118,27 @@ mod dmc_controller_read_conflict_regressions {
     }
 
 }
+
+
+#[cfg(test)]
+mod cpu_ppu_bus_cycle_regressions {
+    use super::*;
+
+    #[test]
+    fn ppu_status_reads_resolve_after_three_dots_for_each_startup_phase() {
+        for phase in 0..3 {
+            let mut bus = CpuBus::new();
+            bus.tick_ppu(242 * 341); // Scanline 241, dot 0.
+            bus.set_ppu_bus_phase(phase);
+
+            bus.begin_cpu_instruction();
+            let status = bus.read(0x2002);
+            assert_eq!(bus.end_cpu_instruction(), 1);
+            assert_ne!(
+                status & 0x80,
+                0,
+                "phase {phase}: the PPU must advance through the VBlank-set dot before the CPU read resolves"
+            );
+        }
+    }
+}
