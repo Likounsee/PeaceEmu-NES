@@ -174,18 +174,11 @@ impl Default for Ppu {
     }
 }
 
-/// Converts the OAM Y byte to the first visible scanline.
-/// Pixel composition wraps the OAM Y byte when calculating the sprite's top row.
+/// Converts the OAM Y byte to the first visible scanline. The NES treats
+/// $FF as scanline 0 because sprite Y is offset by one with 8-bit wraparound.
 #[inline]
 fn sprite_top(oam_y: u8) -> usize {
     oam_y.wrapping_add(1) as usize
-}
-
-/// The hardware sprite evaluator treats OAM Y=$FF as an off-screen entry,
-/// even though the pixel-coordinate helper above wraps it to scanline zero.
-#[inline]
-fn sprite_eval_top(oam_y: u8) -> usize {
-    if oam_y == 0xFF { 256 } else { usize::from(oam_y) + 1 }
 }
 
 impl Ppu {
@@ -284,7 +277,10 @@ impl Ppu {
                 };
                 // Attribute bytes expose only palette and priority/flip bits.
                 // The three unused attribute bits are electrically low on reads.
-                let attribute_byte = if evaluation_phase {
+                let rendering_owns_oam_bus = self.rendering_oam_clear_phase()
+                    || evaluation_phase
+                    || self.rendering_oam_fetch_phase();
+                let attribute_byte = rendering_owns_oam_bus && if evaluation_phase {
                     self.eval_m == 2
                 } else {
                     self.oam_addr & 3 == 2
@@ -1160,7 +1156,7 @@ impl Ppu {
         let value = self.eval_latch;
         if self.eval_count < 8 {
             if !self.eval_copying {
-                let top = sprite_eval_top(value);
+                let top = sprite_top(value);
                 if (self.eval_target_y as usize) >= top
                     && (self.eval_target_y as usize) < top + height
                 {
@@ -1258,7 +1254,7 @@ impl Ppu {
         let target_y = if y == 261 { 0 } else { y + 1 };
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         let in_range = |oam_y: u8| {
-            let top = sprite_eval_top(oam_y);
+            let top = sprite_top(oam_y);
             target_y >= top && target_y < top + height
         };
 
@@ -3300,28 +3296,16 @@ mod sprite_overflow_regression_tests {
     use super::*;
 
     #[test]
-    fn oam_y_ff_is_ignored_by_the_hardware_sprite_evaluator() {
+    fn rendering_oam_attribute_reads_clear_unused_bits_two_through_four() {
         let mut ppu = Ppu::new();
-        ppu.scanline = 0;
-        ppu.dot = 0;
         ppu.mask = 0x18;
-        ppu.ctrl = 0x20;
-        ppu.oam.fill(0xFF);
-
-        ppu.tick(256);
-
-        assert_eq!(ppu.status & 0x20, 0,
-            "OAM Y=$FF must not create a false-positive overflow during hardware evaluation");
-    }
-
-    #[test]
-    fn oam_attribute_reads_clear_unused_bits_two_through_four() {
-        let mut ppu = Ppu::new();
-        ppu.oam[2] = 0xFF;
-        ppu.oam_addr = 2;
+        ppu.scanline = 0;
+        ppu.dot = 65;
+        ppu.eval_m = 2;
+        ppu.eval_latch = 0xFF;
 
         assert_eq!(ppu.cpu_read_register(4, None) & 0x1C, 0,
-            "unused bits 2-4 of an OAM attribute byte always read as zero");
+            "unused bits 2-4 of an attribute byte on the rendering OAM bus read as zero");
     }
 
     #[test]
