@@ -93,7 +93,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                             entry.ppu_nmi_line
                                 || entry.cpu_nmi_pending
                                 || matches!(entry.address, 0x2000 | 0x2002 | 0xFFFA..=0xFFFF)
-                                || (entry.kind == crate::bus::CpuBusAccessKind::Write
+                                || (entry.kind == peaceemu_nes::bus::CpuBusAccessKind::Write
                                     && (0x0100..=0x01FF).contains(&entry.address))
                                 || previous.is_some_and(|previous| {
                                     previous.irq_line != entry.irq_line
