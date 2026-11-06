@@ -2405,7 +2405,7 @@ mod mmc3_ppudata_irq_regressions {
     #[test]
     fn ppudata_read_increment_can_clock_mmc3_a12_irq() {
         let mut image = vec![0; 16 + 2 * 16_384 + 8_192];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 2;
         image[5] = 1;
         image[6] = 0x40; // MMC3 / mapper 4.
