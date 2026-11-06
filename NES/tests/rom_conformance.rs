@@ -84,14 +84,25 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 // Preserve the emulated execution trace before reading the
                 // test's diagnostic string through untimed host-side bus reads.
                 let irq_bus_trace = if path.to_string_lossy().contains("cpu_interrupts_v2") {
-                    machine.bus_trace()
-                        .iter()
-                        .rev()
-                        .take(256)
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .rev()
-                        .map(|entry| format!(
+                    let entries = machine.bus_trace();
+                    let start = entries.len().saturating_sub(8192);
+                    let recent = &entries[start..];
+                    recent.iter().enumerate()
+                        .filter(|(index, entry)| {
+                            let previous = index.checked_sub(1).map(|previous| &recent[previous]);
+                            entry.ppu_nmi_line
+                                || entry.cpu_nmi_pending
+                                || matches!(entry.address, 0x2000 | 0x2002 | 0xFFFA..=0xFFFF)
+                                || (entry.kind == crate::bus::CpuBusAccessKind::Write
+                                    && (0x0100..=0x01FF).contains(&entry.address))
+                                || previous.is_some_and(|previous| {
+                                    previous.irq_line != entry.irq_line
+                                        || previous.ppu_nmi_line != entry.ppu_nmi_line
+                                        || previous.cpu_nmi_pending != entry.cpu_nmi_pending
+                                        || previous.irq_poll_sample != entry.irq_poll_sample
+                                })
+                        })
+                        .map(|(_, entry)| format!(
                             "cycle={} {:?} ${:04X}=${:02X} irq_line={} irq_poll={:?} nmi_line={} nmi_pending={}",
                             entry.cycle, entry.kind, entry.address, entry.value,
                             entry.irq_line, entry.irq_poll_sample,
