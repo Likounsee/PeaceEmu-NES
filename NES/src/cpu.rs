@@ -2546,11 +2546,11 @@ mod reset_cycle_regressions {
 
         cpu.reset(&mut bus);
         assert_eq!(cpu.total_cycles(), 7);
-        assert_eq!(bus.cpu_cycle, 7);
+        assert_eq!(bus.cpu_cycle(), 7);
 
         cpu.reset(&mut bus);
         assert_eq!(cpu.total_cycles(), 14);
-        assert_eq!(bus.cpu_cycle, 14,
+        assert_eq!(bus.cpu_cycle(), 14,
             "subsequent hardware resets also consume seven shared CPU cycles");
     }
 }
