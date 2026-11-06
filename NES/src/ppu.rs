@@ -393,10 +393,13 @@ impl Ppu {
                 else {
                     self.t = (self.t & 0x7F00) | value as u16;
                     self.v = self.t;
-                    // A completed $2006 address write drives the external PPU
-                    // address bus. MMC3 observes A12 even when software changes
-                    // the address without performing a subsequent $2007 access.
-                    self.record_mapper_bus_address(self.v & 0x3FFF);
+                    // Pattern/nametable addresses are driven onto the external
+                    // PPU bus. Palette RAM ($3F00-$3FFF) is internal and must not
+                    // create a mapper-visible A12 transition.
+                    let address = self.v & 0x3FFF;
+                    if address < 0x3F00 {
+                        self.record_mapper_bus_address(address);
+                    }
                     // A mid-scanline $2006 write changes the address used by
                     // subsequent background pixels. Keep the current scanline's
                     // sampling origin in step with the beam instead of applying
