@@ -239,10 +239,21 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
         }
     }
 
+    let signature = [
+        machine.read_cpu(0x6001),
+        machine.read_cpu(0x6002),
+        machine.read_cpu(0x6003),
+    ];
+    let cpu = machine.cpu_state();
     Err(format!(
-        "{}: timeout after {MAX_INSTRUCTIONS} instructions (status 0x{:02X})",
+        "{}: timeout after {MAX_INSTRUCTIONS} instructions (status 0x{:02X}, signature {:02X} {:02X} {:02X}, pc=${:04X}, cycles={})",
         path.display(),
-        machine.read_cpu(0x6000)
+        machine.read_cpu(0x6000),
+        signature[0],
+        signature[1],
+        signature[2],
+        cpu.pc,
+        machine.total_cycles()
     ))
 }
 
