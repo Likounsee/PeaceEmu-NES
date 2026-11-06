@@ -169,6 +169,7 @@ impl Cpu {
             self.push(bus, (self.state.status | flags::UNUSED) & !flags::BREAK);
             self.set_flag(flags::INTERRUPT_DISABLE, true);
             self.state.pc = self.read_word(bus, 0xFFFA);
+            bus.mark_interrupt_entry_completed();
             self.cycles = self.cycles.saturating_add(7);
             self.state.status |= flags::UNUSED;
             return Ok(StepResult { pc, opcode: 0xFF, cycles: 7 });
@@ -187,6 +188,7 @@ impl Cpu {
             self.push(bus, (self.state.status | flags::UNUSED) & !flags::BREAK);
             self.set_flag(flags::INTERRUPT_DISABLE, true);
             self.state.pc = self.read_interrupt_vector(bus, 0xFFFE);
+            bus.mark_interrupt_entry_completed();
             self.cycles = self.cycles.saturating_add(7);
             self.state.status |= flags::UNUSED;
             return Ok(StepResult { pc, opcode: 0xFE, cycles: 7 });
@@ -542,7 +544,9 @@ impl Cpu {
                 self.push(bus, (self.state.pc >> 8) as u8); self.push(bus, self.state.pc as u8);
                 self.push(bus, self.state.status | flags::BREAK | flags::UNUSED);
                 self.set_flag(flags::INTERRUPT_DISABLE, true);
-                self.state.pc = self.read_interrupt_vector(bus, 0xFFFE); 7
+                self.state.pc = self.read_interrupt_vector(bus, 0xFFFE);
+                bus.mark_interrupt_entry_completed();
+                7
             }
             // Stable composite unofficial RMW instructions adapted to local CPU helpers.
             _ if Self::is_unofficial_rmw(opcode) => self.unofficial_rmw(bus, opcode),
@@ -1207,6 +1211,53 @@ mod tests {
         assert_ne!(bus.read(0x01FB) & flags::BREAK, 0);
         assert_ne!(bus.read(0x01FB) & flags::UNUSED, 0);
         assert_ne!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
+    }
+
+    #[test]
+    fn nmi_during_final_brk_vector_cycle_waits_for_first_handler_instruction() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16] = 0x00; // BRK at $8000.
+        image[16 + 0x1000] = 0x38; // SEC at IRQ vector $9000.
+        image[16 + 0x1100] = 0xEA; // NOP at NMI vector $9100.
+        image[16 + 0x3FFA] = 0x00;
+        image[16 + 0x3FFB] = 0x91;
+        image[16 + 0x3FFE] = 0x00;
+        image[16 + 0x3FFF] = 0x90;
+
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
+        bus.write(0x2000, 0x80); // Enable NMI before VBlank.
+        // Start 18 PPU dots before VBlank set. The NMI edge reaches the CPU
+        // while BRK reads the vector high byte, after vector hijacking is done.
+        bus.tick_ppu(241 * 341 + 324);
+
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x8000);
+        bus.begin_cpu_instruction();
+        let brk = cpu.step(&mut bus).unwrap();
+        assert_eq!(bus.end_cpu_instruction(), 7);
+        bus.finish_cpu_instruction();
+        assert_eq!(brk.opcode, 0x00);
+        assert_eq!(cpu.state.pc, 0x9000, "late NMI must not retroactively hijack the BRK vector");
+        assert!(!bus.take_nmi_request(), "NMI sampled during BRK entry is deferred");
+
+        bus.begin_cpu_instruction();
+        let first_handler_instruction = cpu.step(&mut bus).unwrap();
+        assert_eq!(bus.end_cpu_instruction(), 2);
+        bus.finish_cpu_instruction();
+        assert_eq!(first_handler_instruction.opcode, 0x38,
+            "the first IRQ-handler instruction must execute before the deferred NMI");
+        assert_eq!(cpu.state.pc, 0x9001);
+        assert!(bus.take_nmi_request(), "the deferred NMI is released after SEC");
+
+        bus.begin_cpu_instruction();
+        let nmi = cpu.step(&mut bus).unwrap();
+        assert_eq!(bus.end_cpu_instruction(), 7);
+        bus.finish_cpu_instruction();
+        assert_eq!(nmi.opcode, 0xFF);
+        assert_eq!(cpu.state.pc, 0x9100);
     }
 
     #[test]
