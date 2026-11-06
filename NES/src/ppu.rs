@@ -1192,7 +1192,7 @@ impl Ppu {
         } else {
             // After eight sprites, the hardware's broken n/m walk may compare
             // tile/attribute/X bytes as though they were Y coordinates.
-            let top = sprite_eval_top(value);
+            let top = sprite_top(value);
             // After secondary OAM fills, a hit behaves like a four-byte copy
             // (m carries into n); a miss increments both n and m without carry.
             // That broken miss path makes later tile/attribute/X bytes become
