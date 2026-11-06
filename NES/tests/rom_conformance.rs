@@ -116,6 +116,13 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 } else {
                     String::new()
                 };
+                // Preserve the edge history before host-side message/status reads
+                // add unrelated PPUSTATUS traffic to the diagnostic stream.
+                let ppu_nmi_timing_snapshot = if path.to_string_lossy().contains("cpu_interrupts_v2") {
+                    machine.ppu_timing_events()
+                } else {
+                    Vec::new()
+                };
                 let message = read_blargg_message(&mut machine);
                 let trace = if path.to_string_lossy().contains("ppu_vbl_nmi") {
                     let mut entries = ppu_trace_history.clone();
@@ -172,7 +179,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 let cpu_debug = if path.to_string_lossy().contains("cpu_interrupts_v2") {
                     let state = machine.cpu_state();
                     // Captured before reading the Blargg message above.
-                    let ppu_nmi_events = machine.ppu_timing_events()
+                    let ppu_nmi_events = ppu_nmi_timing_snapshot
                         .into_iter()
                         .filter(|event| matches!(
                             event.kind,
