@@ -14,7 +14,7 @@ pub struct PpuTimingEvent {
     pub scanline: u16,
     /// Dot within the scanline at the event.
     pub dot: u16,
-    /// Event category (VBLANK_SET, VBLANK_SUPPRESSED, VBLANK_CLEAR, STATUS_READ, NMI_RISE, NMI_FALL).
+    /// Event category for PPU timing transitions and NMI sampling (status reads remain in the bus trace).
     pub kind: &'static str,
     /// PPUSTATUS after the event's side effect.
     pub status: u8,
@@ -1505,6 +1505,13 @@ impl Ppu {
     /// Records the current PPU beam and interrupt state in the bounded timing history.
     #[cfg(feature = "ppu-timing-diagnostics")]
     fn record_timing_event(&mut self, kind: &'static str) {
+        // PPUSTATUS polling can generate hundreds of thousands of read events
+        // during interrupt ROMs. Those transactions are already preserved by
+        // CpuBusTraceEntry; keeping them here would evict the rarer PPUCTRL and
+        // NMI edge transitions needed to diagnose CPU/PPU synchronization.
+        if matches!(kind, "STATUS_READ" | "STATUS_READ_COMPLETE") {
+            return;
+        }
         if self.timing_events.len() == TIMING_EVENT_CAPACITY {
             self.timing_events.pop_front();
         }
