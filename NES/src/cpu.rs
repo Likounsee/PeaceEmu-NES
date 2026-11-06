@@ -1108,8 +1108,8 @@ mod tests {
         let irq = cpu.step(&mut bus).unwrap();
         assert_eq!(irq.opcode, 0xFE, "the IRQ must be taken immediately after PLP");
         assert_eq!(cpu.state().pc, 0x0700);
-        assert_eq!(bus.read(0x01FD), 0x06);
-        assert_eq!(bus.read(0x01FC), 0x02);
+        assert_eq!(bus.read(0x01FE), 0x06);
+        assert_eq!(bus.read(0x01FD), 0x02);
     }
 
     #[test]
