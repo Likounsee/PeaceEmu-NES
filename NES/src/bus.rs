@@ -621,7 +621,12 @@ impl CpuBus {
         // 2A03 samples the input. Reads on the actual suppression dots clear the
         // PPU latch in cpu_read_register(), before this point is reached.
         let edge = self.ppu.take_nmi_request();
-        let captured_edge = edge && self.ppu.nmi_line() && !self.nmi_pending && !self.nmi_deferred;
+        // PPUSTATUS can lower the output line after the rising edge has
+        // propagated but before the next CPU sampling boundary. The PPU keeps
+        // that edge latched in take_nmi_request(); requiring the live line to
+        // remain high here would incorrectly discard the already-propagated
+        // edge. Disabling NMI before propagation cancels the PPU latch itself.
+        let captured_edge = edge && !self.nmi_pending && !self.nmi_deferred;
         if captured_edge {
             self.nmi_pending = true;
             self.nmi_sample_cycle = Some(self.cpu_cycle);
@@ -2373,6 +2378,23 @@ mod irq_poll_sample_regressions {
         assert!(!bus.nmi_pending);
         assert!(!bus.nmi_deferred);
         assert!(!bus.take_nmi_request_for_interrupt_vector());
+    }
+
+    #[test]
+    fn ppu_status_read_after_nmi_edge_does_not_erase_cpu_capture() {
+        let mut bus = CpuBus::new();
+        bus.ppu.cpu_write_register(0, 0x80, None);
+        // Reach PPU scanline 241, dot 4: VBlank has started and the
+        // one-dot NMI propagation delay has completed.
+        bus.ppu.tick(241 * 341 + 4);
+        assert!(bus.ppu.nmi_line(), "the PPU NMI output must have risen");
+        // A status read on dot 4 clears VBlank and lowers the output line,
+        // but the already-propagated edge remains latched for the CPU.
+        let _ = bus.ppu.cpu_read_register(2, None);
+        assert!(!bus.ppu.nmi_line(), "the status read must lower the live line");
+        bus.sample_nmi_line();
+        assert!(bus.take_nmi_request(),
+            "the CPU must retain an NMI edge that propagated before PPUSTATUS lowered the line");
     }
 
     #[test]
