@@ -81,6 +81,27 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
             }
             0x00 => return Ok(read_blargg_message(&mut machine)),
             failure @ 0x01..=0x7F => {
+                // Preserve the emulated execution trace before reading the
+                // test's diagnostic string through untimed host-side bus reads.
+                let irq_bus_trace = if path.to_string_lossy().contains("cpu_interrupts_v2") {
+                    machine.bus_trace()
+                        .iter()
+                        .rev()
+                        .take(256)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .map(|entry| format!(
+                            "cycle={} {:?} ${:04X}=${:02X} irq_line={} irq_poll={:?} nmi_line={} nmi_pending={}",
+                            entry.cycle, entry.kind, entry.address, entry.value,
+                            entry.irq_line, entry.irq_poll_sample,
+                            entry.ppu_nmi_line, entry.cpu_nmi_pending
+                        ))
+                        .collect::<Vec<_>>()
+                        .join("\\n")
+                } else {
+                    String::new()
+                };
                 let message = read_blargg_message(&mut machine);
                 let trace = if path.to_string_lossy().contains("ppu_vbl_nmi") {
                     let mut entries = ppu_trace_history.clone();
@@ -136,23 +157,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 };
                 let cpu_debug = if path.to_string_lossy().contains("cpu_interrupts_v2") {
                     let state = machine.cpu_state();
-                    // Snapshot the CPU address-bus history before diagnostic
-                    // reads alter the machine or evict the transactions of interest.
-                    let irq_bus_trace = machine.bus_trace()
-                        .iter()
-                        .rev()
-                        .take(256)
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .rev()
-                        .map(|entry| format!(
-                            "cycle={} {:?} ${:04X}=${:02X} irq_line={} irq_poll={:?} nmi_line={} nmi_pending={}",
-                            entry.cycle, entry.kind, entry.address, entry.value,
-                            entry.irq_line, entry.irq_poll_sample,
-                            entry.ppu_nmi_line, entry.cpu_nmi_pending
-                        ))
-                        .collect::<Vec<_>>()
-                        .join("\\n");
+                    // Captured before reading the Blargg message above.
                     let zero_page = (0x10u16..0x80)
                         .map(|address| format!("{:02X}", machine.read_cpu(address)))
                         .collect::<Vec<_>>()
