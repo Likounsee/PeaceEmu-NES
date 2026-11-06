@@ -181,6 +181,13 @@ fn sprite_top(oam_y: u8) -> usize {
     oam_y.wrapping_add(1) as usize
 }
 
+/// The cycle-driven OAM evaluator treats $FF as an out-of-range Y value.
+/// Pixel composition still uses the wrapped coordinate above.
+#[inline]
+fn sprite_eval_top(oam_y: u8) -> usize {
+    if oam_y == 0xFF { 256 } else { usize::from(oam_y) + 1 }
+}
+
 impl Ppu {
     /// Creates a PPU in its pre-render scanline.
     pub fn new() -> Self { Self::default() }
@@ -1156,7 +1163,7 @@ impl Ppu {
         let value = self.eval_latch;
         if self.eval_count < 8 {
             if !self.eval_copying {
-                let top = sprite_top(value);
+                let top = sprite_eval_top(value);
                 if (self.eval_target_y as usize) >= top
                     && (self.eval_target_y as usize) < top + height
                 {
@@ -1192,7 +1199,7 @@ impl Ppu {
         } else {
             // After eight sprites, the hardware's broken n/m walk may compare
             // tile/attribute/X bytes as though they were Y coordinates.
-            let top = sprite_top(value);
+            let top = sprite_eval_top(value);
             // After secondary OAM fills, a hit behaves like a four-byte copy
             // (m carries into n); a miss increments both n and m without carry.
             // That broken miss path makes later tile/attribute/X bytes become
@@ -1254,7 +1261,7 @@ impl Ppu {
         let target_y = if y == 261 { 0 } else { y + 1 };
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         let in_range = |oam_y: u8| {
-            let top = sprite_top(oam_y);
+            let top = sprite_eval_top(oam_y);
             target_y >= top && target_y < top + height
         };
 
@@ -5133,12 +5140,12 @@ mod cycle_sprite_evaluator_regressions {
         ppu.mask = 0x18;
         ppu.oam_addr = 1;
         // Evaluation begins at OAM[0][1], which is treated as a Y byte.
-        ppu.oam[0..8].copy_from_slice(&[0x20, 0xFF, 0xA5, 0x10, 0xFF, 0x33, 0x44, 0x55]);
+        ppu.oam[0..8].copy_from_slice(&[0x20, 0x00, 0xA5, 0x10, 0xFF, 0x33, 0x44, 0x55]);
 
         ppu.tick(72);
 
         assert_eq!(ppu.eval_count, 1);
-        assert_eq!(ppu.eval_oam[0], [0xFF, 0xA5, 0x10, 0xFF]);
+        assert_eq!(ppu.eval_oam[0], [0x00, 0xA5, 0x10, 0xFF]);
         assert_eq!(ppu.eval_indices[0], 0);
     }
 
@@ -5155,13 +5162,13 @@ mod cycle_sprite_evaluator_regressions {
         // The scan starts at entries 62 and 63, then wraps to entry zero.
         ppu.oam[62 * 4] = 0x20;
         ppu.oam[63 * 4] = 0x20;
-        ppu.oam[0..4].copy_from_slice(&[0xFF, 0x12, 0x34, 0x56]);
+        ppu.oam[0..4].copy_from_slice(&[0x00, 0x12, 0x34, 0x56]);
 
         ppu.tick(341);
 
         assert_eq!(ppu.sprite_line_count, 1,
             "the 6-bit OAM index must wrap and continue scanning from entry zero");
-        assert_eq!(ppu.sprite_line_oam[0], [0xFF, 0x12, 0x34, 0x56]);
+        assert_eq!(ppu.sprite_line_oam[0], [0x00, 0x12, 0x34, 0x56]);
         assert_eq!(ppu.sprite_line_indices[0], 0);
     }
 
@@ -5184,7 +5191,7 @@ mod cycle_sprite_evaluator_regressions {
         ppu.scanline = 0;
         ppu.mask = 0x18;
         for sprite in 0..9usize {
-            ppu.oam[sprite * 4] = 0xFF;
+            ppu.oam[sprite * 4] = 0x00;
         }
 
         // Eight sprites finish copying at dot 128. Dot 129 reads sprite nine's
@@ -5206,7 +5213,7 @@ mod cycle_sprite_evaluator_regressions {
             ppu.oam[sprite * 4] = 0xFF;
         }
         ppu.oam[8 * 4] = 20; // Out of range for target scanline zero.
-        ppu.oam[9 * 4 + 1] = 0xFF; // The diagonal walk reads this tile byte as Y.
+        ppu.oam[9 * 4 + 1] = 0x00; // The diagonal walk reads this tile byte as Y.
 
         ppu.tick(130);
         assert_eq!(ppu.status & 0x20, 0, "the ninth sprite is out of range");
