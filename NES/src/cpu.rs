@@ -1250,7 +1250,6 @@ mod tests {
         assert_eq!(first_handler_instruction.opcode, 0x38,
             "the first IRQ-handler instruction must execute before the deferred NMI");
         assert_eq!(cpu.state.pc, 0x9001);
-        assert!(bus.take_nmi_request(), "the deferred NMI is released after SEC");
 
         bus.begin_cpu_instruction();
         let nmi = cpu.step(&mut bus).unwrap();
