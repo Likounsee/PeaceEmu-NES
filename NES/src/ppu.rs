@@ -283,7 +283,7 @@ impl Ppu {
                     address
                 });
                 let fetched = self.mem_read(address, cartridge);
-                driven_mask = if address < 0x3F00 { 0 } else { 0x3F };
+                driven_mask = if address < 0x3F00 { 0xFF } else { 0x3F };
                 let value = if address < 0x3F00 {
                     let old = self.read_buffer;
                     self.read_buffer = fetched;
@@ -1807,6 +1807,18 @@ mod tests {
         assert_eq!(ppu.open_bus, 0xEA);
         assert_eq!(ppu.v, 0x3F01, "PPUDATA increments after a palette read");
         assert_eq!(ppu.read_buffer, 0, "palette reads refill the buffer from the nametable mirror");
+    }
+
+    #[test]
+    fn non_palette_ppudata_reads_refresh_the_io_latch_with_returned_data() {
+        let mut ppu = Ppu::new();
+        ppu.nametables[0] = 0x5A;
+        ppu.cpu_write_register(6, 0x20, None);
+        ppu.cpu_write_register(6, 0x00, None);
+        assert_eq!(ppu.cpu_read_register(7, None), 0);
+        assert_eq!(ppu.cpu_read_register(7, None), 0x5A);
+        assert_eq!(ppu.cpu_read_register(0, None), 0x5A,
+            "a non-palette PPUDATA read drives and refreshes all eight I/O-latch bits");
     }
 
     #[test]
