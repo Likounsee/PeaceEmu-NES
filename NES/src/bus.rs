@@ -591,6 +591,7 @@ impl CpuBus {
     }
     /// Returns the level-triggered APU IRQ line without clearing it.
     pub fn irq_pending(&self) -> bool { self.apu.irq_pending() || self.cartridge.as_ref().is_some_and(Cartridge::irq_pending) }
+    #[cfg(test)]
     pub(crate) fn cpu_cycle(&self) -> u64 { self.cpu_cycle }
     /// Returns the IRQ level captured at the CPU's penultimate-cycle poll point.
     pub(crate) fn irq_pending_at_cpu_poll(&self) -> bool {
