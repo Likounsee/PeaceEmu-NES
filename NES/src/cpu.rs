@@ -175,7 +175,7 @@ impl Cpu {
         let irq_disabled_at_poll = self.irq_poll_i_override
             .take()
             .unwrap_or_else(|| self.flag(flags::INTERRUPT_DISABLE));
-        if bus.irq_pending() && !irq_disabled_at_poll && !defer_irq_poll {
+        if bus.irq_pending_at_cpu_poll() && !irq_disabled_at_poll && !defer_irq_poll {
             // IRQ/NMI entry has two discarded reads before pushing the return state.
             let _ = bus.read(self.state.pc);
             let _ = bus.read(self.state.pc);
@@ -183,7 +183,7 @@ impl Cpu {
             self.push(bus, self.state.pc as u8);
             self.push(bus, (self.state.status | flags::UNUSED) & !flags::BREAK);
             self.set_flag(flags::INTERRUPT_DISABLE, true);
-            self.state.pc = self.read_word(bus, 0xFFFE);
+            self.state.pc = self.read_interrupt_vector(bus, 0xFFFE);
             self.cycles = self.cycles.saturating_add(7);
             self.state.status |= flags::UNUSED;
             return Ok(StepResult { pc, opcode: 0xFE, cycles: 7 });
@@ -539,7 +539,7 @@ impl Cpu {
                 self.push(bus, (self.state.pc >> 8) as u8); self.push(bus, self.state.pc as u8);
                 self.push(bus, self.state.status | flags::BREAK | flags::UNUSED);
                 self.set_flag(flags::INTERRUPT_DISABLE, true);
-                self.state.pc = self.read_word(bus, 0xFFFE); 7
+                self.state.pc = self.read_interrupt_vector(bus, 0xFFFE); 7
             }
             // Stable composite unofficial RMW instructions adapted to local CPU helpers.
             _ if Self::is_unofficial_rmw(opcode) => self.unofficial_rmw(bus, opcode),
@@ -664,6 +664,19 @@ impl Cpu {
     }
     fn read_word(&mut self, bus: &mut CpuBus, a: u16) -> u16 {
         let lo = bus.read(a) as u16; let hi = bus.read(a.wrapping_add(1)) as u16; (hi << 8) | lo
+    }
+    /// IRQ and BRK can be hijacked by an NMI edge arriving during interrupt
+    /// entry. An edge during vector-low can replace only the high-byte fetch.
+    fn read_interrupt_vector(&mut self, bus: &mut CpuBus, irq_vector: u16) -> u16 {
+        let vector = if bus.take_nmi_request() { 0xFFFA } else { irq_vector };
+        let lo = bus.read(vector) as u16;
+        let high_vector = if vector == irq_vector && bus.take_nmi_request() {
+            0xFFFB
+        } else {
+            vector.wrapping_add(1)
+        };
+        let hi = bus.read(high_vector) as u16;
+        (hi << 8) | lo
     }
     fn push(&mut self, bus: &mut CpuBus, v: u8) {
         bus.write(0x0100 | self.state.sp as u16, v); self.state.sp = self.state.sp.wrapping_sub(1);

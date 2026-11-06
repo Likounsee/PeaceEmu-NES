@@ -73,6 +73,8 @@ pub struct CpuBus {
     /// PPU-dot phase at which CPU register accesses occur (0..=2).
     ppu_bus_phase: u8,
     instruction_bus_cycles: u16,
+    /// IRQ level sampled at the 2A03 poll point (end of the penultimate cycle).
+    irq_poll_sample: Option<bool>,
     /// Absolute CPU-cycle timeline shared with cycle-sensitive cartridge mappers.
     cpu_cycle: u64,
     /// Address retained on the CPU bus while DMA suspends the processor.
@@ -98,7 +100,7 @@ pub struct CpuBus {
     ppu_bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096) } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -227,6 +229,9 @@ impl CpuBus {
     /// Advances the PPU to the sampling point of the current CPU bus access.
     fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool, ppu_dots_before_access: u32) {
         if self.instruction_timing {
+            // At the start of the final bus access, the penultimate CPU cycle
+            // has just completed; retain that IRQ level for the next poll.
+            self.irq_poll_sample = Some(self.irq_pending());
             self.instruction_bus_cycles = self.instruction_bus_cycles.saturating_add(1);
             self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
             // Clock the APU in the same order as CPU bus accesses. In particular,
@@ -584,8 +589,41 @@ impl CpuBus {
     pub fn drain_audio_samples(&mut self) -> Vec<f32> {
         self.apu.drain_audio_samples()
     }
+#[cfg(test)]
+mod irq_poll_sample_regressions {
+    use super::*;
+
+    #[test]
+    fn irq_poll_uses_the_line_sampled_before_the_final_instruction_cycle() {
+        let mut bus = CpuBus::new();
+        bus.write(0x4017, 0x00);
+
+        bus.begin_cpu_instruction();
+        let _ = bus.read(0x8000);
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        bus.tick_apu(29_834);
+        assert!(bus.irq_pending());
+        assert!(!bus.irq_pending_at_cpu_poll(),
+            "an IRQ raised after the sampled penultimate-cycle point is not taken yet");
+
+        bus.begin_cpu_instruction();
+        let _ = bus.read(0x8000);
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        assert!(bus.irq_pending_at_cpu_poll(),
+            "the next instruction's bus access samples the now-asserted IRQ line");
+    }
+}
+
     /// Returns the level-triggered APU IRQ line without clearing it.
     pub fn irq_pending(&self) -> bool { self.apu.irq_pending() || self.cartridge.as_ref().is_some_and(Cartridge::irq_pending) }
+    /// Returns the IRQ level captured at the CPU's penultimate-cycle poll point.
+    pub(crate) fn irq_pending_at_cpu_poll(&self) -> bool {
+        self.irq_poll_sample.unwrap_or_else(|| self.irq_pending())
+    }
+    /// Resamples IRQ after a DMA halt releases the CPU.
+    pub(crate) fn sample_irq_poll_line(&mut self) {
+        self.irq_poll_sample = Some(self.irq_pending());
+    }
     /// Samples the PPU NMI output at a CPU-cycle boundary.
     ///
     /// The 2A03 detects the NMI edge from its sampled input level. A PPU pulse
