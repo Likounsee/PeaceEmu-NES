@@ -50,6 +50,14 @@ pub struct CpuBusTraceEntry {
     pub ppu_nmi_line: bool,
     /// CPU-side NMI latch before the end-of-access sample.
     pub cpu_nmi_pending: bool,
+    /// IRQ input level visible after this transaction's side effects.
+    pub irq_line: bool,
+    /// IRQ level retained for the next CPU instruction poll.
+    ///
+    /// This is distinct from irq_line: the 2A03 samples IRQ before the
+    /// final bus access of an instruction, so a device edge caused by that
+    /// access must not retroactively alter the already-latched poll result.
+    pub irq_poll_sample: Option<bool>,
 }
 
 /// CPU bus with 2 KiB internal RAM and an optional mapper-backed cartridge.
@@ -187,6 +195,8 @@ impl CpuBus {
             ppu_dot,
             ppu_nmi_line: self.ppu.nmi_line(),
             cpu_nmi_pending: self.nmi_pending,
+            irq_line: self.irq_pending(),
+            irq_poll_sample: self.irq_poll_sample,
         };
         self.bus_trace.push_back(entry);
         if matches!(address & 0xE007, 0x2000 | 0x2002) {
