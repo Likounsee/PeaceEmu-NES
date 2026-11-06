@@ -1090,6 +1090,29 @@ mod tests {
     }
 
     #[test]
+    fn cli_then_plp_uses_the_pre_plp_i_sample_without_a_second_delay() {
+        let (mut cpu, mut bus) = setup(&[0x58, 0x28, 0xEA]); // CLI; PLP; NOP
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFE] = 0x00;
+        image[16 + 0x3FFF] = 0x07;
+        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
+        bus.write(0x01FE, flags::INTERRUPT_DISABLE | flags::UNUSED);
+        bus.write(0x4017, 0x00);
+        bus.tick_apu(29_834);
+        assert!(bus.irq_pending());
+
+        assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0x58);
+        assert_eq!(cpu.step(&mut bus).unwrap().opcode, 0x28);
+        let irq = cpu.step(&mut bus).unwrap();
+        assert_eq!(irq.opcode, 0xFE, "the IRQ must be taken immediately after PLP");
+        assert_eq!(cpu.state().pc, 0x0700);
+        assert_eq!(bus.read(0x01FD), 0x06);
+        assert_eq!(bus.read(0x01FC), 0x02);
+    }
+
+    #[test]
     fn plp_defers_irq_polling_for_one_instruction_when_it_clears_interrupt_disable() {
         let (mut cpu, mut bus) = setup(&[0x28, 0xEA]); // PLP; NOP
         let mut image = vec![0; 16 + 16_384];
