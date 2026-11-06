@@ -589,31 +589,6 @@ impl CpuBus {
     pub fn drain_audio_samples(&mut self) -> Vec<f32> {
         self.apu.drain_audio_samples()
     }
-#[cfg(test)]
-mod irq_poll_sample_regressions {
-    use super::*;
-
-    #[test]
-    fn irq_poll_uses_the_line_sampled_before_the_final_instruction_cycle() {
-        let mut bus = CpuBus::new();
-        bus.write(0x4017, 0x00);
-
-        bus.begin_cpu_instruction();
-        let _ = bus.read(0x8000);
-        assert_eq!(bus.end_cpu_instruction(), 1);
-        bus.tick_apu(29_834);
-        assert!(bus.irq_pending());
-        assert!(!bus.irq_pending_at_cpu_poll(),
-            "an IRQ raised after the sampled penultimate-cycle point is not taken yet");
-
-        bus.begin_cpu_instruction();
-        let _ = bus.read(0x8000);
-        assert_eq!(bus.end_cpu_instruction(), 1);
-        assert!(bus.irq_pending_at_cpu_poll(),
-            "the next instruction's bus access samples the now-asserted IRQ line");
-    }
-}
-
     /// Returns the level-triggered APU IRQ line without clearing it.
     pub fn irq_pending(&self) -> bool { self.apu.irq_pending() || self.cartridge.as_ref().is_some_and(Cartridge::irq_pending) }
     /// Returns the IRQ level captured at the CPU's penultimate-cycle poll point.
@@ -2345,3 +2320,29 @@ mod nmi_sampling_boundary_regressions {
                 "phase {phase}: the same edge must never be delivered twice");
         }
     }
+
+#[cfg(test)]
+mod irq_poll_sample_regressions {
+    use super::*;
+
+    #[test]
+    fn irq_poll_uses_the_line_sampled_before_the_final_instruction_cycle() {
+        let mut bus = CpuBus::new();
+        bus.write(0x4017, 0x00);
+
+        bus.begin_cpu_instruction();
+        let _ = bus.read(0x8000);
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        bus.tick_apu(29_834);
+        assert!(bus.irq_pending());
+        assert!(!bus.irq_pending_at_cpu_poll(),
+            "an IRQ raised after the sampled penultimate-cycle point is not taken yet");
+
+        bus.begin_cpu_instruction();
+        let _ = bus.read(0x8000);
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        assert!(bus.irq_pending_at_cpu_poll(),
+            "the next instruction's bus access samples the now-asserted IRQ line");
+    }
+}
+
