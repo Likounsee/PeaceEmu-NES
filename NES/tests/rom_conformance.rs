@@ -134,11 +134,36 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 } else {
                     String::new()
                 };
+                let cpu_debug = if path.to_string_lossy().contains("cpu_interrupts_v2") {
+                    let state = machine.cpu_state();
+                    let zero_page = (0x10u16..0x80)
+                        .map(|address| format!("{:02X}", machine.read_cpu(address)))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    machine.write_cpu(0x2006, 0x20);
+                    machine.write_cpu(0x2006, 0x00);
+                    let _ = machine.read_cpu(0x2007);
+                    let mut nametable = Vec::with_capacity(960);
+                    for _ in 0..960 {
+                        nametable.push(machine.read_cpu(0x2007));
+                    }
+                    let screen = nametable.chunks(32)
+                        .map(|row| row.iter().map(|value| format!("{value:02X}")).collect::<Vec<_>>().join(" "))
+                        .collect::<Vec<_>>()
+                        .join("\\n");
+                    format!(
+                        "\\nCPU debug: state={state:?} cycles={}\\nZP $10-$7F: {zero_page}\\nNametable $2000:\\n{screen}",
+                        machine.total_cycles()
+                    )
+                } else {
+                    String::new()
+                };
                 return Err(format!(
-                    "{}: Blargg failure code 0x{failure:02X}: {}{}",
+                    "{}: Blargg failure code 0x{failure:02X}: {}{}{}",
                     path.display(),
                     message,
-                    trace
+                    trace,
+                    cpu_debug
                 ));
             }
             other => {
