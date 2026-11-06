@@ -1216,7 +1216,7 @@ mod tests {
     #[test]
     fn nmi_during_final_brk_vector_cycle_waits_for_first_handler_instruction() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16] = 0x00; // BRK at $8000.
         image[16 + 0x1000] = 0x38; // SEC at IRQ vector $9000.
