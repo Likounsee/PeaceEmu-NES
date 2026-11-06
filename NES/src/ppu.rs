@@ -284,10 +284,7 @@ impl Ppu {
                 };
                 // Attribute bytes expose only palette and priority/flip bits.
                 // The three unused attribute bits are electrically low on reads.
-                let rendering_owns_oam_bus = self.rendering_oam_clear_phase()
-                    || evaluation_phase
-                    || self.rendering_oam_fetch_phase();
-                let attribute_byte = rendering_owns_oam_bus && if evaluation_phase {
+                let attribute_byte = if evaluation_phase {
                     self.eval_m == 2
                 } else {
                     self.oam_addr & 3 == 2
