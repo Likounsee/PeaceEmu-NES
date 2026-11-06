@@ -671,9 +671,9 @@ impl Cpu {
     /// IRQ and BRK can be hijacked by an NMI edge arriving during interrupt
     /// entry. An edge during vector-low can replace only the high-byte fetch.
     fn read_interrupt_vector(&mut self, bus: &mut CpuBus, irq_vector: u16) -> u16 {
-        let vector = if bus.take_nmi_request() { 0xFFFA } else { irq_vector };
+        let vector = if bus.take_nmi_request_for_interrupt_vector() { 0xFFFA } else { irq_vector };
         let lo = bus.read(vector) as u16;
-        let high_vector = if vector == irq_vector && bus.take_nmi_request() {
+        let high_vector = if vector == irq_vector && bus.take_nmi_request_for_interrupt_vector() {
             0xFFFB
         } else {
             vector.wrapping_add(1)
