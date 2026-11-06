@@ -5,6 +5,11 @@ use crate::cartridge::Cartridge;
 use crate::ppu::Ppu;
 use std::collections::VecDeque;
 
+#[cfg(test)]
+fn expected_oamdata_read(address: u8, value: u8) -> u8 {
+    if address & 3 == 2 { value & !0x1C } else { value }
+}
+
 /// A DMC transfer whose bus phases are serviced on separate CPU cycles.
 #[derive(Debug)]
 struct PendingDmcDma {
@@ -1039,7 +1044,8 @@ mod tests {
         bus.transfer_oam_dma(0x02);
         for i in 0..=u8::MAX {
             bus.write(0x2003, i.wrapping_add(0x80));
-            assert_eq!(bus.read(0x2004), i.wrapping_mul(3));
+            let expected = i.wrapping_mul(3);
+            assert_eq!(bus.read(0x2004), expected_oamdata_read(i.wrapping_add(0x80), expected));
         }
         assert_eq!(bus.take_oam_dma_request(), None);
     }
@@ -1103,7 +1109,8 @@ mod tests {
         for destination in 0..=u8::MAX {
             bus.write(0x2003, destination);
             let source_offset = destination.wrapping_sub(0x80);
-            assert_eq!(bus.read(0x2004), source_offset.wrapping_mul(3));
+            let expected = source_offset.wrapping_mul(3);
+            assert_eq!(bus.read(0x2004), expected_oamdata_read(destination, expected));
         }
     }
 
@@ -1441,7 +1448,8 @@ mod open_bus_regression_tests {
 
         for (address, offset) in [(0xFEu8, 0u8), (0xFF, 1), (0x00, 2), (0x01, 3)] {
             bus.write(0x2003, address);
-            assert_eq!(bus.read(0x2004), offset ^ 0x5A, "OAM wraps at 0xFF");
+            let expected = offset ^ 0x5A;
+            assert_eq!(bus.read(0x2004), expected_oamdata_read(address, expected), "OAM wraps at 0xFF");
         }
         assert_eq!(bus.take_oam_dma_request(), None);
     }
@@ -1743,7 +1751,7 @@ mod oam_dma_wrap_regressions {
         // DMA begins at OAMADDR, wraps through $FF to $00, and ends at $FE.
         for (address, expected) in [(0xFEu8, 0xA5u8), (0xFF, 0xA4), (0x00, 0xA7), (0x01, 0xA6)] {
             bus.write(0x2003, address);
-            assert_eq!(bus.read(0x2004), expected,
+            assert_eq!(bus.read(0x2004), expected_oamdata_read(address, expected),
                 "OAM DMA must preserve the starting address and wrap around OAM");
         }
     }
