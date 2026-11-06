@@ -85,11 +85,9 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 // test's diagnostic string through untimed host-side bus reads.
                 let irq_bus_trace = if path.to_string_lossy().contains("cpu_interrupts_v2") {
                     let entries = machine.bus_trace();
-                    let start = entries.len().saturating_sub(8192);
-                    let recent = &entries[start..];
-                    recent.iter().enumerate()
+                    entries.iter().enumerate()
                         .filter(|(index, entry)| {
-                            let previous = index.checked_sub(1).map(|previous| &recent[previous]);
+                            let previous = index.checked_sub(1).map(|previous| &entries[previous]);
                             entry.ppu_nmi_line
                                 || entry.cpu_nmi_pending
                                 || matches!(entry.address, 0x2000 | 0x2002 | 0xFFFA..=0xFFFF)
@@ -102,10 +100,15 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                                         || previous.irq_poll_sample != entry.irq_poll_sample
                                 })
                         })
+                        .rev()
+                        .take(512)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
                         .map(|(_, entry)| format!(
-                            "cycle={} {:?} ${:04X}=${:02X} irq_line={} irq_poll={:?} nmi_line={} nmi_pending={}",
-                            entry.cycle, entry.kind, entry.address, entry.value,
-                            entry.irq_line, entry.irq_poll_sample,
+                            "cycle={} beam={}:{} {:?} ${:04X}=${:02X} irq_line={} irq_poll={:?} nmi_line={} nmi_pending={}",
+                            entry.cycle, entry.ppu_scanline, entry.ppu_dot, entry.kind,
+                            entry.address, entry.value, entry.irq_line, entry.irq_poll_sample,
                             entry.ppu_nmi_line, entry.cpu_nmi_pending
                         ))
                         .collect::<Vec<_>>()
