@@ -393,6 +393,10 @@ impl Ppu {
                 else {
                     self.t = (self.t & 0x7F00) | value as u16;
                     self.v = self.t;
+                    // A completed $2006 address write drives the external PPU
+                    // address bus. MMC3 observes A12 even when software changes
+                    // the address without performing a subsequent $2007 access.
+                    self.record_mapper_bus_address(self.v & 0x3FFF);
                     // A mid-scanline $2006 write changes the address used by
                     // subsequent background pixels. Keep the current scanline's
                     // sampling origin in step with the beam instead of applying
@@ -2139,6 +2143,21 @@ mod tests {
             cartridge.observe_ppu_address(address, cycle);
         }
         assert!(cartridge.irq_pending(), "the PPU-generated eight-dot low interval must clock MMC3 IRQ");
+    }
+
+    #[test]
+    fn cpu_ppuaddr_writes_publish_mmc3_a12_edges() {
+        let mut ppu = Ppu::new();
+
+        // Complete a $2006 write to an A12-high address.
+        ppu.cpu_write_register(6, 0x10, None);
+        ppu.cpu_write_register(6, 0x00, None);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 0)]);
+
+        // A second complete $2006 write changes A12 low without requiring $2007.
+        ppu.cpu_write_register(6, 0x00, None);
+        ppu.cpu_write_register(6, 0x00, None);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x0000, 0)]);
     }
 
     #[test]
