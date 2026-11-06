@@ -39,11 +39,11 @@ cargo clippy --manifest-path NES/Cargo.toml --all-targets --locked -- -D warning
 cargo build --manifest-path NES/Cargo.toml --bin peaceemu-nes-desktop --release --locked
 ```
 
-Le dépôt contient deux workflows principaux de vérification : `.github/workflows/ci.yml` et `.github/workflows/nes.yml`. Le workflow de module le plus récent était vert lors de la dernière vérification ; consultez [GitHub Actions](https://github.com/Likounsee/PeaceEmu-NES/actions) pour le statut actuel. La CI verte confirme les vérifications automatisées, pas la compatibilité de tous les jeux.
+Le dépôt contient deux workflows principaux de vérification : `.github/workflows/ci.yml` et `.github/workflows/nes.yml`. Le statut doit être vérifié directement dans [GitHub Actions](https://github.com/Likounsee/PeaceEmu-NES/actions) ; les diagnostics étendus CPU/PPU ont encore des échecs connus pendant la préparation de la 1.0.0. La CI verte confirme les vérifications automatisées, pas la compatibilité de tous les jeux.
 
-## Note sur la version Rust
+## Version et publication
 
-Les manifestes racine et `NES/Cargo.toml` annoncent actuellement des versions minimales différentes. Ce point doit être harmonisé avant de publier une politique MSRV. Le fichier `NES/rust-toolchain.toml` utilise le canal `stable`.
+Les manifestes racine et `NES/Cargo.toml`, ainsi que `Cargo.lock`, sont alignés sur `1.0.0` pour préparer la première release. Cette version n'est pas considérée comme publiée tant que les vérifications CI, la compilation Release et la génération des artefacts n'ont pas été examinées. Voir [RELEASE_NOTES_v1.0.0.md](RELEASE_NOTES_v1.0.0.md). Le projet conserve Rust 1.78 comme MSRV déclarée ; `NES/rust-toolchain.toml` utilise le canal `stable`.
 
 ## ROM et licences
 
