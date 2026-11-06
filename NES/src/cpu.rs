@@ -97,7 +97,7 @@ impl Default for Cpu {
 impl Cpu {
     /// Creates CPU state before reset-vector initialization.
     pub fn new() -> Self {
-        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED }, cycles: 0, irq_poll_delay: false, irq_poll_i_override: None, jammed: false, jam_opcode: 0x02, reset_seen: false }
+        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED | flags::BREAK }, cycles: 0, irq_poll_delay: false, irq_poll_i_override: None, jammed: false, jam_opcode: 0x02, reset_seen: false }
     }
     /// Returns the current registers and flags.
     pub fn state(&self) -> CpuState { self.state }
@@ -116,7 +116,7 @@ impl Cpu {
             self.state.sp = 0;
             self.reset_seen = true;
         }
-        self.state.status = flags::INTERRUPT_DISABLE | flags::UNUSED;
+        self.state.status |= flags::INTERRUPT_DISABLE | flags::UNUSED;
         self.irq_poll_delay = false;
         self.irq_poll_i_override = None;
         self.jammed = false;
@@ -499,8 +499,14 @@ impl Cpu {
             0x08 => { self.push(bus, self.state.status | flags::BREAK | flags::UNUSED); 3 }
             0x28 => {
                 let _ = bus.read(0x0100 | u16::from(self.state.sp));
+                let irq_disabled_before_plp = self.flag(flags::INTERRUPT_DISABLE);
                 self.state.status = (self.pop(bus) | flags::UNUSED) & !flags::BREAK;
-                self.irq_poll_delay = true;
+                // PLP changes I immediately in the visible register, but the
+                // IRQ poll after this instruction uses the pre-PLP I value.
+                // Preserve the prior poll sample rather than adding another
+                // full instruction of delay on top of a preceding CLI/SEI.
+                self.irq_poll_delay = false;
+                self.irq_poll_i_override = Some(irq_disabled_before_plp);
                 4
             }
             0x18 => { self.set_flag(flags::CARRY, false); 2 }
