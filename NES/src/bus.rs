@@ -597,10 +597,6 @@ impl CpuBus {
     pub(crate) fn irq_pending_at_cpu_poll(&self) -> bool {
         self.irq_poll_sample.unwrap_or_else(|| self.irq_pending())
     }
-    /// Samples the current IRQ line at an instruction or DMA poll boundary.
-    pub(crate) fn sample_irq_poll_line(&mut self) {
-        self.irq_poll_sample = Some(self.irq_pending());
-    }
     /// Samples the PPU NMI output at a CPU-cycle boundary.
     ///
     /// The 2A03 detects the NMI edge from its sampled input level. A PPU pulse
