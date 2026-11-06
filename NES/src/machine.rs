@@ -344,7 +344,11 @@ impl NesMachine {
         if let Some(page) = self.bus.take_oam_dma_request() {
             self.perform_oam_dma(page);
             self.bus.release_deferred_nmi_after_dma();
-            self.bus.sample_irq_poll_line();
+            // IRQ is polled at the end of the $4014-writing instruction,
+            // before OAM DMA halts the CPU. DMA delays interrupt service but
+            // must not replace that already-latched IRQ sample with the line
+            // state observed hundreds of cycles later. NMI remains edge-latched
+            // independently and is released after DMA above.
         }
         Ok(result)
     }
