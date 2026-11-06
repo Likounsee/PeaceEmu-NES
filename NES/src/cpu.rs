@@ -109,9 +109,9 @@ impl Cpu {
     pub fn set_pc(&mut self, pc: u16) { self.state.pc = pc; }
     /// Performs the hardware reset sequence and loads the reset vector at $FFFC.
     pub fn reset(&mut self, bus: &mut CpuBus) {
-        self.state.a = 0;
-        self.state.x = 0;
-        self.state.y = 0;
+        // A hardware reset does not clear A/X/Y. Cpu::new() supplies their
+        // power-on values; subsequent reset sequences must preserve the live
+        // registers while resetting P, SP and the program counter.
         if !self.reset_seen {
             self.state.sp = 0;
             self.reset_seen = true;
@@ -1424,8 +1424,17 @@ mod tests {
         assert_eq!(cpu.total_cycles(), 7);
         assert_eq!(bus.ppu_position(), (261, 0));
 
+        cpu.state.a = 0x12;
+        cpu.state.x = 0x34;
+        cpu.state.y = 0x56;
+        cpu.state.status = flags::CARRY | flags::ZERO;
         cpu.state.sp = 0x80;
         cpu.reset(&mut bus);
+        assert_eq!(cpu.state().a, 0x12, "hardware reset must preserve A");
+        assert_eq!(cpu.state().x, 0x34, "hardware reset must preserve X");
+        assert_eq!(cpu.state().y, 0x56, "hardware reset must preserve Y");
+        assert_eq!(cpu.state().status, flags::INTERRUPT_DISABLE | flags::UNUSED,
+            "hardware reset must set I and normalize the unused status bit");
         assert_eq!(cpu.state().sp, 0x7D, "soft reset must decrement the existing SP three times");
         assert_eq!(cpu.total_cycles(), 14);
         assert_eq!(bus.ppu_position(), (261, 0));
