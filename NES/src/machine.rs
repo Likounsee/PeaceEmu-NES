@@ -7,6 +7,11 @@ use crate::cartridge::{Cartridge, CartridgeError};
 use crate::cpu::{Cpu, CpuError, CpuState, StepResult};
 use core::fmt;
 
+#[cfg(test)]
+fn expected_oamdata_read(address: u8, value: u8) -> u8 {
+    if address & 3 == 2 { value & !0x1C } else { value }
+}
+
 /// Error raised while creating or executing a basic NES machine.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MachineError {
@@ -511,7 +516,7 @@ mod tests {
         assert_eq!(machine.total_cycles() - before, 4 + 513);
         for offset in 0..=u8::MAX {
             machine.write_cpu(0x2003, offset);
-            assert_eq!(machine.read_cpu(0x2004), offset ^ 0xA5);
+            assert_eq!(machine.read_cpu(0x2004), expected_oamdata_read(offset, offset ^ 0xA5));
         }
     }
 
@@ -578,7 +583,7 @@ mod tests {
 
         for offset in 0..=u8::MAX {
             machine.bus.write(0x2003, offset);
-            assert_eq!(machine.bus.read(0x2004), offset ^ 0x6D,
+            assert_eq!(machine.bus.read(0x2004), expected_oamdata_read(offset, offset ^ 0x6D),
                 "OAM DMA byte {offset} must survive DMC arbitration");
         }
     }
@@ -612,7 +617,7 @@ mod tests {
 
         for offset in 0..=u8::MAX {
             machine.bus.write(0x2003, offset);
-            assert_eq!(machine.bus.read(0x2004), offset.wrapping_mul(37) ^ 0xA6,
+            assert_eq!(machine.bus.read(0x2004), expected_oamdata_read(offset, offset.wrapping_mul(37) ^ 0xA6),
                 "repeated DMC arbitration must not drop, duplicate, or shift OAM byte {offset}");
         }
     }
@@ -645,7 +650,7 @@ mod tests {
 
         for offset in 0..=u8::MAX {
             machine.bus.write(0x2003, offset);
-            assert_eq!(machine.bus.read(0x2004), offset.wrapping_mul(19) ^ 0x73,
+            assert_eq!(machine.bus.read(0x2004), expected_oamdata_read(offset, offset.wrapping_mul(19) ^ 0x73),
                 "looped DMC arbitration must preserve OAM byte {offset}");
         }
     }
@@ -854,7 +859,7 @@ mod tests {
         assert_eq!(machine.total_cycles(), 7 + 2 + 4 + 514);
         for i in 0..=u8::MAX {
             machine.write_cpu(0x2003, i);
-            assert_eq!(machine.read_cpu(0x2004), i ^ 0x5A);
+            assert_eq!(machine.read_cpu(0x2004), expected_oamdata_read(i, i ^ 0x5A));
         }
     }
 
@@ -881,7 +886,7 @@ mod tests {
             machine.write_cpu(0x2003, offset);
             assert_eq!(
                 machine.read_cpu(0x2004),
-                offset ^ 0xA7,
+                expected_oamdata_read(offset, offset ^ 0xA7),
                 "OAM byte {offset} must be copied only after its GET slot is granted",
             );
         }
