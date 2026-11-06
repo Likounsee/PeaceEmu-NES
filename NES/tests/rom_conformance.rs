@@ -136,11 +136,9 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 };
                 let cpu_debug = if path.to_string_lossy().contains("cpu_interrupts_v2") {
                     let state = machine.cpu_state();
-                    let zero_page = (0x10u16..0x80)
-                        .map(|address| format!("{:02X}", machine.read_cpu(address)))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    let irq_bus_trace = machine.ppu_bus_trace()
+                    // Snapshot the CPU address-bus history before diagnostic
+                    // reads alter the machine or evict the transactions of interest.
+                    let irq_bus_trace = machine.bus_trace()
                         .iter()
                         .rev()
                         .take(256)
@@ -155,6 +153,10 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                         ))
                         .collect::<Vec<_>>()
                         .join("\\n");
+                    let zero_page = (0x10u16..0x80)
+                        .map(|address| format!("{:02X}", machine.read_cpu(address)))
+                        .collect::<Vec<_>>()
+                        .join(" ");
                     machine.write_cpu(0x2006, 0x20);
                     machine.write_cpu(0x2006, 0x00);
                     let _ = machine.read_cpu(0x2007);
