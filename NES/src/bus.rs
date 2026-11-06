@@ -410,14 +410,11 @@ impl CpuBus {
         }
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
+        if timed_access {
+            self.sample_nmi_line();
+        }
         if timed_access && ppu_register {
             self.tick_ppu(3 - ppu_dots_before_access);
-        }
-        if timed_access {
-            // The CPU samples NMI at the end of the bus cycle, after the
-            // remaining PPU dots. Match the read path: sampling before the
-            // trailing dots can miss an edge raised during this write cycle.
-            self.sample_nmi_line();
         }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
