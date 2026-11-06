@@ -3316,6 +3316,21 @@ mod sprite_overflow_regression_tests {
     }
 
     #[test]
+    fn oam_y_ff_does_not_trigger_sprite_overflow_during_cycle_evaluation() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x18;
+        ppu.ctrl = 0x20;
+        ppu.oam.fill(0xFF);
+
+        ppu.tick(256);
+
+        assert_eq!(ppu.status & 0x20, 0,
+            "the hardware OAM evaluator must not count Y=$FF entries as in-range sprites");
+    }
+
+    #[test]
     fn ninth_sprite_sets_overflow_on_its_even_dot_comparison() {
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
@@ -5210,9 +5225,9 @@ mod cycle_sprite_evaluator_regressions {
         ppu.scanline = 0;
         ppu.mask = 0x18;
         for sprite in 0..8usize {
-            ppu.oam[sprite * 4] = 0xFF;
+            ppu.oam[sprite * 4] = 0x00;
         }
-        ppu.oam[8 * 4] = 20; // Out of range for target scanline zero.
+        ppu.oam[8 * 4] = 20; // Out of range for target scanline one.
         ppu.oam[9 * 4 + 1] = 0x00; // The diagonal walk reads this tile byte as Y.
 
         ppu.tick(130);
