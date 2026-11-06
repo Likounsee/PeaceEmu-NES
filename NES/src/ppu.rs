@@ -33,6 +33,10 @@ pub struct PpuTimingEvent {
 #[cfg(feature = "ppu-timing-diagnostics")]
 const TIMING_EVENT_CAPACITY: usize = 4096;
 
+// The 2C02 I/O data latch holds a high bit for roughly 600 ms without a
+// refresh. At the NTSC PPU clock this is about 3.22 million PPU dots.
+const PPU_IO_LATCH_DECAY_DOTS: u64 = 3_221_600;
+
 /// PPU register, memory, and NTSC beam state.
 ///
 /// Implements CPU-visible registers, pattern/nametable/palette access, OAM storage,
@@ -83,6 +87,7 @@ pub struct Ppu {
     write_latch: bool,
     read_buffer: u8,
     open_bus: u8,
+    open_bus_last_high: [u64; 8],
     scanline: u16,
     dot: u16,
     odd_frame: bool,
@@ -148,7 +153,7 @@ impl Default for Ppu {
             eval_target_y: 0, eval_oam: [[0xFF; 4]; 8],
             eval_indices: [0xFF; 8], eval_count: 0,
             nametables: [0; 4096], palette: [0; 32], v: 0, t: 0,
-            fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0,
+            fine_x: 0, write_latch: false, read_buffer: 0, open_bus: 0, open_bus_last_high: [0; 8],
             scanline: 261, dot: 0, odd_frame: false, odd_frame_skip_pending: false, frame_scroll_v: 0, frame_fine_x: 0,
             frame_scroll_valid: false, line_scroll_v: 0, line_scroll_start_x: 0,
             nmi_pending: false, nmi_line: false, nmi_vblank_delay: false, suppress_vblank: false, vblank_clear_race: false,
@@ -180,10 +185,40 @@ impl Ppu {
     /// Creates a PPU in its pre-render scanline.
     pub fn new() -> Self { Self::default() }
 
+    fn decay_open_bus(&mut self) {
+        for bit in 0..8 {
+            let mask = 1u8 << bit;
+            if self.open_bus & mask != 0
+                && self.ppu_cycle.saturating_sub(self.open_bus_last_high[bit]) >= PPU_IO_LATCH_DECAY_DOTS
+            {
+                self.open_bus &= !mask;
+            }
+        }
+    }
+
+    fn drive_open_bus(&mut self, value: u8, driven_mask: u8) {
+        for bit in 0..8 {
+            let mask = 1u8 << bit;
+            if driven_mask & mask == 0 {
+                continue;
+            }
+            if value & mask != 0 {
+                self.open_bus |= mask;
+                self.open_bus_last_high[bit] = self.ppu_cycle;
+            } else {
+                self.open_bus &= !mask;
+                self.open_bus_last_high[bit] = self.ppu_cycle;
+            }
+        }
+    }
+
     /// Reads one CPU-visible PPU register (register address is mirrored to 0..7).
     pub fn cpu_read_register(&mut self, register: u16, cartridge: Option<&Cartridge>) -> u8 {
+        self.decay_open_bus();
+        let mut driven_mask = 0;
         let value = match register & 7 {
             2 => {
+                driven_mask = 0xE0;
                 self.record_timing_event("STATUS_READ");
                 let mut value = (self.status & 0xE0) | (self.open_bus & 0x1F);
                 // The vblank flag is set at scanline 241 dot 1. A $2002 read
@@ -220,6 +255,7 @@ impl Ppu {
                 value
             }
             4 => {
+                driven_mask = 0xFF;
                 // During secondary-OAM clear (dots 1-64 on visible and pre-render
                 // scanlines), the internal OAM bus is forced to $FF. Returning the
                 // byte at OAMADDR here leaks primary OAM contents that the 2C02 does
@@ -247,6 +283,7 @@ impl Ppu {
                     address
                 });
                 let fetched = self.mem_read(address, cartridge);
+                driven_mask = if address < 0x3F00 { 0 } else { 0x3F };
                 let value = if address < 0x3F00 {
                     let old = self.read_buffer;
                     self.read_buffer = fetched;
@@ -263,13 +300,13 @@ impl Ppu {
             }
             _ => self.open_bus,
         };
-        self.open_bus = value;
+        self.drive_open_bus(value, driven_mask);
         value
     }
 
     /// Writes one CPU-visible PPU register (register address is mirrored to 0..7).
     pub fn cpu_write_register(&mut self, register: u16, value: u8, cartridge: Option<&mut Cartridge>) {
-        self.open_bus = value;
+        self.drive_open_bus(value, 0xFF);
         match register & 7 {
             0 => {
                 let nmi_was_enabled = self.ctrl & 0x80 != 0;
