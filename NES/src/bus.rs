@@ -73,7 +73,7 @@ pub struct CpuBus {
     /// PPU-dot phase at which CPU register accesses occur (0..=2).
     ppu_bus_phase: u8,
     instruction_bus_cycles: u16,
-    /// IRQ level sampled at the 2A03 poll point (end of the penultimate cycle).
+    /// IRQ level sampled for the next instruction, with branch-specific timing.
     irq_poll_sample: Option<bool>,
     /// Absolute CPU-cycle timeline shared with cycle-sensitive cartridge mappers.
     cpu_cycle: u64,
@@ -595,7 +595,7 @@ impl CpuBus {
     pub(crate) fn irq_pending_at_cpu_poll(&self) -> bool {
         self.irq_poll_sample.unwrap_or_else(|| self.irq_pending())
     }
-    /// Resamples IRQ after a DMA halt releases the CPU.
+    /// Samples the current IRQ line at an instruction or DMA poll boundary.
     pub(crate) fn sample_irq_poll_line(&mut self) {
         self.irq_poll_sample = Some(self.irq_pending());
     }
