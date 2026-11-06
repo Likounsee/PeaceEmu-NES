@@ -48,48 +48,61 @@ jobs:
           PEACEEMU_NES_TEST_ROM_DIR: ${{ github.workspace }}/test-roms
         run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_extended_hardware_diagnostics
       - name: Run experimental Blargg APU diagnostic ROMs
+        if: always()
         env:
           PEACEEMU_NES_APU_TEST_ROM_DIR: ${{ github.workspace }}/test-roms
         run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_apu_diagnostics_experimental
       - name: Run experimental Blargg PPU diagnostic ROMs
+        if: always()
         env:
           PEACEEMU_NES_PPU_TEST_ROM_DIR: ${{ github.workspace }}/test-roms
         run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_ppu_diagnostics_experimental
       - name: Run experimental Blargg PPU register diagnostic ROMs
+        if: always()
         env:
           PEACEEMU_NES_PPU_TEST_ROM_DIR: ${{ github.workspace }}/test-roms
         run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_ppu_register_diagnostics_experimental
       - name: Run experimental Blargg DMC DMA/register diagnostic ROMs
+        if: always()
         env:
           PEACEEMU_NES_TEST_ROM_DIR: ${{ github.workspace }}/test-roms
         run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_dmc_dma_register_interaction_diagnostics_experimental
       - name: Run experimental Blargg MMC3 mapper diagnostic ROMs
+        if: always()
         env:
           PEACEEMU_NES_TEST_ROM_DIR: ${{ github.workspace }}/test-roms
         run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_mmc3_mapper_diagnostics_experimental
       - name: Run experimental CPU dummy-write PPUMEM ROM
+        if: always()
         env:
           PEACEEMU_NES_TEST_ROM_DIR: ${{ github.workspace }}/test-roms
         run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_cpu_dummy_writes_ppumem_diagnostics_experimental
       - name: Run experimental OAM read ROM
+        if: always()
         env:
           PEACEEMU_NES_TEST_ROM_DIR: ${{ github.workspace }}/test-roms
         run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_oam_read_diagnostics_experimental
       - name: Run experimental Blargg APU reset ROMs
+        if: always()
         env:
           PEACEEMU_NES_TEST_ROM_DIR: ${{ github.workspace }}/test-roms
         run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_apu_reset_diagnostics_experimental
       - name: Run experimental CPU dummy-read ROM
+        if: always()
         env:
           PEACEEMU_NES_TEST_ROM_DIR: ${{ github.workspace }}/test-roms
         run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_cpu_dummy_reads_diagnostics_experimental
       - name: Run experimental CPU dummy-write OAM ROM
+        if: always()
         env:
           PEACEEMU_NES_TEST_ROM_DIR: ${{ github.workspace }}/test-roms
         run: cargo test --manifest-path NES/Cargo.toml --features ppu-timing-diagnostics --test rom_conformance --locked -- --nocapture blargg_cpu_dummy_writes_oam_diagnostics_experimental
       - name: Build desktop module
+        id: desktop_build
+        if: always()
         run: cargo build --manifest-path NES/Cargo.toml --bin peaceemu-nes-desktop --release --locked
       - name: Upload desktop build artifact
+        if: always() && steps.desktop_build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: peaceemu-nes-desktop-${{ runner.os }}
@@ -97,4 +110,5 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Run Clippy
+        if: always()
         run: cargo clippy --manifest-path NES/Cargo.toml --all-targets --locked -- -D warnings
