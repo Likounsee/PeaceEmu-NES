@@ -140,6 +140,21 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                         .map(|address| format!("{:02X}", machine.read_cpu(address)))
                         .collect::<Vec<_>>()
                         .join(" ");
+                    let irq_bus_trace = machine.ppu_bus_trace()
+                        .iter()
+                        .rev()
+                        .take(256)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .map(|entry| format!(
+                            "cycle={} {:?} ${:04X}=${:02X} irq_line={} irq_poll={:?} nmi_line={} nmi_pending={}",
+                            entry.cycle, entry.kind, entry.address, entry.value,
+                            entry.irq_line, entry.irq_poll_sample,
+                            entry.ppu_nmi_line, entry.cpu_nmi_pending
+                        ))
+                        .collect::<Vec<_>>()
+                        .join("\\n");
                     machine.write_cpu(0x2006, 0x20);
                     machine.write_cpu(0x2006, 0x00);
                     let _ = machine.read_cpu(0x2007);
@@ -152,7 +167,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                         .collect::<Vec<_>>()
                         .join("\\n");
                     format!(
-                        "\\nCPU debug: state={state:?} cycles={}\\nZP $10-$7F: {zero_page}\\nNametable $2000:\\n{screen}",
+                        "\\nCPU debug: state={state:?} cycles={}\\nZP $10-$7F: {zero_page}\\nRecent CPU bus/IRQ trace:\\n{irq_bus_trace}\\nNametable $2000:\\n{screen}",
                         machine.total_cycles()
                     )
                 } else {
