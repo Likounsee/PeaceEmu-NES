@@ -621,6 +621,18 @@ impl CpuBus {
         self.ppu.record_cpu_nmi_sample(captured_edge);
     }
 
+    /// Takes an NMI edge eligible to replace an IRQ/BRK vector fetch.
+    /// A request deferred from the preceding instruction is eligible here too.
+    pub(crate) fn take_nmi_request_for_interrupt_vector(&mut self) -> bool {
+        let pending = self.nmi_pending || self.nmi_deferred;
+        if pending {
+            self.nmi_pending = false;
+            self.nmi_deferred = false;
+            self.nmi_sample_cycle = None;
+        }
+        pending
+    }
+
     /// Takes the CPU-side NMI edge latch.
     pub fn take_nmi_request(&mut self) -> bool {
         let pending = core::mem::take(&mut self.nmi_pending);
@@ -2326,6 +2338,17 @@ mod nmi_sampling_boundary_regressions {
 #[cfg(test)]
 mod irq_poll_sample_regressions {
     use super::*;
+
+    #[test]
+    fn deferred_nmi_can_hijack_an_irq_or_brk_vector() {
+        let mut bus = CpuBus::new();
+        bus.nmi_deferred = true;
+
+        assert!(bus.take_nmi_request_for_interrupt_vector());
+        assert!(!bus.nmi_pending);
+        assert!(!bus.nmi_deferred);
+        assert!(!bus.take_nmi_request_for_interrupt_vector());
+    }
 
     #[test]
     fn irq_poll_uses_the_line_sampled_before_the_final_instruction_cycle() {
