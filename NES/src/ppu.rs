@@ -2147,17 +2147,38 @@ mod tests {
 
     #[test]
     fn cpu_ppuaddr_writes_publish_mmc3_a12_edges() {
+        let mut image = vec![0; 16 + 2 * 16_384];
+        image[0..4].copy_from_slice(b"NES\x1A");
+        image[4] = 2;
+        image[6] = 0x40; // MMC3 / mapper 4.
+        let mut cartridge = Cartridge::parse(&image).unwrap();
+        cartridge.cpu_write(0xC000, 0); // IRQ latch = 0.
+        cartridge.cpu_write(0xC001, 0); // Reload on the next qualified edge.
+        cartridge.cpu_write(0xE001, 0); // Enable IRQs.
+
         let mut ppu = Ppu::new();
 
-        // Complete a $2006 write to an A12-high address.
+        // A completed $2006 write drives A12 high, even without a $2007 access.
         ppu.cpu_write_register(6, 0x10, None);
         ppu.cpu_write_register(6, 0x00, None);
-        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 0)]);
+        for (address, cycle) in ppu.take_mapper_bus_events() {
+            cartridge.observe_ppu_address(address, cycle);
+        }
+        assert!(!cartridge.irq_pending(), "the first high transition has no qualified low interval");
 
-        // A second complete $2006 write changes A12 low without requiring $2007.
+        // Drive A12 low, hold it for eight dots, then raise it through $2006 again.
         ppu.cpu_write_register(6, 0x00, None);
         ppu.cpu_write_register(6, 0x00, None);
-        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x0000, 0)]);
+        for (address, cycle) in ppu.take_mapper_bus_events() {
+            cartridge.observe_ppu_address(address, cycle);
+        }
+        ppu.tick(8);
+        ppu.cpu_write_register(6, 0x10, None);
+        ppu.cpu_write_register(6, 0x00, None);
+        for (address, cycle) in ppu.take_mapper_bus_events() {
+            cartridge.observe_ppu_address(address, cycle);
+        }
+        assert!(cartridge.irq_pending(), "an eight-dot A12-low interval created by $2006 writes must clock MMC3");
     }
 
     #[test]
