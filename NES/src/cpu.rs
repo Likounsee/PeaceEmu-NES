@@ -97,7 +97,7 @@ impl Default for Cpu {
 impl Cpu {
     /// Creates CPU state before reset-vector initialization.
     pub fn new() -> Self {
-        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED | flags::BREAK }, cycles: 0, irq_poll_delay: false, irq_poll_i_override: None, jammed: false, jam_opcode: 0x02, reset_seen: false }
+        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED }, cycles: 0, irq_poll_delay: false, irq_poll_i_override: None, jammed: false, jam_opcode: 0x02, reset_seen: false }
     }
     /// Returns the current registers and flags.
     pub fn state(&self) -> CpuState { self.state }
