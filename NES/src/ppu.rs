@@ -174,11 +174,11 @@ impl Default for Ppu {
     }
 }
 
-/// Converts the OAM Y byte to the first visible scanline. The NES treats
-/// $FF as scanline 0 because sprite Y is offset by one with 8-bit wraparound.
+/// Converts the OAM Y byte to the first visible scanline.
+/// $FF is off-screen; the OAM Y coordinate does not wrap to scanline 0.
 #[inline]
 fn sprite_top(oam_y: u8) -> usize {
-    oam_y.wrapping_add(1) as usize
+    usize::from(oam_y) + 1
 }
 
 impl Ppu {
@@ -260,10 +260,11 @@ impl Ppu {
                 // scanlines), the internal OAM bus is forced to $FF. Returning the
                 // byte at OAMADDR here leaks primary OAM contents that the 2C02 does
                 // not expose during this phase.
-                if self.rendering_oam_clear_phase() {
+                let evaluation_phase = self.rendering_oam_evaluation_phase();
+                let value = if self.rendering_oam_clear_phase() {
                     // Secondary-OAM clear drives all ones onto the internal OAM bus.
                     0xFF
-                } else if self.rendering_oam_evaluation_phase() {
+                } else if evaluation_phase {
                     // During dots 65-256, OAMDATA exposes the byte currently latched
                     // by the evaluator's primary-OAM read, not OAM[OAMADDR].
                     self.eval_latch
@@ -273,7 +274,15 @@ impl Ppu {
                     0xFF
                 } else {
                     self.oam[self.oam_addr as usize]
-                }
+                };
+                // Attribute bytes expose only palette and priority/flip bits.
+                // The three unused attribute bits are electrically low on reads.
+                let attribute_byte = if evaluation_phase {
+                    self.eval_m == 2
+                } else {
+                    self.oam_addr & 3 == 2
+                };
+                if attribute_byte { value & !0x1C } else { value }
             },
             7 => {
                 let address = self.v & 0x3FFF;
@@ -3282,6 +3291,31 @@ mod sprite_pattern_address_tests {
 #[cfg(test)]
 mod sprite_overflow_regression_tests {
     use super::*;
+
+    #[test]
+    fn oam_y_ff_is_offscreen_and_does_not_trigger_sprite_overflow() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.dot = 0;
+        ppu.mask = 0x18;
+        ppu.ctrl = 0x20;
+        ppu.oam.fill(0xFF);
+
+        ppu.tick(256);
+
+        assert_eq!(ppu.status & 0x20, 0,
+            "OAM Y=$FF hides sprites instead of wrapping them onto scanline zero");
+    }
+
+    #[test]
+    fn oam_attribute_reads_clear_unused_bits_two_through_four() {
+        let mut ppu = Ppu::new();
+        ppu.oam[2] = 0xFF;
+        ppu.oam_addr = 2;
+
+        assert_eq!(ppu.cpu_read_register(4, None) & 0x1C, 0,
+            "unused bits 2-4 of an OAM attribute byte always read as zero");
+    }
 
     #[test]
     fn ninth_sprite_sets_overflow_on_its_even_dot_comparison() {
