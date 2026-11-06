@@ -175,10 +175,17 @@ impl Default for Ppu {
 }
 
 /// Converts the OAM Y byte to the first visible scanline.
-/// $FF is off-screen; the OAM Y coordinate does not wrap to scanline 0.
+/// Pixel composition wraps the OAM Y byte when calculating the sprite's top row.
 #[inline]
 fn sprite_top(oam_y: u8) -> usize {
-    usize::from(oam_y) + 1
+    oam_y.wrapping_add(1) as usize
+}
+
+/// The hardware sprite evaluator treats OAM Y=$FF as an off-screen entry,
+/// even though the pixel-coordinate helper above wraps it to scanline zero.
+#[inline]
+fn sprite_eval_top(oam_y: u8) -> usize {
+    if oam_y == 0xFF { 256 } else { usize::from(oam_y) + 1 }
 }
 
 impl Ppu {
@@ -1153,7 +1160,7 @@ impl Ppu {
         let value = self.eval_latch;
         if self.eval_count < 8 {
             if !self.eval_copying {
-                let top = sprite_top(value);
+                let top = sprite_eval_top(value);
                 if (self.eval_target_y as usize) >= top
                     && (self.eval_target_y as usize) < top + height
                 {
@@ -1189,7 +1196,7 @@ impl Ppu {
         } else {
             // After eight sprites, the hardware's broken n/m walk may compare
             // tile/attribute/X bytes as though they were Y coordinates.
-            let top = sprite_top(value);
+            let top = sprite_eval_top(value);
             // After secondary OAM fills, a hit behaves like a four-byte copy
             // (m carries into n); a miss increments both n and m without carry.
             // That broken miss path makes later tile/attribute/X bytes become
@@ -1251,7 +1258,7 @@ impl Ppu {
         let target_y = if y == 261 { 0 } else { y + 1 };
         let height = if self.ctrl & 0x20 != 0 { 16usize } else { 8usize };
         let in_range = |oam_y: u8| {
-            let top = sprite_top(oam_y);
+            let top = sprite_eval_top(oam_y);
             target_y >= top && target_y < top + height
         };
 
@@ -3293,7 +3300,7 @@ mod sprite_overflow_regression_tests {
     use super::*;
 
     #[test]
-    fn oam_y_ff_is_offscreen_and_does_not_trigger_sprite_overflow() {
+    fn oam_y_ff_is_ignored_by_the_hardware_sprite_evaluator() {
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
         ppu.dot = 0;
@@ -3304,7 +3311,7 @@ mod sprite_overflow_regression_tests {
         ppu.tick(256);
 
         assert_eq!(ppu.status & 0x20, 0,
-            "OAM Y=$FF hides sprites instead of wrapping them onto scanline zero");
+            "OAM Y=$FF must not create a false-positive overflow during hardware evaluation");
     }
 
     #[test]
