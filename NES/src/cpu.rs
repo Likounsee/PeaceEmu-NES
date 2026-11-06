@@ -109,9 +109,9 @@ impl Cpu {
     pub fn set_pc(&mut self, pc: u16) { self.state.pc = pc; }
     /// Performs the hardware reset sequence and loads the reset vector at $FFFC.
     pub fn reset(&mut self, bus: &mut CpuBus) {
-        // A hardware reset does not clear A/X/Y. Cpu::new() supplies their
-        // power-on values; subsequent reset sequences must preserve the live
-        // registers while resetting P, SP and the program counter.
+        // A hardware reset preserves A/X/Y and the condition flags. It sets I
+        // (and the always-high unused bit), decrements SP through the reset bus
+        // sequence, and reloads the program counter from the reset vector.
         if !self.reset_seen {
             self.state.sp = 0;
             self.reset_seen = true;
