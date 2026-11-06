@@ -126,9 +126,9 @@ impl Cpu {
         // three stack-page reads/decrements, then the reset vector. On a
         // power-on reset the initially unspecified SP is driven to $FD; later
         // resets decrement the live stack pointer by three instead of reloading it.
-        // Keep the reset bus reads observable to mapped devices, but do not
-        // start the normal instruction clock here: CpuBus::reset establishes
-        // the PPU/APU startup epoch independently, and its CPU parity starts at 0.
+        // The reset sequence consumes seven CPU bus cycles. Keep the PPU/APU
+        // startup epoch independent, but advance the shared CPU timeline so
+        // mapper write filtering and $4017 parity match the real 2A03.
         let _ = bus.read(self.state.pc);
         let _ = bus.read(self.state.pc);
         for _ in 0..3 {
@@ -136,6 +136,9 @@ impl Cpu {
             self.state.sp = self.state.sp.wrapping_sub(1);
         }
         self.state.pc = self.read_word(bus, 0xFFFC);
+        for _ in 0..7 {
+            bus.advance_cpu_cycle();
+        }
         self.cycles = self.cycles.saturating_add(7);
     }
 
@@ -2531,3 +2534,24 @@ mod nmi_irq_poll_priority_regressions {
         assert_ne!(cpu.state.status & flags::INTERRUPT_DISABLE, 0);
     }
 }
+
+#[cfg(test)]
+mod reset_cycle_regressions {
+    use super::*;
+
+    #[test]
+    fn hardware_reset_advances_the_shared_cpu_cycle_timeline_by_seven() {
+        let mut cpu = Cpu::new();
+        let mut bus = CpuBus::new();
+
+        cpu.reset(&mut bus);
+        assert_eq!(cpu.total_cycles(), 7);
+        assert_eq!(bus.cpu_cycle, 7);
+
+        cpu.reset(&mut bus);
+        assert_eq!(cpu.total_cycles(), 14);
+        assert_eq!(bus.cpu_cycle, 14,
+            "subsequent hardware resets also consume seven shared CPU cycles");
+    }
+}
+
