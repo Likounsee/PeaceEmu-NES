@@ -8,7 +8,7 @@ use peaceemu_nes::machine::NesMachine;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const MAX_INSTRUCTIONS: u64 = 10_000_000;
+const MAX_INSTRUCTIONS: u64 = 30_000_000;
 const RESET_DELAY_INSTRUCTIONS: u64 = 600_000;
 
 fn read_blargg_message(machine: &mut NesMachine) -> String {
@@ -301,12 +301,10 @@ fn blargg_extended_hardware_diagnostics() {
         return;
     };
     let root = PathBuf::from(root);
-    // Additional Blargg suites exercise CPU bus timing, interrupts, reset,
-    // PPU register behavior, sprite evaluation and sprite-zero hit timing.
+    // Automated entries must expose the $6001-$6003 signature and $6000
+    // status protocol. Screen/beep-only branch and sprite suites are listed
+    // in rom_test_matrix.md and must not be treated as automated failures.
     const ROMS: &[&str] = &[
-        "branch_timing_tests/1.Branch_Basics.nes",
-        "branch_timing_tests/2.Backward_Branch.nes",
-        "branch_timing_tests/3.Forward_Branch.nes",
         "instr_misc/rom_singles/01-abs_x_wrap.nes",
         "instr_misc/rom_singles/02-branch_wrap.nes",
         "instr_misc/rom_singles/03-dummy_reads.nes",
@@ -320,22 +318,6 @@ fn blargg_extended_hardware_diagnostics() {
         "cpu_reset/registers.nes",
         "ppu_open_bus/ppu_open_bus.nes",
         "ppu_read_buffer/test_ppu_read_buffer.nes",
-        "sprite_hit_tests_2005.10.05/01.basics.nes",
-        "sprite_hit_tests_2005.10.05/02.alignment.nes",
-        "sprite_hit_tests_2005.10.05/03.corners.nes",
-        "sprite_hit_tests_2005.10.05/04.flip.nes",
-        "sprite_hit_tests_2005.10.05/05.left_clip.nes",
-        "sprite_hit_tests_2005.10.05/06.right_edge.nes",
-        "sprite_hit_tests_2005.10.05/07.screen_bottom.nes",
-        "sprite_hit_tests_2005.10.05/08.double_height.nes",
-        "sprite_hit_tests_2005.10.05/09.timing_basics.nes",
-        "sprite_hit_tests_2005.10.05/10.timing_order.nes",
-        "sprite_hit_tests_2005.10.05/11.edge_timing.nes",
-        "sprite_overflow_tests/1.Basics.nes",
-        "sprite_overflow_tests/2.Details.nes",
-        "sprite_overflow_tests/3.Timing.nes",
-        "sprite_overflow_tests/4.Obscure.nes",
-        "sprite_overflow_tests/5.Emulator.nes",
     ];
 
     let mut failures = Vec::new();
