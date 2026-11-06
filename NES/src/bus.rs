@@ -95,6 +95,8 @@ pub struct CpuBus {
     nmi_sample_cycle: Option<u64>,
     /// NMI sampled on an instruction's final cycle is serviced after the next instruction.
     nmi_deferred: bool,
+    /// Marks that the current instruction completed a BRK/IRQ/NMI entry sequence.
+    interrupt_entry_completed: bool,
     /// In-flight DMC transfer; one phase is serviced per elapsed CPU cycle.
     pending_dmc_dma: Option<PendingDmcDma>,
     /// Set when the most recent APU tick completed a DMC sample-memory GET.
@@ -108,7 +110,7 @@ pub struct CpuBus {
     ppu_bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096) } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -138,6 +140,7 @@ impl CpuBus {
         self.nmi_pending = false;
         self.nmi_sample_cycle = None;
         self.nmi_deferred = false;
+        self.interrupt_entry_completed = false;
         self.dmc_dma_get_occurred = false;
         #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
         self.bus_trace.clear();
@@ -646,10 +649,26 @@ impl CpuBus {
         pending
     }
 
+    /// Marks completion of a BRK, IRQ, or NMI bus-entry sequence.
+    ///
+    /// A new NMI edge sampled during interrupt entry is held until the first
+    /// handler instruction has executed. BRK/IRQ vector hijacking is handled
+    /// separately by the CPU while the vector bytes are being fetched.
+    pub(crate) fn mark_interrupt_entry_completed(&mut self) {
+        self.interrupt_entry_completed = true;
+    }
+
     /// Applies the 2A03 interrupt poll after the instruction's final CPU cycle.
     /// An edge sampled on that final cycle is not recognized until one instruction later.
     pub(crate) fn finish_cpu_instruction(&mut self) {
-        if self.nmi_deferred {
+        if self.interrupt_entry_completed {
+            self.interrupt_entry_completed = false;
+            if self.nmi_pending {
+                self.nmi_pending = false;
+                self.nmi_sample_cycle = None;
+                self.nmi_deferred = true;
+            }
+        } else if self.nmi_deferred {
             self.nmi_deferred = false;
             self.nmi_pending = true;
             self.nmi_sample_cycle = None;
