@@ -226,7 +226,11 @@ impl Ppu {
         let value = match register & 7 {
             2 => {
                 driven_mask = 0xE0;
-                self.record_timing_event("STATUS_READ");
+                if (self.scanline == 241 && self.dot <= 30)
+                    || (self.scanline == 261 && self.dot <= 3)
+                {
+                    self.record_timing_event("STATUS_READ");
+                }
                 let mut value = (self.status & 0xE0) | (self.open_bus & 0x1F);
                 // The vblank flag is set at scanline 241 dot 1. A $2002 read
                 // on dot 0 suppresses that event; a read on dot 1 races the set
@@ -258,7 +262,11 @@ impl Ppu {
                 self.vblank_clear_race = false;
                 self.update_nmi_line();
                 self.write_latch = false;
-                self.record_timing_event("STATUS_READ_COMPLETE");
+                if (self.scanline == 241 && self.dot <= 30)
+                    || (self.scanline == 261 && self.dot <= 3)
+                {
+                    self.record_timing_event("STATUS_READ_COMPLETE");
+                }
                 value
             }
             4 => {
