@@ -1746,7 +1746,6 @@ mod tests {
         assert_eq!(ppu.v, 0x2000);
     }
 
-    #[test]
     fn ppu_io_latch_decays_high_bits_after_about_600ms() {
         let mut ppu = Ppu::new();
         ppu.cpu_write_register(0, 0xFF, None);
@@ -1774,6 +1773,7 @@ mod tests {
             "the undriven low bits must decay independently");
     }
 
+    #[test]
     fn status_read_returns_open_bus_low_bits_and_resets_scroll_latch() {
         let mut ppu = Ppu::new();
         ppu.cpu_write_register(0, 0x1B, None);
