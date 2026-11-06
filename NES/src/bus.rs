@@ -612,7 +612,7 @@ impl CpuBus {
         // 2A03 samples the input. Reads on the actual suppression dots clear the
         // PPU latch in cpu_read_register(), before this point is reached.
         let edge = self.ppu.take_nmi_request();
-        let captured_edge = edge && self.ppu.nmi_line() && !self.nmi_pending && !self.nmi_deferred;
+        let captured_edge = edge && !self.nmi_pending && !self.nmi_deferred;
         if captured_edge {
             self.nmi_pending = true;
             self.nmi_sample_cycle = Some(self.cpu_cycle);
