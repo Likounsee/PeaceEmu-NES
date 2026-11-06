@@ -1747,6 +1747,33 @@ mod tests {
     }
 
     #[test]
+    fn ppu_io_latch_decays_high_bits_after_about_600ms() {
+        let mut ppu = Ppu::new();
+        ppu.cpu_write_register(0, 0xFF, None);
+        ppu.ppu_cycle = PPU_IO_LATCH_DECAY_DOTS - 1;
+
+        assert_eq!(ppu.cpu_read_register(1, None), 0xFF,
+            "write-only register reads must preserve the still-charged I/O latch");
+        ppu.ppu_cycle += 1;
+        assert_eq!(ppu.cpu_read_register(1, None), 0,
+            "an unrefreshed high bit must decay after the hardware interval");
+    }
+
+    #[test]
+    fn status_reads_refresh_only_the_three_driven_high_bits() {
+        let mut ppu = Ppu::new();
+        ppu.cpu_write_register(0, 0xFF, None);
+        ppu.status = 0;
+        ppu.ppu_cycle = PPU_IO_LATCH_DECAY_DOTS - 1;
+
+        assert_eq!(ppu.cpu_read_register(2, None) & 0xE0, 0);
+        assert_eq!(ppu.open_bus & 0x1F, 0x1F,
+            "the five undriven low bits retain their prior charge");
+        ppu.ppu_cycle += 1;
+        assert_eq!(ppu.cpu_read_register(1, None), 0,
+            "the undriven low bits must decay independently");
+    }
+
     fn status_read_returns_open_bus_low_bits_and_resets_scroll_latch() {
         let mut ppu = Ppu::new();
         ppu.cpu_write_register(0, 0x1B, None);
