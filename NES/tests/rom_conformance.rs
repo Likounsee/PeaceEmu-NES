@@ -172,6 +172,27 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 let cpu_debug = if path.to_string_lossy().contains("cpu_interrupts_v2") {
                     let state = machine.cpu_state();
                     // Captured before reading the Blargg message above.
+                    let ppu_nmi_events = machine.ppu_timing_events()
+                        .into_iter()
+                        .filter(|event| matches!(
+                            event.kind,
+                            "PPUCTRL_WRITE" | "VBLANK_SET" | "VBLANK_SET_SUPPRESSED"
+                                | "VBLANK_CLEAR" | "NMI_RISE" | "NMI_FALL"
+                                | "STATUS_READ" | "CPU_NMI_SAMPLE" | "CPU_NMI_CAPTURE"
+                        ))
+                        .rev()
+                        .take(512)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .map(|event| format!(
+                            "ppu_cycle={} beam={}:{} {} status=${:02X} ctrl=${:02X} nmi_line={} nmi_pending={} delay={} suppress={}",
+                            event.cycle, event.scanline, event.dot, event.kind,
+                            event.status, event.ctrl, event.nmi_line, event.nmi_pending,
+                            event.nmi_vblank_delay, event.suppress_vblank
+                        ))
+                        .collect::<Vec<_>>()
+                        .join("\\n");
                     let zero_page = (0x10u16..0x80)
                         .map(|address| format!("{:02X}", machine.read_cpu(address)))
                         .collect::<Vec<_>>()
@@ -188,7 +209,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                         .collect::<Vec<_>>()
                         .join("\\n");
                     format!(
-                        "\\nCPU debug: state={state:?} cycles={}\\nZP $10-$7F: {zero_page}\\nRecent CPU bus/IRQ trace:\\n{irq_bus_trace}\\nNametable $2000:\\n{screen}",
+                        "\\nCPU debug: state={state:?} cycles={}\\nZP $10-$7F: {zero_page}\\nRecent CPU bus/IRQ trace:\\n{irq_bus_trace}\\nRecent PPU NMI timing events:\\n{ppu_nmi_events}\\nNametable $2000:\\n{screen}",
                         machine.total_cycles()
                     )
                 } else {
