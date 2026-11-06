@@ -1093,7 +1093,7 @@ mod tests {
     fn cli_then_plp_uses_the_pre_plp_i_sample_without_a_second_delay() {
         let (mut cpu, mut bus) = setup(&[0x58, 0x28, 0xEA]); // CLI; PLP; NOP
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16 + 0x3FFE] = 0x00;
         image[16 + 0x3FFF] = 0x07;
@@ -1462,8 +1462,8 @@ mod tests {
         assert_eq!(cpu.state().a, 0x12, "hardware reset must preserve A");
         assert_eq!(cpu.state().x, 0x34, "hardware reset must preserve X");
         assert_eq!(cpu.state().y, 0x56, "hardware reset must preserve Y");
-        assert_eq!(cpu.state().status, flags::INTERRUPT_DISABLE | flags::UNUSED,
-            "hardware reset must set I and normalize the unused status bit");
+        assert_eq!(cpu.state().status, flags::CARRY | flags::ZERO | flags::INTERRUPT_DISABLE | flags::UNUSED,
+            "hardware reset must preserve condition flags while setting I");
         assert_eq!(cpu.state().sp, 0x7D, "soft reset must decrement the existing SP three times");
         assert_eq!(cpu.total_cycles(), 14);
         assert_eq!(bus.ppu_position(), (261, 0));
