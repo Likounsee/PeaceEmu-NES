@@ -2396,3 +2396,38 @@ mod irq_poll_sample_regressions {
     }
 }
 
+
+
+#[cfg(test)]
+mod mmc3_ppudata_irq_regressions {
+    use super::*;
+
+    #[test]
+    fn ppudata_read_increment_can_clock_mmc3_a12_irq() {
+        let mut image = vec![0; 16 + 2 * 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 2;
+        image[5] = 1;
+        image[6] = 0x40; // MMC3 / mapper 4.
+
+        let cartridge = Cartridge::parse(&image).unwrap();
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(cartridge);
+        bus.write(0xC000, 0); // IRQ latch = 0.
+        bus.write(0xC001, 0); // Reload on the next qualified A12 edge.
+        bus.write(0xE001, 0); // Enable IRQs.
+
+        // Start at $0FFF: the first PPUDATA read sees A12 low, then the
+        // automatic VRAM increment moves the next read to $1000.
+        bus.write(0x2006, 0x0F);
+        bus.write(0x2006, 0xFF);
+        bus.tick_ppu(8);
+
+        let _ = bus.read(0x2007); // $0FFF, low A12.
+        assert!(!bus.irq_pending(), "the low-address read must not clock MMC3");
+
+        let _ = bus.read(0x2007); // $1000, rising A12 after eight low dots.
+        assert!(bus.irq_pending(),
+            "the PPUDATA read's $0FFF->$1000 increment must publish the qualified A12 edge");
+    }
+}
