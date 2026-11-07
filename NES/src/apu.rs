@@ -176,8 +176,13 @@ impl Apu {
     pub fn reset(&mut self) {
         let sample_rate = self.sample_rate;
         let frame_counter = self.registers[0x17];
+        // The triangle linear-counter control register is not cleared by the
+        // 2A03 reset sequence. In particular, its control/halt bit continues
+        // to inhibit triangle length-counter clocks across a console reset.
+        let triangle_control = self.registers[0x08];
         *self = Self::default();
         let _ = self.set_sample_rate(sample_rate);
+        self.registers[0x08] = triangle_control;
         self.registers[0x17] = frame_counter;
         self.five_step_mode = frame_counter & 0x80 != 0;
         self.frame_irq_inhibit = frame_counter & 0x40 != 0;
@@ -2348,11 +2353,14 @@ mod dmc_disable_output_regressions {
         apu.tick_cpu_cycles(4);
         apu.write(0x4015, 0x0F);
         apu.write(0x4003, 0xF8);
+        apu.write(0x4008, 0xFF);
         apu.frame_irq = true;
 
         apu.reset();
 
         assert_eq!(apu.sample_rate(), 48_000);
+        assert_eq!(apu.registers[0x08], 0xFF,
+            "reset must preserve the triangle linear-counter control register");
         assert_eq!(apu.registers[0x17], 0x80);
         assert!(apu.five_step_mode, "reset must replay the last $4017 mode");
         assert_eq!(apu.enabled_channels, 0, "$4015 is cleared on reset");
