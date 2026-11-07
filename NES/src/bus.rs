@@ -83,6 +83,8 @@ pub struct CpuBus {
     instruction_bus_cycles: u16,
     /// IRQ level sampled for the next instruction, with branch-specific timing.
     irq_poll_sample: Option<bool>,
+    /// A taken branch polls IRQ one cycle before its final dummy read.
+    irq_poll_freeze_next_cycle: bool,
     /// Absolute CPU-cycle timeline shared with cycle-sensitive cartridge mappers.
     cpu_cycle: u64,
     /// Address retained on the CPU bus while DMA suspends the processor.
@@ -110,7 +112,7 @@ pub struct CpuBus {
     ppu_bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096) } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, irq_poll_freeze_next_cycle: false, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -140,6 +142,8 @@ impl CpuBus {
         self.ppu_bus_phase = 0;
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
+        self.irq_poll_sample = None;
+        self.irq_poll_freeze_next_cycle = false;
         self.pending_dmc_dma = None;
         self.nmi_pending = false;
         self.nmi_sample_cycle = None;
@@ -193,6 +197,7 @@ impl CpuBus {
         self.instruction_timing = true;
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
+        self.irq_poll_freeze_next_cycle = false;
     }
 
     /// Stops bus-cycle tracking and returns cycles already advanced through PPU dots.
@@ -261,9 +266,6 @@ impl CpuBus {
     /// Advances the PPU to the sampling point of the current CPU bus access.
     fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool, ppu_dots_before_access: u32) {
         if self.instruction_timing {
-            // At the start of the final bus access, the penultimate CPU cycle
-            // has just completed; retain that IRQ level for the next poll.
-            self.irq_poll_sample = Some(self.irq_pending());
             self.instruction_bus_cycles = self.instruction_bus_cycles.saturating_add(1);
             self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
             // Clock the APU in the same order as CPU bus accesses. In particular,
@@ -272,6 +274,13 @@ impl CpuBus {
             // Clock the PPU to the CPU bus-access point.
             self.tick_ppu(ppu_dots_before_access);
             let dmc_stalls = self.tick_apu_with_dma_access(1, dmc_dma_can_halt);
+            // Normal instructions poll IRQ at the end of their final CPU cycle.
+            // Taken branches can freeze this sample on their penultimate cycle.
+            if self.irq_poll_freeze_next_cycle {
+                self.irq_poll_freeze_next_cycle = false;
+            } else {
+                self.irq_poll_sample = Some(self.irq_pending());
+            }
             self.instruction_dmc_stalls = self.instruction_dmc_stalls.saturating_add(dmc_stalls);
 
             // A DMC halt suspends the CPU at this exact readable bus access.
@@ -625,7 +634,15 @@ impl CpuBus {
     pub fn irq_pending(&self) -> bool { self.apu.irq_pending() || self.cartridge.as_ref().is_some_and(Cartridge::irq_pending) }
     #[cfg(test)]
     pub(crate) fn cpu_cycle(&self) -> u64 { self.cpu_cycle }
-    /// Returns the IRQ level captured at the CPU's penultimate-cycle poll point.
+    /// Preserves the IRQ sample from the preceding cycle across the next bus cycle.
+    /// Taken branches poll on their penultimate cycle, unlike ordinary instructions.
+    pub(crate) fn freeze_irq_poll_sample_for_next_cycle(&mut self) {
+        if self.instruction_timing {
+            self.irq_poll_freeze_next_cycle = true;
+        }
+    }
+
+    /// Returns the IRQ level captured at the instruction-specific CPU poll point.
     pub(crate) fn irq_pending_at_cpu_poll(&self) -> bool {
         self.irq_poll_sample.unwrap_or_else(|| self.irq_pending())
     }
