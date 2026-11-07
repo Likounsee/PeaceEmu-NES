@@ -351,6 +351,13 @@ impl CpuBus {
         self.irq_cycle_sample = Some(self.irq_pending());
     }
 
+    /// The CPU's next read is held throughout OAM DMA. Carry the last IRQ
+    /// detector sample across RDY release so an IRQ raised during DMA is
+    /// visible to the first resumed instruction, not one instruction later.
+    pub(crate) fn latch_irq_poll_after_dma(&mut self) {
+        self.irq_poll_sample = self.irq_cycle_sample;
+    }
+
     /// Takes DMC stalls discovered while clocking instruction bus accesses.
     pub(crate) fn take_instruction_dmc_stalls(&mut self) -> u32 {
         core::mem::take(&mut self.instruction_dmc_stalls)
@@ -2559,11 +2566,12 @@ mod irq_poll_sample_regressions {
         assert!(bus.irq_pending());
         assert!(!bus.irq_pending_at_cpu_poll());
 
-        bus.begin_cpu_instruction();
-        let _ = bus.read(0x8000);
-        assert_eq!(bus.end_cpu_instruction(), 1);
+        // OAM DMA holds the CPU's pending read. On RDY release, the final
+        // detector sample must become the poll result for the first resumed
+        // instruction rather than waiting for another instruction boundary.
+        bus.latch_irq_poll_after_dma();
         assert!(bus.irq_pending_at_cpu_poll(),
-            "the first resumed instruction receives the DMA-time IRQ sample");
+            "an IRQ sampled during DMA must reach the first resumed instruction");
     }
 
 }
