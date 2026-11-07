@@ -1295,7 +1295,7 @@ impl Mmc3 {
     /// Observes the PPU address bus for MMC3's filtered A12 rising-edge IRQ clock.
     ///
     /// MMC3 clocks on a rising A12 edge only after the line has remained low
-    /// for at least eight PPU dots. Keep this in the PPU clock domain: CPU
+    /// for at least ten PPU dots. Keep this in the PPU clock domain: CPU
     /// register writes ($2006/$2007) can change the external address bus between
     /// M2 samples and must retain their exact dot timestamps.
     pub fn observe_ppu_address(&mut self, address: u16, ppu_cycle: u64) {
@@ -1323,7 +1323,7 @@ impl Mmc3 {
             let low_dots = self.a12_low_since_ppu_cycle
                 .map(|start| ppu_cycle.saturating_sub(start))
                 .unwrap_or(0);
-            if low_dots >= 8 {
+            if low_dots >= 10 {
                 self.clock_irq_counter();
             }
         }
@@ -3302,7 +3302,7 @@ mod mmc3_tests {
     
 
     #[test]
-    fn mapper_4_a12_irq_requires_eight_ppu_dots_low_and_only_clocks_on_rising_edges() {
+    fn mapper_4_a12_irq_requires_ten_ppu_dots_low_and_only_clocks_on_rising_edges() {
         let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
         cart.cpu_write(0xC000, 0);
         cart.cpu_write(0xC001, 0);
@@ -3310,26 +3310,26 @@ mod mmc3_tests {
 
         cart.observe_ppu_address(0x0000, 0);
         cart.observe_ppu_address(0x1000, 7);
-        assert!(!cart.irq_pending(), "seven PPU dots are below the eight-dot filter");
+        assert!(!cart.irq_pending(), "seven PPU dots are below the ten-dot filter");
 
         cart.observe_ppu_address(0x0000, 8);
-        cart.observe_ppu_address(0x1000, 16);
+        cart.observe_ppu_address(0x1000, 18);
         assert!(cart.irq_pending(), "eight PPU dots qualify an A12 rising edge");
 
         cart.cpu_write(0xE000, 0);
         cart.cpu_write(0xC000, 1);
         cart.cpu_write(0xC001, 0);
         cart.cpu_write(0xE001, 0);
-        cart.observe_ppu_address(0x1000, 17);
+        cart.observe_ppu_address(0x1000, 19);
         assert!(!cart.irq_pending(), "a continuously high A12 line has no second rising edge");
-        cart.observe_ppu_address(0x0000, 18);
-        cart.observe_ppu_address(0x1000, 25);
+        cart.observe_ppu_address(0x0000, 20);
+        cart.observe_ppu_address(0x1000, 27);
         assert!(!cart.irq_pending(), "a fresh seven-dot low interval remains filtered");
-        cart.observe_ppu_address(0x0000, 26);
-        cart.observe_ppu_address(0x1000, 34);
+        cart.observe_ppu_address(0x0000, 28);
+        cart.observe_ppu_address(0x1000, 38);
         assert!(!cart.irq_pending(), "first qualified edge reloads the nonzero latch");
-        cart.observe_ppu_address(0x0000, 35);
-        cart.observe_ppu_address(0x1000, 43);
+        cart.observe_ppu_address(0x0000, 39);
+        cart.observe_ppu_address(0x1000, 49);
         assert!(cart.irq_pending(), "second qualified edge clocks the counter to zero");
     }
 
@@ -3357,7 +3357,7 @@ mod mmc3_tests {
         cart.cpu_write(0xE001, 0);
 
         // Two sampled low M2 edges are insufficient, even if the PPU-dot
-        // interval happens to span eight dots.
+        // interval happens to span ten dots.
         cart.observe_ppu_address_at_cpu_cycle(0x0000, 100, 0);
         cart.observe_ppu_address_at_cpu_cycle(0x0000, 103, 1);
         cart.observe_ppu_address_at_cpu_cycle(0x1000, 108, 2);
@@ -3394,7 +3394,7 @@ mod mmc3_tests {
         cart.observe_ppu_address(0x1000, 124);
         assert!(!cart.irq_pending(), "seven elapsed low dots are below the filter");
         cart.observe_ppu_address(0x0000, 125);
-        cart.observe_ppu_address(0x1000, 133);
+        cart.observe_ppu_address(0x1000, 135);
         assert!(cart.irq_pending(), "eight elapsed low dots qualify the next rising edge");
     }
 
@@ -3412,8 +3412,8 @@ mod mmc3_tests {
         cart.observe_ppu_address(0x1000, 67);
         assert!(!cart.irq_pending(), "seven PPU dots are below the filter");
         cart.observe_ppu_address(0x0000, 68);
-        cart.observe_ppu_address(0x1000, 76);
-        assert!(cart.irq_pending(), "a subsequent eight-dot interval clocks IRQ");
+        cart.observe_ppu_address(0x1000, 78);
+        assert!(cart.irq_pending(), "a subsequent ten-dot interval clocks IRQ");
     }
 
     #[test]
@@ -3423,11 +3423,11 @@ mod mmc3_tests {
         cart.cpu_write(0xC001, 0);
         cart.observe_ppu_address(0x0000, 0);
         cart.observe_ppu_address(0x1000, 7);
-        assert!(!cart.irq_pending(), "seven PPU dots do not meet the eight-dot filter");
+        assert!(!cart.irq_pending(), "seven PPU dots do not meet the ten-dot filter");
 
         cart.cpu_write(0xE001, 0);
         cart.observe_ppu_address(0x0000, 8);
-        cart.observe_ppu_address(0x1000, 16);
+        cart.observe_ppu_address(0x1000, 18);
         assert!(cart.irq_pending(), "a subsequent qualified edge clocks the enabled counter");
     }
 
@@ -3543,7 +3543,7 @@ mod mmc3_tests {
     }
 
     #[test]
-    fn mapper_4_irq_a12_filter_requires_eight_ppu_dots_low() {
+    fn mapper_4_irq_a12_filter_requires_ten_ppu_dots_low() {
         let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
         cart.cpu_write(0xC000, 1);
         cart.cpu_write(0xC001, 0);
@@ -3554,10 +3554,10 @@ mod mmc3_tests {
         assert!(!cart.irq_pending(), "seven-dot A12-low pulse must be filtered");
 
         cart.observe_ppu_address(0x0000, 8);
-        cart.observe_ppu_address(0x1000, 16);
+        cart.observe_ppu_address(0x1000, 18);
         assert!(!cart.irq_pending(), "first qualified edge reloads latch value 1");
-        cart.observe_ppu_address(0x0000, 17);
-        cart.observe_ppu_address(0x1000, 25);
+        cart.observe_ppu_address(0x0000, 19);
+        cart.observe_ppu_address(0x1000, 29);
         assert!(cart.irq_pending(), "second qualified edge decrements counter to zero");
     }
 
@@ -3569,7 +3569,7 @@ mod mmc3_tests {
         cart.cpu_write(0xE001, 0);
 
         cart.observe_ppu_address(0x0000, 0);
-        cart.observe_ppu_address(0x1000, 8);
+        cart.observe_ppu_address(0x1000, 10);
         assert!(cart.irq_pending());
 
         cart.cpu_write(0xE000, 0);
@@ -3577,8 +3577,8 @@ mod mmc3_tests {
         cart.cpu_write(0xE001, 0);
         assert!(!cart.irq_pending(), "enabling IRQ must not immediately restore the old pending state");
 
-        cart.observe_ppu_address(0x0000, 9);
-        cart.observe_ppu_address(0x1000, 17);
+        cart.observe_ppu_address(0x0000, 11);
+        cart.observe_ppu_address(0x1000, 21);
         assert!(cart.irq_pending(), "a new qualified A12 edge may assert IRQ again");
     }
 
@@ -3596,7 +3596,7 @@ mod mmc3_tests {
         assert!(!cart.irq_pending(), "A12-high reset sample must not start a low interval");
 
         cart.observe_ppu_address(0x0000, 8);
-        cart.observe_ppu_address(0x1000, 16); // Now eight full low dots.
+        cart.observe_ppu_address(0x1000, 18); // Now eight full low dots.
         assert!(cart.irq_pending());
     }
 
@@ -3607,15 +3607,15 @@ mod mmc3_tests {
         cart.cpu_write(0xC001, 0);
         cart.cpu_write(0xE001, 0);
         cart.observe_ppu_address(0x0000, 100);
-        cart.observe_ppu_address(0x1000, 108);
+        cart.observe_ppu_address(0x1000, 110);
         assert!(cart.irq_pending());
 
         cart.cpu_write(0xE000, 0);
-        cart.observe_ppu_address(0x0000, 0);
-        cart.observe_ppu_address(0x1000, 7);
+        cart.observe_ppu_address(2x0000, 0);
+        cart.observe_ppu_address(0x1000, 9);
         assert!(!cart.irq_pending(), "backwards timestamp must not fabricate an A12 edge");
-        cart.observe_ppu_address(0x0000, 8);
-        cart.observe_ppu_address(0x1000, 15);
+        cart.observe_ppu_address(0x0000, 10);
+        cart.observe_ppu_address(0x1000, 17);
         assert!(!cart.irq_pending(), "IRQ remains disabled after reset");
     }
 
@@ -4288,19 +4288,19 @@ mod mmc3_chr_layout_regression_tests {
         cart.cpu_write(0xC001, 0);
         cart.cpu_write(0xE001, 0);
         cart.observe_ppu_address(0x0000, 10);
-        cart.observe_ppu_address(0x1000, 19);
+        cart.observe_ppu_address(0x1000, 20);
         assert!(!cart.irq_pending());
-        cart.observe_ppu_address(0x0000, 20);
-        cart.observe_ppu_address(0x1000, 29);
+        cart.observe_ppu_address(0x0000, 21);
+        cart.observe_ppu_address(0x1000, 31);
         assert!(cart.irq_pending());
         cart.cpu_write(0xE000, 0);
         assert!(!cart.irq_pending());
         cart.cpu_write(0xE001, 0);
-        cart.observe_ppu_address(0x0000, 30);
-        cart.observe_ppu_address(0x1000, 39); // Reloads latch to 1.
+        cart.observe_ppu_address(0x0000, 32);
+        cart.observe_ppu_address(0x1000, 42); // Reloads latch to 1.
         assert!(!cart.irq_pending());
-        cart.observe_ppu_address(0x0000, 40);
-        cart.observe_ppu_address(0x1000, 49); // Decrements to zero again.
+        cart.observe_ppu_address(0x0000, 43);
+        cart.observe_ppu_address(0x1000, 53); // Decrements to zero again.
         assert!(cart.irq_pending());
     }
 
@@ -5199,7 +5199,7 @@ mod mmc3_nes2_tests {
         cart.cpu_write(0xC001, 0);
         cart.cpu_write(0xE001, 0);
         cart.observe_ppu_address(0x0000, 10);
-        cart.observe_ppu_address(0x1000, 19);
+        cart.observe_ppu_address(0x1000, 20);
         assert!(cart.irq_pending());
     }
 
@@ -5448,7 +5448,7 @@ mod mmc3_a12_exact_boundary_regressions {
     }
 
     #[test]
-    fn a12_filter_rejects_seven_ppu_dots_and_accepts_eight() {
+    fn a12_filter_rejects_nine_ppu_dots_and_accepts_ten() {
         let mut cart = Cartridge::parse(&boundary_test_image()).unwrap();
         cart.cpu_write(0xC000, 0);
         cart.cpu_write(0xC001, 0);
@@ -5459,7 +5459,7 @@ mod mmc3_a12_exact_boundary_regressions {
         assert!(!cart.irq_pending(), "seven PPU dots must not clock MMC3 IRQ");
 
         cart.observe_ppu_address(0x0000, 18);
-        cart.observe_ppu_address(0x1000, 26);
+        cart.observe_ppu_address(0x1000, 28);
         assert!(cart.irq_pending(), "eight PPU dots must clock MMC3 IRQ");
     }
 }
@@ -5485,11 +5485,11 @@ mod mmc3_irq_counter_sequence_regressions {
         cart.cpu_write(0xE001, 0);
 
         cart.observe_ppu_address(0x0000, 10);
-        cart.observe_ppu_address(0x1000, 19); // Reload counter with latch 1.
+        cart.observe_ppu_address(0x1000, 20); // Reload counter with latch 1.
         assert!(!cart.irq_pending());
 
-        cart.observe_ppu_address(0x0000, 20);
-        cart.observe_ppu_address(0x1000, 29); // Decrement 1 -> 0.
+        cart.observe_ppu_address(0x0000, 21);
+        cart.observe_ppu_address(0x1000, 31); // Decrement 1 -> 0.
         assert!(cart.irq_pending(), "the IRQ asserts when the counter decrements to zero");
     }
 }
@@ -5514,20 +5514,20 @@ mod mmc3_irq_reload_command_regressions {
         cart.cpu_write(0xE001, 0);
 
         cart.observe_ppu_address(0x0000, 0);
-        cart.observe_ppu_address(0x1000, 9);
+        cart.observe_ppu_address(0x1000, 10);
         assert!(!cart.irq_pending(), "initial qualified edge loads latch 2");
 
         cart.cpu_write(0xC001, 0); // Request counter reload on the next qualified edge.
-        cart.observe_ppu_address(0x0000, 10);
-        cart.observe_ppu_address(0x1000, 19);
+        cart.observe_ppu_address(0x0000, 11);
+        cart.observe_ppu_address(0x1000, 21);
         assert!(!cart.irq_pending(), "reload command must not assert IRQ prematurely");
 
-        cart.observe_ppu_address(0x0000, 20);
-        cart.observe_ppu_address(0x1000, 29);
+        cart.observe_ppu_address(0x0000, 22);
+        cart.observe_ppu_address(0x1000, 32);
         assert!(!cart.irq_pending(), "counter decrements from 2 to 1");
 
-        cart.observe_ppu_address(0x0000, 30);
-        cart.observe_ppu_address(0x1000, 39);
+        cart.observe_ppu_address(0x0000, 33);
+        cart.observe_ppu_address(0x1000, 43);
         assert!(cart.irq_pending(), "IRQ asserts only when the counter reaches zero");
     }
 }
@@ -5558,11 +5558,11 @@ mod mmc3_filtered_reload_regressions {
         assert!(!cart.irq_pending(), "a seven-dot low interval is filtered");
 
         cart.observe_ppu_address(0x0000, 8);
-        cart.observe_ppu_address(0x1000, 16);
+        cart.observe_ppu_address(0x1000, 18);
         assert!(!cart.irq_pending(), "the first qualified edge reloads the latch to one");
 
-        cart.observe_ppu_address(0x0000, 17);
-        cart.observe_ppu_address(0x1000, 25);
+        cart.observe_ppu_address(0x0000, 19);
+        cart.observe_ppu_address(0x1000, 29);
         assert!(cart.irq_pending(), "only the next qualified edge decrements one to zero");
     }
 }
@@ -5588,7 +5588,7 @@ mod mmc3_repeated_a12_level_regressions {
         cart.cpu_write(0xE001, 0);
 
         cart.observe_ppu_address(0x0000, 0);
-        cart.observe_ppu_address(0x1000, 8);
+        cart.observe_ppu_address(0x1000, 10);
         assert!(cart.irq_pending());
 
         cart.cpu_write(0xE000, 0); // Acknowledge.
@@ -5598,8 +5598,8 @@ mod mmc3_repeated_a12_level_regressions {
         }
         assert!(!cart.irq_pending(), "a sustained high level is not another rising edge");
 
-        cart.observe_ppu_address(0x0000, 41);
-        cart.observe_ppu_address(0x1000, 49);
+        cart.observe_ppu_address(0x0000, 43);
+        cart.observe_ppu_address(0x1000, 53);
         assert!(cart.irq_pending(), "a later qualified low-to-high edge can assert IRQ again");
     }
 }
@@ -5623,12 +5623,12 @@ mod mmc3_irq_disable_edge_regressions {
         cart.cpu_write(0xC000, 1); // Latch = 1.
         cart.cpu_write(0xC001, 0);
         cart.observe_ppu_address(0x0000, 0);
-        cart.observe_ppu_address(0x1000, 9); // Counter loads 1 while IRQ is disabled.
+        cart.observe_ppu_address(0x1000, 10); // Counter loads 1 while IRQ is disabled.
         assert!(!cart.irq_pending());
 
         cart.cpu_write(0xE001, 0);
-        cart.observe_ppu_address(0x0000, 10);
-        cart.observe_ppu_address(0x1000, 19); // Qualified edge decrements 1 -> 0.
+        cart.observe_ppu_address(0x0000, 11);
+        cart.observe_ppu_address(0x1000, 21); // Qualified edge decrements 1 -> 0.
         assert!(cart.irq_pending(), "enabling IRQ must expose the next real counter-zero event");
     }
 }
@@ -6295,7 +6295,7 @@ mod mmc3_a12_high_pulse_regressions {
     use super::*;
 
     #[test]
-    fn even_a_short_high_pulse_restarts_the_eight_dot_low_filter() {
+    fn even_a_short_high_pulse_restarts_the_ten_dot_low_filter() {
         let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 2;
@@ -6320,7 +6320,7 @@ mod mmc3_a12_high_pulse_regressions {
 
         // Only a continuous eight-dot low interval may clock the IRQ counter.
         cart.observe_ppu_address(0x0000, 8);
-        cart.observe_ppu_address(0x1000, 16);
+        cart.observe_ppu_address(0x1000, 18);
         assert!(cart.irq_pending());
     }
 }
