@@ -11,7 +11,7 @@ const CHR_BANK_LEN: usize = 8 * 1024;
 const PRG_RAM_LEN: usize = 8 * 1024;
 
 /// Cartridge nametable mirroring mode.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Mirroring {
     /// Horizontal mirroring.
     Horizontal,
@@ -47,7 +47,7 @@ fn nes2_ram_size(shift: u8) -> usize {
 }
 
 /// Parsed NROM cartridge.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Nrom {
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
