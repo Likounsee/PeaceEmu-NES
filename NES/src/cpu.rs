@@ -799,7 +799,7 @@ mod tests {
             bus.write(0x0600 + offset as u16, value);
         }
         bus.write(0x4017, 0x00);
-        bus.tick_apu(29_828);
+        bus.tick_apu(29_829);
         let mut cpu = Cpu::new();
         cpu.set_pc(0x0600);
         cpu.state.status &= !flags::INTERRUPT_DISABLE;
@@ -824,7 +824,7 @@ mod tests {
         bus.write(0x0601, 0x00);
         bus.write(0x0602, 0xEA); // This instruction must execute before IRQ entry.
         bus.write(0x4017, 0x00);
-        bus.tick_apu(29_830);
+        bus.tick_apu(29_829);
         let mut cpu = Cpu::new();
         cpu.set_pc(0x0600);
         cpu.state.status &= !flags::INTERRUPT_DISABLE;
@@ -852,7 +852,7 @@ mod tests {
         bus.write(0x06FE, 0x02);
         bus.write(0x0701, 0xEA);
         bus.write(0x4017, 0x00);
-        bus.tick_apu(29_829);
+        bus.tick_apu(29_828);
         let mut cpu = Cpu::new();
         cpu.set_pc(0x06FD);
         cpu.state.status &= !flags::INTERRUPT_DISABLE;
