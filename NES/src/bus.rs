@@ -10,6 +10,7 @@ fn tick_ppu_with_cpu_cycles(bus: &mut CpuBus, dots: u32) {
     let full_cycles = dots / 3;
     for _ in 0..full_cycles {
         bus.advance_cpu_cycle();
+        bus.tick_ppu(3);
         bus.finish_cpu_cycle();
     }
     let remainder = dots % 3;
