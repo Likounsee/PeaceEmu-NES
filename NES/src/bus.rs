@@ -1123,7 +1123,9 @@ mod tests {
         bus.write(0x2001, 0x08); // Enable background rendering.
 
         tick_ppu_with_cpu_cycles(&mut bus, 5); // Drive the initial background-pattern A12 pulse.
-        bus.advance_cpu_cycle(); // Ensure MMC3 samples that high level before the low interval.
+        bus.advance_cpu_cycle();
+        bus.tick_ppu(3);
+        bus.finish_cpu_cycle(); // Ensure MMC3 samples that high level before the low interval.
         assert!(!bus.irq_pending());
         bus.write(0xE001, 0); // Enable IRQ after the initial bus transition.
 
@@ -1131,14 +1133,15 @@ mod tests {
         tick_ppu_with_cpu_cycles(&mut bus, 7);
         bus.write(0x2001, 0x08); // Next high edge after seven low PPU dots: filtered.
         bus.tick_ppu(1);
-        bus.advance_cpu_cycle(); // Sample the line at the next M2 falling edge.
+        bus.advance_cpu_cycle();
+        bus.tick_ppu(2);
+        bus.finish_cpu_cycle(); // Sample the line at the next M2 falling edge.
         assert!(!bus.irq_pending(), "the bus must forward and filter a seven-dot A12 interval");
 
         bus.write(0x2001, 0); // Start another low interval after the short pulse.
         tick_ppu_with_cpu_cycles(&mut bus, 12);
         bus.write(0x2001, 0x08); // Re-enable the pattern table after the low filter interval.
         tick_ppu_with_cpu_cycles(&mut bus, 6); // Advance through the next pattern-table fetch.
-        bus.advance_cpu_cycle(); // Sample the resulting A12 level at M2.
         assert!(bus.irq_pending(),
             "the PPU IRQ must propagate through CpuBus to the CPU IRQ line; cpu_cycle={}, ppu_position={:?}, A12 trace={:?}",
             bus.cpu_cycle, bus.ppu_position(), bus.mapper_a12_trace);
@@ -1662,7 +1665,9 @@ mod mmc3_ppu_irq_integration_regressions {
         bus.write(0x2006, 0x10);
         bus.write(0x2006, 0x00);
         let _ = bus.read_dmc_dma_source(0x2007);
-        bus.advance_cpu_cycle(); // The PPUDATA-driven A12 level is sampled at M2.
+        bus.advance_cpu_cycle();
+        bus.tick_ppu(3);
+        bus.finish_cpu_cycle(); // The PPUDATA-driven A12 level is sampled at M2.
         assert!(bus.irq_pending(),
             "DMC reads from PPUDATA must reach the MMC3 A12 IRQ filter");
     }
@@ -1674,7 +1679,9 @@ mod mmc3_ppu_irq_integration_regressions {
         bus.write(0x2006, 0x10);
         bus.write(0x2006, 0x00);
         let _ = bus.read(0x2007); // CPU reads CHR at $1000, driving A12 high.
-        bus.advance_cpu_cycle(); // Sample the PPUDATA address at the next M2 edge.
+        bus.advance_cpu_cycle();
+        bus.tick_ppu(3);
+        bus.finish_cpu_cycle(); // Sample the PPUDATA address at the next M2 edge.
         assert!(bus.irq_pending(),
             "a CPU PPUDATA pattern-table access must be visible to MMC3's A12 IRQ filter");
     }
@@ -1689,7 +1696,6 @@ mod mmc3_ppu_irq_integration_regressions {
         // On the pre-render scanline, sprite pattern fetches drive A12 high after
         // a long low interval. The real PPU bus event must clock the mapper IRQ.
         tick_ppu_with_cpu_cycles(&mut bus, 261);
-        bus.advance_cpu_cycle();
         assert!(bus.irq_pending(), "the PPU-generated qualified A12 edge should assert MMC3 IRQ");
     }
 
@@ -1699,7 +1705,6 @@ mod mmc3_ppu_irq_integration_regressions {
         bus.write(0x2000, 0x08);
         bus.write(0x2001, 0x18);
         tick_ppu_with_cpu_cycles(&mut bus, 261);
-        bus.advance_cpu_cycle();
         assert!(bus.irq_pending(), "fixture must first clock a real mapper IRQ");
 
         bus.write(0xE000, 0); // Acknowledge and disable IRQ before resetting the PPU.
@@ -1969,7 +1974,6 @@ mod dma_and_irq_interaction_regressions {
         bus.write(0x2000, 0x08); // Sprite pattern table at $1000.
         bus.write(0x2001, 0x18);
         tick_ppu_with_cpu_cycles(&mut bus, 261);
-        bus.advance_cpu_cycle(); // Sample the final PPU A12 level at the next M2 edge.
         assert!(bus.irq_pending(), "fixture must raise a real PPU-driven MMC3 IRQ");
         bus
     }
@@ -2140,6 +2144,8 @@ mod mmc3_ppudata_write_bus_regressions {
         bus.write(0x2006, 0x00);
         bus.write(0x2007, 0x5A);
         bus.advance_cpu_cycle();
+        bus.tick_ppu(3);
+        bus.finish_cpu_cycle();
         assert!(bus.irq_pending(),
             "CPU PPUDATA writes to CHR space must be forwarded to MMC3 A12 filtering");
     }
@@ -2565,6 +2571,8 @@ mod mmc3_ppudata_irq_regressions {
 
         let _ = bus.read(0x2007); // Reads $0FFF, then increments the bus address to $1000.
         bus.advance_cpu_cycle();
+        bus.tick_ppu(3);
+        bus.finish_cpu_cycle();
         assert!(bus.irq_pending(),
             "the PPUDATA read's $0FFF->$1000 increment must publish the qualified A12 edge");
     }
