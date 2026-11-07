@@ -185,9 +185,10 @@ impl Cpu {
             let _ = bus.read(self.state.pc);
             self.push(bus, (self.state.pc >> 8) as u8);
             self.push(bus, self.state.pc as u8);
+            let vector = Self::select_interrupt_vector(bus, 0xFFFE);
             self.push(bus, (self.state.status | flags::UNUSED) & !flags::BREAK);
             self.set_flag(flags::INTERRUPT_DISABLE, true);
-            self.state.pc = self.read_interrupt_vector(bus, 0xFFFE);
+            self.state.pc = Self::read_interrupt_vector(bus, vector);
             bus.mark_interrupt_entry_completed();
             self.cycles = self.cycles.saturating_add(7);
             self.state.status |= flags::UNUSED;
@@ -542,9 +543,10 @@ impl Cpu {
                 // This matters when the next address is mapped to side-effecting I/O.
                 let _ = self.fetch(bus);
                 self.push(bus, (self.state.pc >> 8) as u8); self.push(bus, self.state.pc as u8);
+                let vector = Self::select_interrupt_vector(bus, 0xFFFE);
                 self.push(bus, self.state.status | flags::BREAK | flags::UNUSED);
                 self.set_flag(flags::INTERRUPT_DISABLE, true);
-                self.state.pc = self.read_interrupt_vector(bus, 0xFFFE);
+                self.state.pc = Self::read_interrupt_vector(bus, vector);
                 bus.mark_interrupt_entry_completed();
                 7
             }
@@ -672,17 +674,20 @@ impl Cpu {
     fn read_word(&mut self, bus: &mut CpuBus, a: u16) -> u16 {
         let lo = bus.read(a) as u16; let hi = bus.read(a.wrapping_add(1)) as u16; (hi << 8) | lo
     }
-    /// IRQ and BRK can be hijacked by an NMI edge arriving during interrupt
-    /// entry. An edge during vector-low can replace only the high-byte fetch.
-    fn read_interrupt_vector(&mut self, bus: &mut CpuBus, irq_vector: u16) -> u16 {
-        let vector = if bus.take_nmi_request_for_interrupt_vector() { 0xFFFA } else { irq_vector };
+    /// Selects the IRQ/BRK vector after the return PC has been pushed.
+    ///
+    /// The 2A03 samples the higher-priority NMI request at the end of the
+    /// fourth interrupt-entry cycle. The selected vector is then fixed for
+    /// both byte reads: an NMI arriving during the status push or either
+    /// vector read is deferred until the first handler instruction completes.
+    fn select_interrupt_vector(bus: &mut CpuBus, irq_vector: u16) -> u16 {
+        if bus.take_nmi_request_for_interrupt_vector() { 0xFFFA } else { irq_vector }
+    }
+
+    /// Reads both bytes from the vector already selected for this entry.
+    fn read_interrupt_vector(bus: &mut CpuBus, vector: u16) -> u16 {
         let lo = bus.read(vector) as u16;
-        let high_vector = if vector == irq_vector && bus.take_nmi_request_for_interrupt_vector() {
-            0xFFFB
-        } else {
-            vector.wrapping_add(1)
-        };
-        let hi = bus.read(high_vector) as u16;
+        let hi = bus.read(vector.wrapping_add(1)) as u16;
         (hi << 8) | lo
     }
     fn push(&mut self, bus: &mut CpuBus, v: u8) {
