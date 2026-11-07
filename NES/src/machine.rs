@@ -1525,7 +1525,7 @@ mod dma_irq_poll_regressions {
     fn frame_irq_asserted_during_oam_dma_waits_for_the_resumed_instruction_poll() {
         let mut image = vec![0; 16 + 16_384];
         image[16..].fill(0xEA);
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16] = 0x58; // CLI
         image[17] = 0xEA; // Consume CLI's one-instruction IRQ delay.
