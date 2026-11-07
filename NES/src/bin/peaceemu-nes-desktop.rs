@@ -1,3 +1,9 @@
+//! Minimal native Windows frontend for playing NES ROMs with the Rust core.
+//!
+//! Run with: cargo run --release --bin peaceemu-nes-desktop -- path\to\game.nes
+#![allow(unsafe_code)]
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 fn aspect_fit(client_width: i32, client_height: i32) -> (i32, i32, i32, i32) {
     if client_width <= 0 || client_height <= 0 {
         return (0, 0, 0, 0);
@@ -17,11 +23,6 @@ fn aspect_fit(client_width: i32, client_height: i32) -> (i32, i32, i32, i32) {
     )
 }
 
-//! Minimal native Windows frontend for playing NES ROMs with the Rust core.
-//!
-//! Run with: cargo run --release --bin peaceemu-nes-desktop -- path\to\game.nes
-#![allow(unsafe_code)]
-#![cfg_attr(windows, windows_subsystem = "windows")]
 
 #[cfg(not(windows))]
 fn main() {
