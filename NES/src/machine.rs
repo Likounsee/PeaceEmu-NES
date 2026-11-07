@@ -383,6 +383,7 @@ impl NesMachine {
             self.bus.write_oam_dma_byte(value);
         }
         self.cpu.add_stall_cycles(dma_cycles);
+        self.bus.latch_irq_poll_after_dma();
     }
 
     /// Advances one OAM DMA slot while allowing DMC's non-GET phases to overlap.
