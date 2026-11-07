@@ -130,7 +130,7 @@ pub struct CpuBus {
     mapper_a12_trace: Vec<(u16, u64, u64)>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, irq_cycle_sample: None, irq_poll_before_final_cycle: false, cpu_cycle: 0, mapper_a12_level: false, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096), #[cfg(test)] mapper_a12_trace: Vec::new() } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, irq_cycle_sample: Some(false), irq_poll_before_final_cycle: false, cpu_cycle: 0, mapper_a12_level: false, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096), #[cfg(test)] mapper_a12_trace: Vec::new() } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -162,7 +162,7 @@ impl CpuBus {
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
         self.irq_poll_sample = None;
-        self.irq_cycle_sample = None;
+        self.irq_cycle_sample = Some(self.irq_pending());
         self.irq_poll_before_final_cycle = false;
         self.pending_dmc_dma = None;
         self.nmi_pending = false;
@@ -225,11 +225,11 @@ impl CpuBus {
         self.irq_poll_before_final_cycle = true;
     }
 
-    /// Ends instruction bus tracking without resampling IRQ after the final cycle.
+    /// Ends instruction bus tracking without changing the one-cycle IRQ poll latch.
     ///
-    /// The CPU input was sampled at the instruction-specific hardware poll point
-    /// before the corresponding bus cycle advanced the APU/PPU. Sampling here
-    /// would incorrectly include IRQ edges raised by that final cycle.
+    /// The poll latch was shifted from the previous cycle's phi2 sample at the
+    /// instruction-specific poll point. Resampling here would include IRQ edges
+    /// raised during the final cycle and move recognition one cycle early.
     pub(crate) fn end_cpu_instruction(&mut self) -> u16 {
         self.instruction_timing = false;
         self.irq_poll_before_final_cycle = false;
