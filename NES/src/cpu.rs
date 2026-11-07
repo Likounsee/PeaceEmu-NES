@@ -749,10 +749,21 @@ impl Cpu {
         // crossing a page, it then reads the intermediate address with the old
         // high byte and target low byte before the target instruction executes.
         let sequential_pc = self.state.pc;
+        let target_pc = sequential_pc.wrapping_add_signed(offset as i16);
+        let page_crossed = sequential_pc & 0xFF00 != target_pc & 0xFF00;
+
+        // The 2A03 has a special IRQ poll point for a taken branch that stays
+        // on the same page: an IRQ arriving during its final dummy-read cycle
+        // is deferred until after the following instruction. Other instructions,
+        // including page-crossing branches, sample at their final cycle boundary.
+        if !page_crossed {
+            bus.poll_irq_before_final_cycle();
+        }
+
         let _ = bus.read(sequential_pc);
-        self.state.pc = sequential_pc.wrapping_add_signed(offset as i16);
-        if sequential_pc & 0xFF00 != self.state.pc & 0xFF00 {
-            let intermediate = (sequential_pc & 0xFF00) | (self.state.pc & 0x00FF);
+        self.state.pc = target_pc;
+        if page_crossed {
+            let intermediate = (sequential_pc & 0xFF00) | (target_pc & 0x00FF);
             let _ = bus.read(intermediate);
             4
         } else {
