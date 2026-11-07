@@ -1,6 +1,6 @@
-# PeaceEmu-NES v1.0.0
+# PeaceEmu-NES v1.0.0 — Alter Release
 
-> Release candidate notes — publication is pending the final Windows/Linux diagnostic and release-build checks.
+> Stable 1.0.0 release notes. The full Windows/Linux validation run completed successfully; publication is triggered by the `nes-module-1.0.0` tag.
 
 ## Included
 
@@ -8,7 +8,13 @@
 - iNES cartridge loading and the currently implemented mapper set documented in the project README.
 - CPU memory bus, controller input, OAM DMA, PPU register/memory handling, and APU audio generation.
 - Machine/session APIs for stepping, frame output, audio samples, controller input, and battery-backed RAM.
-- Windows desktop test executable.
+- Windows desktop executable, with a SHA-256 checksum distributed alongside it.
+
+## 1.0.0 validation fixes
+
+- Corrected OAM DMA 513/514-cycle alignment parity, including the APU/CPU phase relationship used by the DMA model.
+- Corrected the CPU IRQ sampling path across OAM DMA and tightened DMC/OAM arbitration regression coverage.
+- Kept both OAM DMA parity paths and DMC GET collision/non-collision cases covered by tests.
 
 ## Compatibility boundaries
 
@@ -24,9 +30,18 @@ See [README.md](README.md) and [NES/README.md](NES/README.md) for the current fe
 
 ## Validation
 
-The release is not considered published until the current CI run has completed and its results have been reviewed. The release build and diagnostic ROM suites must be reported accurately; known failures must not be hidden or described as passing.
+The final validation completed successfully on both Windows and Linux.
 
-Local checks:
+- Rust formatting, tests, and Clippy (stable and Rust 1.78 core checks).
+- Blargg CPU diagnostic ROMs and extended CPU/PPU hardware diagnostics.
+- Experimental APU, PPU, MMC3, CPU dummy-write, OAM-read, and APU-reset diagnostics.
+- Windows and Linux desktop Release builds.
+
+GitHub Actions runs:
+- NES core checks: `42419984378` — success.
+- NES module CI: `42419984382` — success.
+
+Local reproduction:
 
 ```sh
 cargo fmt --manifest-path NES/Cargo.toml -- --check
