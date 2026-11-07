@@ -94,8 +94,10 @@ pub struct CpuBus {
     /// PPU-dot phase at which CPU register accesses occur (0..=2).
     ppu_bus_phase: u8,
     instruction_bus_cycles: u16,
-    /// IRQ level sampled at the start of the final bus access of the instruction.
+    /// IRQ detector output consumed at the next instruction boundary.
     irq_poll_sample: Option<bool>,
+    /// IRQ input sampled during the previous CPU cycle's phi2 phase.
+    irq_cycle_sample: Option<bool>,
     /// Branches taken without a page crossing poll before their final dummy-read cycle.
     irq_poll_before_final_cycle: bool,
     /// Absolute CPU-cycle timeline shared with cycle-sensitive cartridge mappers.
