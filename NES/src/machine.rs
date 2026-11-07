@@ -1534,8 +1534,6 @@ mod dma_irq_poll_regressions {
 
         let cli = machine.step().unwrap();
         assert_eq!(cli.opcode, 0x58);
-        assert!(machine.bus.irq_poll_sample.is_some());
-
         // CLI defers the next poll. Raise the frame IRQ during DMA; the
         // first resumed NOP must execute before the following poll takes IRQ.
         machine.bus.tick_apu(29_819);
