@@ -383,7 +383,6 @@ impl NesMachine {
             self.bus.write_oam_dma_byte(value);
         }
         self.cpu.add_stall_cycles(dma_cycles);
-        self.bus.latch_irq_poll_after_dma();
     }
 
     /// Advances one OAM DMA slot while allowing DMC's non-GET phases to overlap.
@@ -1525,30 +1524,32 @@ mod dma_irq_poll_regressions {
     use super::*;
 
     #[test]
-    fn frame_irq_asserted_during_oam_dma_is_polled_after_the_first_resumed_instruction() {
+    fn frame_irq_asserted_during_oam_dma_waits_for_the_resumed_instruction_poll() {
         let mut image = vec![0; 16 + 16_384];
         image[16..].fill(0xEA);
-        image[0..4].copy_from_slice(b"NES\x1A");
+        image[0..4].copy_from_slice(b"NES\\x1A");
         image[4] = 1;
         image[16] = 0x58; // CLI
-        image[17] = 0xEA; // NOP after DMA
+        image[17] = 0xEA; // Consume CLI's one-instruction IRQ delay.
+        image[18] = 0xEA; // First instruction after DMA.
         image[16 + 0x3FFC..16 + 0x3FFE].copy_from_slice(&0x8000u16.to_le_bytes());
         image[16 + 0x3FFE..16 + 0x4000].copy_from_slice(&0x9000u16.to_le_bytes());
         let mut machine = NesMachine::from_ines(&image).unwrap();
         machine.cpu.set_pc(0x8000);
 
-        let cli = machine.step().unwrap();
-        assert_eq!(cli.opcode, 0x58);
-        // CLI defers the next poll. Raise the frame IRQ during DMA; the
-        // first resumed NOP must execute before the following poll takes IRQ.
-        machine.bus.tick_apu(29_819);
+        assert_eq!(machine.step().unwrap().opcode, 0x58);
+        assert_eq!(machine.step().unwrap().opcode, 0xEA,
+            "consume CLI latency before starting DMA");
+        machine.bus.tick_apu(29_818);
+        assert!(!machine.bus.irq_pending(),
+            "the frame IRQ must still be low immediately before DMA");
         machine.perform_oam_dma(0);
         assert!(machine.bus.irq_pending(),
-            "the frame IRQ must have risen while OAM DMA held the CPU");
+            "the frame IRQ must rise during OAM DMA");
 
         let resumed = machine.step().unwrap();
         assert_eq!(resumed.opcode, 0xEA,
-            "the first resumed instruction executes before a DMA-time IRQ is polled");
+            "DMA release is not itself an instruction IRQ poll point");
         let irq = machine.step().unwrap();
         assert_eq!(irq.opcode, 0xFE);
         assert_eq!(machine.cpu_state().pc, 0x9000);
