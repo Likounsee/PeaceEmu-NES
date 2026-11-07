@@ -57,7 +57,7 @@ pub struct Nrom {
 }
 
 /// Invalid or unsupported cartridge image.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum CartridgeError {
     /// Image is shorter than the header.
     TruncatedHeader,
@@ -219,7 +219,7 @@ impl Nrom {
 
 
 /// MMC1 (mapper 1): serial register, switchable PRG/CHR banks and nametable mirroring.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Mmc1 {
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
@@ -446,7 +446,7 @@ impl Mmc1 {
 
 /// UxROM (mapper 2): switchable lower PRG bank and fixed final PRG bank.
 /// NES 2.0 submapper 1 models boards whose ROM drives the data bus during writes.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Uxrom {
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
@@ -589,7 +589,7 @@ impl Uxrom {
 
 /// CNROM (mapper 3): fixed NROM-style PRG mapping and switchable 8 KiB CHR-ROM bank.
 /// NES 2.0 submapper 1 models boards whose ROM drives the data bus during writes.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Cnrom {
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
@@ -703,7 +703,7 @@ impl Cnrom {
 
 
 /// Front Fareast F3xxx (mapper 8): switchable 32-KiB PRG and 8-KiB CHR banks.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Mapper8 {
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
@@ -844,7 +844,7 @@ impl Mapper8 {
 }
 
 /// Jaleco JF-16 (mapper 87): fixed 32 KiB PRG-ROM and a two-bank CHR-ROM selector.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Mapper87 {
     prg_rom: Vec<u8>,
     chr_rom: Vec<u8>,
@@ -927,7 +927,7 @@ impl Mapper87 {
 }
 
 /// AxROM (mapper 7): switchable 32 KiB PRG-ROM and bank-controlled one-screen mirroring.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Axrom {
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
@@ -1039,7 +1039,7 @@ impl Axrom {
 
 
 /// GxROM (mapper 66): independent 32 KiB PRG-ROM and 8 KiB CHR-ROM bank selection.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Gxrom {
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
@@ -1159,7 +1159,7 @@ impl Gxrom {
 
 
 /// MMC3 / TxROM (mapper 4): 8 KiB PRG windows, 1/2 KiB CHR banks and scanline IRQs.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Mmc3 {
     prg_rom: Vec<u8>, prg_ram: Vec<u8>, chr: Vec<u8>, chr_is_ram: bool,
     banks: [u8; 8], bank_select: u8, mirroring: Mirroring,
@@ -1359,7 +1359,7 @@ impl Mmc3 {
 
 /// BNROM (legacy mapper 34): switchable 32 KiB PRG-ROM and fixed CHR-RAM.
 /// This deliberately implements the BNROM board variant only, not NINA-001.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Bnrom {
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
@@ -1469,7 +1469,7 @@ impl Bnrom {
 }
 
 /// CPROM (mapper 13): fixed 32 KiB PRG and switchable upper 4 KiB of CHR-RAM.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Cprom {
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
@@ -1572,7 +1572,7 @@ impl Cprom {
 }
 
 /// Camerica (mapper 71): switchable lower 16 KiB PRG bank and fixed final bank.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Camerica {
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
@@ -1690,7 +1690,7 @@ impl Camerica {
 
 
 /// Color Dreams (mapper 11): one register selects 32 KiB PRG and 8 KiB CHR banks.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ColorDreams {
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
@@ -1793,7 +1793,7 @@ impl ColorDreams {
 }
 
 /// MMC2 (mapper 9): one switchable 8 KiB PRG window and two latch-controlled 4 KiB CHR windows.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Mmc2 {
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
@@ -1966,7 +1966,7 @@ impl Mmc2 {
 
 
 /// UNROM-512 (mapper 30): switchable 16 KiB PRG, 32 KiB banked CHR-RAM and one-screen mirroring.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Unrom512 {
     prg_rom: Vec<u8>,
     chr_ram: Vec<u8>,
@@ -2056,7 +2056,7 @@ impl Unrom512 {
 }
 
 /// Mapper 15 (100-in-1 Contra Function 16): address-selected PRG banking with CHR-RAM.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Mapper15 {
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
@@ -2151,7 +2151,7 @@ fn copy_ram(target: &mut [u8], source: &[u8]) -> bool {
 }
 
 /// Supported cartridge mapper implementations.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Cartridge {
     /// Mapper 0, no PRG banking.
     Nrom(Nrom),
