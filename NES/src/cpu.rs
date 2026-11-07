@@ -2585,6 +2585,49 @@ mod nmi_irq_poll_priority_regressions {
     }
 }
 
+
+#[cfg(test)]
+mod irq_entry_bus_trace_regressions {
+    use super::*;
+    use crate::bus::CpuBusAccessKind;
+
+    #[test]
+    fn irq_entry_reads_pc_twice_then_pushes_state_before_fetching_vector() {
+        let mut bus = CpuBus::new();
+        bus.write(0x4017, 0x00);
+        bus.tick_apu(29_831);
+        bus.tick_apu(2);
+        assert!(bus.irq_pending(), "fixture must begin with a frame IRQ");
+
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        cpu.state.status = flags::UNUSED; // IRQs enabled; B is clear.
+        bus.clear_bus_trace();
+
+        let result = cpu.step(&mut bus).unwrap();
+
+        assert_eq!(result.opcode, 0xFE, "the pending IRQ must be serviced");
+        assert_eq!(result.cycles, 7);
+        assert_eq!(cpu.state().sp, 0xFA);
+        assert_ne!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
+        assert_eq!(bus.read(0x01FB) & (flags::BREAK | flags::UNUSED), flags::UNUSED,
+            "IRQ pushes B=0 and the unused bit set");
+
+        let accesses: Vec<_> = bus.bus_trace().iter()
+            .map(|entry| (entry.kind, entry.address))
+            .collect();
+        assert_eq!(accesses, vec![
+            (CpuBusAccessKind::Read, 0x0600),
+            (CpuBusAccessKind::Read, 0x0600),
+            (CpuBusAccessKind::Write, 0x01FD),
+            (CpuBusAccessKind::Write, 0x01FC),
+            (CpuBusAccessKind::Write, 0x01FB),
+            (CpuBusAccessKind::Read, 0xFFFE),
+            (CpuBusAccessKind::Read, 0xFFFF),
+        ], "IRQ entry must preserve the seven-cycle 2A03 bus ordering");
+    }
+}
+
 #[cfg(test)]
 mod reset_cycle_regressions {
     use super::*;
