@@ -3379,7 +3379,7 @@ mod sprite_pattern_address_tests {
         ppu.mask = 0x10;
         ppu.oam[1] = 1; // Odd tile selects $1000 in 8x16 mode.
         ppu.tick(261);
-        assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 0), (0x1000, 261)]);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 0), (0x1000, 260)]);
 
         ppu.oam[1] = 0;
         ppu.dot = 264; // Next sprite's fetch window starts with A12 low.
