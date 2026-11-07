@@ -319,6 +319,12 @@ impl Ppu {
                     (fetched & 0x3F) | (self.open_bus & 0xC0)
                 };
                 self.increment_vram_address();
+                // The PPUDATA access also leaves the incremented VRAM address
+                // on the external PPU address bus. MMC3 must see A12 transitions
+                // at boundaries such as $0FFF -> $1000.
+                if address < 0x3F00 {
+                    self.record_mapper_bus_address(self.v & 0x3FFF);
+                }
                 self.sync_visible_scroll_after_vram_access();
                 value
             }
@@ -421,6 +427,11 @@ impl Ppu {
                 }
                 self.mem_write(address, value, cartridge);
                 self.increment_vram_address();
+                // A PPUDATA write also exposes the incremented address to mapper
+                // circuitry, including an A12 low-to-high boundary crossing.
+                if address < 0x3F00 {
+                    self.record_mapper_bus_address(self.v & 0x3FFF);
+                }
                 self.sync_visible_scroll_after_vram_access();
             }
             _ => {}
