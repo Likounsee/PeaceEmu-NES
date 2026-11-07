@@ -159,12 +159,12 @@ impl Apu {
     /// The 2A03 behaves as though $00 was written to $4017 roughly ten CPU clocks
     /// before the first instruction. The four-cycle sequencer-reset delay has
     /// therefore elapsed, leaving approximately six clocks in the four-step mode.
-    /// The CPU reset-vector sequence advances the shared CPU parity to an odd phase.
+    /// The CPU/APU half-cycle phase is not fixed by this approximation; keep the
+    /// neutral even baseline until the CPU reset sequencer supplies an exact phase.
     pub fn power_on() -> Self {
         let mut apu = Self::default();
         apu.registers[0x17] = 0x00;
         apu.frame_cycles = 6;
-        apu.cpu_cycle_odd = true;
         apu
     }
 
@@ -182,7 +182,6 @@ impl Apu {
         self.five_step_mode = frame_counter & 0x80 != 0;
         self.frame_irq_inhibit = frame_counter & 0x40 != 0;
         self.frame_cycles = 6;
-        self.cpu_cycle_odd = true;
     }
 
 
