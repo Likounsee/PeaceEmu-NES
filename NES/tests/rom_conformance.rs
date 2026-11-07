@@ -191,6 +191,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                         .filter(|event| matches!(
                             event.kind,
                             "MAPPER_A12_RISE" | "MAPPER_A12_FALL" | "PPUCTRL_WRITE" | "PPUMASK_WRITE"
+                                | "STATUS_READ"
                         ))
                         .rev()
                         .take(256)
@@ -207,7 +208,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                     let bus_events = entries.iter().enumerate()
                         .filter(|(index, entry)| {
                             let previous = index.checked_sub(1).map(|previous| &entries[previous]);
-                            matches!(entry.address, 0x2000 | 0x2001 | 0xC000 | 0xC001 | 0xE000 | 0xE001)
+                            matches!(entry.address, 0x2000 | 0x2001 | 0x2002 | 0xC000 | 0xC001 | 0xE000 | 0xE001)
                                 || previous.is_some_and(|previous| previous.irq_line != entry.irq_line)
                         })
                         .rev()
