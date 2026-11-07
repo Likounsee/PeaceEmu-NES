@@ -1291,7 +1291,7 @@ impl Mmc3 {
     /// Observes the PPU address bus for MMC3's filtered A12 rising-edge IRQ clock.
     ///
     /// `ppu_cycle` is a monotonically increasing PPU-dot counter. A rising A12 edge
-    /// clocks the IRQ counter only after A12 has remained low for at least eight dots.
+    /// clocks the IRQ counter only after A12 has remained low for three CPU cycles (nine NTSC PPU dots).
     /// Call this once for each actual PPU bus address, not once per CPU instruction.
     pub fn observe_ppu_address(&mut self, address: u16, ppu_cycle: u64) {
         // A PPU reset can restart the cycle counter while the cartridge remains
@@ -1322,7 +1322,7 @@ impl Mmc3 {
             let low_duration = self.a12_low_since
                 .map(|start| ppu_cycle.saturating_sub(start))
                 .unwrap_or(0);
-            if low_duration >= 8 {
+            if low_duration >= 9 {
                 self.clock_irq_counter();
             }
         }
