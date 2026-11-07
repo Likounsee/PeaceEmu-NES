@@ -122,6 +122,9 @@ pub struct CpuBus {
     /// polling must not evict the transactions needed to diagnose PPU races.
     #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
     ppu_bus_trace: VecDeque<CpuBusTraceEntry>,
+    /// Mapper A12 transitions with their PPU-dot and M2-cycle timestamps.
+    #[cfg(test)]
+    mapper_a12_trace: Vec<(u16, u64, u64)>,
 }
 impl Default for CpuBus {
     fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096) } }
@@ -509,6 +512,10 @@ impl CpuBus {
     /// (three NTSC PPU dots per M2 cycle) so sub-cycle pulses cannot clock IRQ.
     fn sync_mapper_bus_events(&mut self) {
         let events = self.ppu.take_mapper_bus_events();
+        #[cfg(test)]
+        self.mapper_a12_trace.extend(
+            events.iter().map(|(address, ppu_cycle)| (*address, *ppu_cycle, self.cpu_cycle))
+        );
         if let Some(cartridge) = self.cartridge.as_mut() {
             for (address, ppu_cycle) in events {
                 cartridge.observe_ppu_address_at_cpu_cycle(address, ppu_cycle, self.cpu_cycle);
@@ -1091,7 +1098,9 @@ mod tests {
         tick_ppu_with_cpu_cycles(&mut bus, 12);
         bus.write(0x2001, 0x08); // Re-enable the pattern table after the low filter interval.
         tick_ppu_with_cpu_cycles(&mut bus, 6); // Advance through the next pattern-table fetch.
-        assert!(bus.irq_pending(), "the PPU IRQ must propagate through CpuBus to the CPU IRQ line");
+        assert!(bus.irq_pending(),
+            "the PPU IRQ must propagate through CpuBus to the CPU IRQ line; cpu_cycle={}, ppu_position={:?}, A12 trace={:?}",
+            bus.cpu_cycle, bus.ppu_position(), bus.mapper_a12_trace);
     }
 
     #[test]
