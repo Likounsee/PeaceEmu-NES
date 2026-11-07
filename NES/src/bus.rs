@@ -1139,9 +1139,9 @@ mod tests {
         assert!(!bus.irq_pending(), "the bus must forward and filter a seven-dot A12 interval");
 
         bus.write(0x2001, 0); // Start another low interval after the short pulse.
-        tick_ppu_with_cpu_cycles(&mut bus, 12);
-        bus.write(0x2001, 0x08); // Re-enable the pattern table after the low filter interval.
-        tick_ppu_with_cpu_cycles(&mut bus, 6); // Advance through the next pattern-table fetch.
+        tick_ppu_with_cpu_cycles(&mut bus, 11);
+        bus.write(0x2001, 0x08); // Re-enable just before the next pattern-table fetch.
+        tick_ppu_with_cpu_cycles(&mut bus, 3); // The next M2 edge samples A12 high.
         assert!(bus.irq_pending(),
             "the PPU IRQ must propagate through CpuBus to the CPU IRQ line; cpu_cycle={}, ppu_position={:?}, A12 trace={:?}",
             bus.cpu_cycle, bus.ppu_position(), bus.mapper_a12_trace);
