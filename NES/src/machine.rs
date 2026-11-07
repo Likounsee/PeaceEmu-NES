@@ -615,7 +615,8 @@ mod tests {
         machine.bus.write(0x4013, 0x01); // 17-byte sample.
         machine.bus.write(0x4015, 0x10);
 
-
+        // Even parity makes the initial DMC GET collide with OAM GET.
+        machine.cpu.add_stall_cycles(1);
         let before = machine.total_cycles();
         machine.perform_oam_dma(0x02);
         let elapsed = machine.total_cycles() - before;
@@ -650,8 +651,6 @@ mod tests {
         machine.bus.write(0x4015, 0x10);
 
 
-        // Select the even OAM DMA parity to align the initial DMC GET with OAM GET.
-        machine.cpu.add_stall_cycles(1);
         // Select the even OAM DMA parity to exercise the initial GET collision.
         machine.cpu.add_stall_cycles(1);
         let before = machine.total_cycles();
