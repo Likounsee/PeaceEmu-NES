@@ -765,27 +765,6 @@ mod tests {
         for (i, v) in program.iter().copied().enumerate() { bus.write(0x0600 + i as u16, v); }
         let mut cpu = Cpu::new(); cpu.set_pc(0x0600); (cpu, bus)
     }
-    fn timed_step(cpu: &mut Cpu, bus: &mut CpuBus) -> StepResult {
-        bus.begin_cpu_instruction();
-        let result = cpu.step(bus).unwrap();
-        let bus_cycles = bus.end_cpu_instruction();
-        assert_eq!(bus_cycles, u16::from(result.cycles),
-            "every tested instruction must issue its complete set of CPU bus cycles");
-        bus.finish_cpu_instruction();
-        result
-    }
-
-    fn irq_test_bus() -> CpuBus {
-        let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
-        image[4] = 1;
-        image[16 + 0x3FFE] = 0x00;
-        image[16 + 0x3FFF] = 0x07;
-        let mut bus = CpuBus::new();
-        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
-        bus
-    }
-
     #[test]
     fn implied_opcodes_perform_the_second_bus_read_in_instruction_order() {
         let implied = [
