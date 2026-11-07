@@ -1551,4 +1551,5 @@ mod dma_irq_poll_regressions {
         let irq = machine.step().unwrap();
         assert_eq!(irq.opcode, 0xFE);
         assert_eq!(machine.cpu_state().pc, 0x9000);
-    }}
+    }
+}
