@@ -1,3 +1,22 @@
+fn aspect_fit(client_width: i32, client_height: i32) -> (i32, i32, i32, i32) {
+    if client_width <= 0 || client_height <= 0 {
+        return (0, 0, 0, 0);
+    }
+    // Keep the NES framebuffer's exact 256:240 aspect ratio and letterbox
+    // the unused area instead of stretching pixels to the client rectangle.
+    let (width, height) = if i64::from(client_width) * 240 <= i64::from(client_height) * 256 {
+        (client_width, client_width * 240 / 256)
+    } else {
+        (client_height * 256 / 240, client_height)
+    };
+    (
+        (client_width - width) / 2,
+        (client_height - height) / 2,
+        width,
+        height,
+    )
+}
+
 //! Minimal native Windows frontend for playing NES ROMs with the Rust core.
 //!
 //! Run with: cargo run --release --bin peaceemu-nes-desktop -- path\to\game.nes
@@ -12,6 +31,7 @@ fn main() {
 
 #[cfg(windows)]
 mod win {
+    use super::aspect_fit;
     use peaceemu_nes::machine::NesMachine;
     use std::ffi::c_void;
     use std::fs;
@@ -175,20 +195,6 @@ mod win {
 
     fn key_down(key: i32) -> bool {
         unsafe { GetAsyncKeyState(key) < 0 }
-    }
-
-    pub(super) fn aspect_fit(client_width: i32, client_height: i32) -> (i32, i32, i32, i32) {
-        if client_width <= 0 || client_height <= 0 {
-            return (0, 0, 0, 0);
-        }
-        // Keep the NES framebuffer's exact 256:240 aspect ratio and letterbox
-        // the unused area instead of stretching pixels to the client rectangle.
-        let (width, height) = if i64::from(client_width) * 240 <= i64::from(client_height) * 256 {
-            (client_width, client_width * 240 / 256)
-        } else {
-            (client_height * 256 / 240, client_height)
-        };
-        ((client_width - width) / 2, (client_height - height) / 2, width, height)
     }
 
     struct FullscreenState {
@@ -596,9 +602,9 @@ mod win {
 
 
 
-#[cfg(all(test, windows))]
+#[cfg(test)]
 mod frontend_geometry_tests {
-    use super::win::aspect_fit;
+    use super::aspect_fit;
 
     #[test]
     fn aspect_fit_preserves_nes_ratio_in_widescreen_client_area() {
