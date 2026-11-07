@@ -111,12 +111,14 @@ PEACEEMU_NES_PPU_TEST_ROM_DIR=/chemin/vers/nes-test-roms cargo test --manifest-p
 La suite CPU valide les 16 ROMs de diagnostic sur Linux et Windows. Les
 8 ROMs APU passent également sur les deux plateformes. Les 10 ROMs PPU sont
 exécutées dans un job expérimental non bloquant pour la compilation du module :
-sur le commit validé le 5 novembre 2026, 5/10 passent (`01`, `03`, `04`,
-`09`, `10`) et 5 restent en échec (`02`, `05`, `06`, `07`, `08`).
-Ces échecs restent affichés dans les logs et ne doivent pas être présentés comme
-une compatibilité matérielle complète. Le test `02` reste sensible à la phase
-CPU/PPU au démarrage ; les tests `05` à `08` demandent encore une synchronisation
-plus précise des fronts NMI et des lectures de `$2002`. Le protocole commun lit
-la signature `$DE $B0 $61`, l'état à `$6000` et le message à partir de `$6004`.
-nestest avec comparaison de trace et la compatibilité des mappers restent à
+sur le commit `39f5b768` (7 novembre 2026), les 10 ROMs PPU VBlank/NMI passent
+et les 8 ROMs APU passent ; les 16 ROMs CPU de base passent également. En revanche,
+les diagnostics CPU/PPU étendus et la suite expérimentale des registres PPU
+échouent encore. Les journaux détaillés de ces deux suites doivent être récupérés
+pour isoler les ROMs et leurs codes de sortie. Les validations DMC, MMC3, accès
+factices CPU et OAM n'ont pas été menées à terme dans cette exécution interrompue.
+Ces résultats ne doivent pas être présentés comme une compatibilité matérielle
+complète. Le protocole commun lit la signature `$DE $B0 $61`, l'état à `$6000`
+et le message à partir de `$6004`. `nestest` avec comparaison de trace et la
+compatibilité des mappers restent à valider séparément.
 valider séparément.
