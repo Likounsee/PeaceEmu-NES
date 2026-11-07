@@ -2442,10 +2442,7 @@ mod mmc3_ppudata_irq_regressions {
         bus.write(0x2006, 0xFF);
         bus.tick_ppu(8);
 
-        let _ = bus.read(0x2007); // $0FFF, low A12.
-        assert!(!bus.irq_pending(), "the low-address read must not clock MMC3");
-
-        let _ = bus.read(0x2007); // $1000, rising A12 after eight low dots.
+        let _ = bus.read(0x2007); // Reads $0FFF, then increments the bus address to $1000.
         assert!(bus.irq_pending(),
             "the PPUDATA read's $0FFF->$1000 increment must publish the qualified A12 edge");
     }
