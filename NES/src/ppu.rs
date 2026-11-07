@@ -2134,7 +2134,7 @@ mod tests {
 
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
-        ppu.ctrl = 0x10; // Background pattern table at $1000.
+        ppu.ctrl = 0x08; // Background pattern table at $1000.
         ppu.mask = 0x08;
         ppu.tick_with_cartridge(5, Some(&cartridge));
         for (address, cycle) in ppu.take_mapper_bus_events() {
@@ -2221,7 +2221,7 @@ mod tests {
     fn mapper_a12_is_forced_low_when_rendering_is_disabled() {
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
-        ppu.ctrl = 0x10;
+        ppu.ctrl = 0x08;
         ppu.mask = 0x08;
         ppu.tick(5);
         assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 0), (0x1000, 5)]);
@@ -3872,7 +3872,7 @@ mod mapper_a12_bus_regressions {
     #[test]
     fn background_pattern_fetches_emit_timestamped_a12_edges() {
         let mut ppu = Ppu::new();
-        ppu.ctrl = 0x10; // Background pattern table at $1000.
+        ppu.ctrl = 0x08; // Background pattern table at $1000.
         ppu.mask = 0x08; // Enable background rendering.
         ppu.tick_with_cartridge(9, None);
 
@@ -4759,7 +4759,7 @@ mod sprite_pattern_address_boundary_regressions {
     #[test]
     fn vertical_flip_in_8x8_sprites_reverses_rows_without_changing_table() {
         let mut ppu = Ppu::new();
-        ppu.ctrl = 0x08; // Sprite pattern table at $1000.
+        ppu.ctrl = 0x10; // Sprite pattern table at $1000.
         assert_eq!(ppu.sprite_pattern_address(5, 0, 0), 0x1050);
         assert_eq!(ppu.sprite_pattern_address(5, 0, 7), 0x1057);
         assert_eq!(ppu.sprite_pattern_address(5, 0x80, 0), 0x1057);
