@@ -736,7 +736,10 @@ impl Ppu {
             }
         } else if (257..=320).contains(&dot) {
             let phase = (dot - 257) & 7;
-            if (4..=7).contains(&phase) {
+            if (3..=7).contains(&phase) {
+                // The external address bus presents the sprite pattern address
+                // on the setup dot before the pattern-low read (dot 260 for the
+                // first slot). MMC3 clocks A12 from this address transition.
                 // Mapper-visible sprite fetches read secondary OAM, not the matching
                 // primary-OAM slot. Selected sprites may come from any of the 64 entries.
                 let slot = ((dot - 257) / 8) as usize;
@@ -2122,6 +2125,21 @@ mod tests {
         assert_eq!(events, vec![(0, 0), (0x1000, 5), (0x0000, 9)]);
         ppu.tick(4);
         assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 13)]);
+    }
+
+    #[test]
+    fn mmc3_sprite_pattern_a12_rises_on_dot_260() {
+        let mut ppu = Ppu::new();
+        ppu.scanline = 0;
+        ppu.ctrl = 0x08; // Sprite pattern table at $1000.
+        ppu.mask = 0x08;
+        ppu.tick_with_cartridge(260, None);
+
+        let events = ppu.take_mapper_bus_events();
+        assert!(events.contains(&(0x1000, 260)),
+            "the first sprite pattern address must be visible to MMC3 on dot 260");
+        assert!(!events.contains(&(0x1000, 261)),
+            "the A12 rising edge must not be delayed to the data-read dot");
     }
 
     #[test]
