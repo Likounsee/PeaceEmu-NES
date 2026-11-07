@@ -13,7 +13,10 @@ const RESET_DELAY_INSTRUCTIONS: u64 = 600_000;
 
 fn read_blargg_message(machine: &mut NesMachine) -> String {
     let mut bytes = Vec::new();
-    for address in 0x6004..=0x60FF {
+    // Text-out ROMs use the full 8 KiB PRG-RAM window, not just the
+    // first 252 bytes. Reading through $7FFF exposes later subtest names and
+    // checksums when a multi-part ROM fails after its first screenful.
+    for address in 0x6004..=0x7FFF {
         let byte = machine.read_cpu(address);
         if byte == 0 {
             break;
