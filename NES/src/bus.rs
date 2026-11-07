@@ -169,6 +169,7 @@ impl CpuBus {
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
         self.irq_poll_sample = None;
+        self.irq_poll_sample_held_after_dma = false;
         self.irq_cycle_sample = Some(self.cpu_irq_input_pending());
         self.irq_poll_before_final_cycle = false;
         self.pending_dmc_dma = None;
