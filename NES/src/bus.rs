@@ -99,6 +99,8 @@ pub struct CpuBus {
     irq_poll_before_final_cycle: bool,
     /// Absolute CPU-cycle timeline shared with cycle-sensitive cartridge mappers.
     cpu_cycle: u64,
+    /// Latest A12 level driven on the external PPU address bus, sampled by MMC3 on M2.
+    mapper_a12_level: bool,
     /// Address retained on the CPU bus while DMA suspends the processor.
     cpu_bus_address: u16,
     /// DMC stalls discovered while the instruction's bus accesses clock the APU.
@@ -127,7 +129,7 @@ pub struct CpuBus {
     mapper_a12_trace: Vec<(u16, u64, u64)>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, irq_poll_before_final_cycle: false, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096), #[cfg(test)] mapper_a12_trace: Vec::new() } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, irq_poll_before_final_cycle: false, cpu_cycle: 0, mapper_a12_level: false, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096), #[cfg(test)] mapper_a12_trace: Vec::new() } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -141,6 +143,7 @@ impl CpuBus {
         let sample_rate = self.apu.sample_rate();
         self.open_bus = 0;
         self.ppu = Ppu::new();
+        self.mapper_a12_level = false;
         if console_reset {
             self.apu.reset();
         } else {
@@ -330,6 +333,7 @@ impl CpuBus {
     /// Advances the shared CPU-cycle timeline for an internal or DMA cycle that
     /// does not pass through a normal CPU memory access.
     pub(crate) fn advance_cpu_cycle(&mut self) {
+        self.sample_mapper_a12_bus();
         self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
     }
 
@@ -520,21 +524,27 @@ impl CpuBus {
         crossed
     }
 
-    /// Forwards every externally visible PPU address transition to the mapper.
+    /// Applies PPU address-bus transitions to the external A12 level.
     ///
-    /// Keep the original PPU-dot timestamp: MMC3's A12 low-time filter is
-    /// specified in PPU clocks, and CPU-driven $2006/$2007 accesses can change
-    /// A12 between M2 boundaries.
+    /// MMC3 samples this level at M2 falling edges; a short high pulse between
+    /// samples must not clock the mapper IRQ counter.
     fn sync_mapper_bus_events(&mut self) {
         let events = self.ppu.take_mapper_bus_events();
         #[cfg(test)]
         self.mapper_a12_trace.extend(
             events.iter().map(|(address, ppu_cycle)| (*address, *ppu_cycle, self.cpu_cycle))
         );
+        for (address, _) in events {
+            self.mapper_a12_level = address & 0x1000 != 0;
+        }
+    }
+
+    /// Samples A12 at the M2 falling edge ending the previous CPU cycle.
+    fn sample_mapper_a12_bus(&mut self) {
+        let address = if self.mapper_a12_level { 0x1000 } else { 0 };
+        let ppu_cycle = self.ppu.cycle_count();
         if let Some(cartridge) = self.cartridge.as_mut() {
-            for (address, ppu_cycle) in events {
-                cartridge.observe_ppu_address(address, ppu_cycle);
-            }
+            cartridge.observe_ppu_address_at_cpu_cycle(address, ppu_cycle, self.cpu_cycle);
         }
     }
     /// Legacy scanline IRQ clock retained for diagnostics.
