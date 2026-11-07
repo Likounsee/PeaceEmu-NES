@@ -750,10 +750,13 @@ impl Ppu {
     /// external PPU bus. Palette accesses use the hidden nametable refill address.
     fn record_mapper_bus_address(&mut self, address: u16) {
         let high = address & 0x1000 != 0;
-        if high != self.mapper_a12_high {
-            self.mapper_a12_high = high;
-            self.mapper_bus_events.push((if high { 0x1000 } else { 0 }, self.ppu_cycle));
-        }
+        // CPU-driven PPUDATA accesses are explicit observations of the external
+        // PPU address bus. Publish them even when the PPU's cached A12 level is
+        // unchanged: the mapper may need this low-level observation to establish
+        // the start of its eight-dot filter window (for example after reset or
+        // cartridge attachment). MMC3 ignores repeated levels once synchronized.
+        self.mapper_a12_high = high;
+        self.mapper_bus_events.push((if high { 0x1000 } else { 0 }, self.ppu_cycle));
     }
 
     pub(crate) fn take_mapper_bus_events(&mut self) -> Vec<(u16, u64)> {
@@ -6001,5 +6004,27 @@ mod background_pipeline_late_enable_regressions {
 
         assert!(!ppu.bg_pipeline_primed,
             "dot 336 only primes after actual rendering fetch activity");
+    }
+}
+
+
+#[cfg(test)]
+mod mapper_bus_access_regressions {
+    use super::*;
+
+    #[test]
+    fn ppudata_access_publishes_unchanged_low_a12_to_initialize_mapper_filter() {
+        let mut ppu = Ppu::new();
+        ppu.ppu_cycle = 12;
+
+        // The cached PPU line starts low, so this access is not a level
+        // transition. It must nevertheless reach the mapper as a baseline.
+        ppu.record_mapper_bus_address(0x0FFF);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 12)]);
+
+        // A subsequent high access is still published as the rising edge.
+        ppu.ppu_cycle = 20;
+        ppu.record_mapper_bus_address(0x1000);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 20)]);
     }
 }
