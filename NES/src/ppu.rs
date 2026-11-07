@@ -2148,7 +2148,7 @@ mod tests {
         ppu.mask = 0x08;
         ppu.tick_with_cartridge(1, Some(&cartridge));
         for (address, cycle) in ppu.take_mapper_bus_events() {
-            cartridge.observe_ppu_address(address, cycle);
+            cartridge.observe_ppu_address(address, cycle / 3);
         }
         assert!(!cartridge.irq_pending(), "the PPU-generated two-cycle low interval must be rejected");
 
@@ -2185,7 +2185,7 @@ mod tests {
         }
         assert!(!cartridge.irq_pending(), "the first high transition has no qualified low interval");
 
-        // Drive A12 low, hold it for nine dots, then raise it through $2006 again.
+        // Drive A12 low for three CPU/M2 cycles, then raise it through $2006 again.
         ppu.cpu_write_register(6, 0x00, None);
         ppu.cpu_write_register(6, 0x00, None);
         for (address, cycle) in ppu.take_mapper_bus_events() {
@@ -2197,7 +2197,7 @@ mod tests {
         for (address, cycle) in ppu.take_mapper_bus_events() {
             cartridge.observe_ppu_address(address, cycle);
         }
-        assert!(cartridge.irq_pending(), "a nine-dot A12-low interval created by $2006 writes must clock MMC3");
+        assert!(cartridge.irq_pending(), "a three-cycle A12-low interval created by $2006 writes must clock MMC3");
     }
 
     #[test]
