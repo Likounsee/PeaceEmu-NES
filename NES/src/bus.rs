@@ -1623,7 +1623,7 @@ mod mmc3_ppu_irq_integration_regressions {
     #[test]
     fn ppu_reset_rebases_mapper_a12_filter_without_false_irq() {
         let mut bus = mmc3_bus();
-        bus.write(0x2000, 0x08);
+        bus.write(0x2000, 0x10);
         bus.write(0x2001, 0x18);
         bus.tick_ppu(261);
         assert!(bus.irq_pending(), "fixture must first clock a real mapper IRQ");
@@ -1892,7 +1892,7 @@ mod dma_and_irq_interaction_regressions {
         bus.write(0xC000, 0);
         bus.write(0xC001, 0);
         bus.write(0xE001, 0);
-        bus.write(0x2000, 0x08);
+        bus.write(0x2000, 0x10); // Sprite pattern table at $1000.
         bus.write(0x2001, 0x18);
         bus.tick_ppu(261);
         assert!(bus.irq_pending(), "fixture must raise a real PPU-driven MMC3 IRQ");
