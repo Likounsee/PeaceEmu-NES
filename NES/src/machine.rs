@@ -340,9 +340,9 @@ impl NesMachine {
         if let Some(page) = self.bus.take_oam_dma_request() {
             self.perform_oam_dma(page);
             self.bus.release_deferred_nmi_after_dma();
-            // IRQ is not polled at DMA release. The first resumed instruction
-            // performs its own instruction-specific poll at the normal 2A03
-            // point; sampling here would take an IRQ one instruction too early.
+            // DMA release latches the live IRQ input for the CPU's held read.
+            // CpuBus preserves that latch through the first resumed bus access,
+            // then normal instruction-specific polling takes over.
         }
         Ok(result)
     }
