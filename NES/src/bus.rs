@@ -65,10 +65,10 @@ pub struct CpuBusTraceEntry {
     pub cpu_nmi_pending: bool,
     /// IRQ input level visible after this transaction's side effects.
     pub irq_line: bool,
-    /// IRQ level sampled at the start of the final bus access of the instruction.
+    /// IRQ level sampled at the CPU's instruction-specific poll point.
     ///
-    /// This is distinct from irq_line: a device edge caused by that final
-    /// access must not retroactively alter the already-latched poll result.
+    /// Most instructions sample at the end of their final bus cycle; taken
+    /// same-page branches sample before their final dummy-read cycle.
     pub irq_poll_sample: Option<bool>,
 }
 
@@ -295,9 +295,8 @@ impl CpuBus {
     /// Advances the PPU to the sampling point of the current CPU bus access.
     fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool, ppu_dots_before_access: u32) {
         if self.instruction_timing {
-            // Sample the IRQ line at the start of the final bus cycle. Any
-            // device edge caused by this cycle's access is visible only to the
-            // next instruction poll.
+            // Retain the early sample for the special same-page branch poll.
+            // Ordinary instructions replace it with the final-cycle level in end_cpu_instruction().
             self.irq_poll_sample = Some(self.irq_pending());
             self.instruction_bus_cycles = self.instruction_bus_cycles.saturating_add(1);
             self.advance_cpu_cycle();
