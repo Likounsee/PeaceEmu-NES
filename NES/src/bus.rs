@@ -1925,7 +1925,7 @@ mod dma_and_irq_interaction_regressions {
         bus.write(0xE001, 0);
         bus.write(0x2000, 0x08); // Sprite pattern table at $1000.
         bus.write(0x2001, 0x18);
-        bus.tick_ppu(261);
+        tick_ppu_with_cpu_cycles(&mut bus, 261);
         assert!(bus.irq_pending(), "fixture must raise a real PPU-driven MMC3 IRQ");
         bus
     }
