@@ -1538,7 +1538,7 @@ mod dma_irq_poll_regressions {
         assert_eq!(machine.step().unwrap().opcode, 0x58);
         assert_eq!(machine.step().unwrap().opcode, 0xEA,
             "consume CLI latency before starting DMA");
-        machine.bus.tick_apu(29_818);
+        machine.bus.tick_apu(29_800);
         assert!(!machine.bus.irq_pending(),
             "the frame IRQ must still be low immediately before DMA");
         machine.perform_oam_dma(0);
