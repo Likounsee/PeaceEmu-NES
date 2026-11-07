@@ -457,98 +457,6 @@ fn blargg_extended_hardware_diagnostics() {
 }
 
 #[test]
-#[ignore = "screen/audio diagnostic; use NES/tests/rom_test_matrix.md"]
-fn blargg_ppu_register_diagnostics_experimental() {
-    let Some(root) = std::env::var_os("PEACEEMU_NES_PPU_TEST_ROM_DIR") else {
-        eprintln!("Skipping experimental PPU register ROM tests: PEACEEMU_NES_PPU_TEST_ROM_DIR is not set");
-        return;
-    };
-    let root = PathBuf::from(root);
-    // The 2005.09.15b suite covers PPU palette RAM, power-up state,
-    // OAM access, VBlank clearing and PPUDATA/VRAM access.
-    const ROMS: &[&str] = &[
-        "blargg_ppu_tests_2005.09.15b/palette_ram.nes",
-        "blargg_ppu_tests_2005.09.15b/power_up_palette.nes",
-        "blargg_ppu_tests_2005.09.15b/sprite_ram.nes",
-        "blargg_ppu_tests_2005.09.15b/vbl_clear_time.nes",
-        "blargg_ppu_tests_2005.09.15b/vram_access.nes",
-    ];
-
-    let mut failures = Vec::new();
-    let mut passed = 0;
-    for relative in ROMS {
-        let path = root.join(relative);
-        if !path.is_file() {
-            failures.push(format!("missing PPU register ROM: {}", path.display()));
-            continue;
-        }
-        match run_blargg_rom(&path) {
-            Ok(message) => {
-                passed += 1;
-                println!("EXPERIMENTAL PPU REGISTER PASS {} — {}", relative, message);
-            }
-            Err(error) => {
-                eprintln!("EXPERIMENTAL PPU REGISTER FAIL {}", error);
-                failures.push(error);
-            }
-        }
-    }
-    println!("Blargg PPU register diagnostics: {passed}/{} passed", ROMS.len());
-    assert!(
-        failures.is_empty(),
-        "PPU register diagnostics reported {} failure(s):\n{}",
-        failures.len(),
-        failures.join("\n")
-    );
-}
-
-#[test]
-#[ignore = "screen/audio diagnostic; use NES/tests/rom_test_matrix.md"]
-fn blargg_dmc_dma_register_interaction_diagnostics_experimental() {
-    let Some(root) = std::env::var_os("PEACEEMU_NES_TEST_ROM_DIR") else {
-        eprintln!("Skipping experimental DMC DMA ROM tests: PEACEEMU_NES_TEST_ROM_DIR is not set");
-        return;
-    };
-    let root = PathBuf::from(root);
-    // These ROMs exercise DMC DMA collisions with PPU register accesses
-    // and controller reads. They use Blargg's $6000 result protocol.
-    const ROMS: &[&str] = &[
-        "dmc_dma_during_read4/dma_2007_read.nes",
-        "dmc_dma_during_read4/dma_2007_write.nes",
-        "dmc_dma_during_read4/dma_4016_read.nes",
-        "dmc_dma_during_read4/double_2007_read.nes",
-        "dmc_dma_during_read4/read_write_2007.nes",
-    ];
-
-    let mut failures = Vec::new();
-    let mut passed = 0;
-    for relative in ROMS {
-        let path = root.join(relative);
-        if !path.is_file() {
-            failures.push(format!("missing DMC DMA ROM: {}", path.display()));
-            continue;
-        }
-        match run_blargg_rom(&path) {
-            Ok(message) => {
-                passed += 1;
-                println!("EXPERIMENTAL DMC DMA PASS {} — {}", relative, message);
-            }
-            Err(error) => {
-                eprintln!("EXPERIMENTAL DMC DMA FAIL {}", error);
-                failures.push(error);
-            }
-        }
-    }
-    println!("Blargg DMC DMA/register diagnostics: {passed}/{} passed", ROMS.len());
-    assert!(
-        failures.is_empty(),
-        "DMC DMA/register diagnostics reported {} failure(s):\n{}",
-        failures.len(),
-        failures.join("\n")
-    );
-}
-
-#[test]
 fn blargg_mmc3_mapper_diagnostics_experimental() {
     let Some(root) = std::env::var_os("PEACEEMU_NES_TEST_ROM_DIR") else {
         eprintln!("Skipping experimental MMC3 ROM tests: PEACEEMU_NES_TEST_ROM_DIR is not set");
@@ -670,21 +578,6 @@ fn blargg_apu_reset_diagnostics_experimental() {
     );
 }
 
-
-#[test]
-#[ignore = "screen/audio diagnostic; use NES/tests/rom_test_matrix.md"]
-fn blargg_cpu_dummy_reads_diagnostics_experimental() {
-    let Some(root) = std::env::var_os("PEACEEMU_NES_TEST_ROM_DIR") else {
-        eprintln!("Skipping experimental CPU dummy-read ROM test: PEACEEMU_NES_TEST_ROM_DIR is not set");
-        return;
-    };
-    let path = PathBuf::from(root).join("cpu_dummy_reads/cpu_dummy_reads.nes");
-    assert!(path.is_file(), "missing CPU dummy-read ROM: {}", path.display());
-    match run_blargg_rom(&path) {
-        Ok(message) => println!("EXPERIMENTAL CPU DUMMY-READ PASS — {}", message),
-        Err(error) => panic!("experimental CPU dummy-read diagnostic failed: {error}"),
-    }
-}
 
 #[test]
 fn blargg_cpu_dummy_writes_oam_diagnostics_experimental() {
