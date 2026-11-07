@@ -1080,8 +1080,8 @@ mod tests {
         assert!(!bus.irq_pending(), "the bus must forward and filter a seven-dot A12 interval");
 
         bus.write(0x2001, 0); // Start another low interval at dot 14.
-        bus.tick_ppu(8);
-        bus.write(0x2001, 0x08); // Qualified high edge at dot 22.
+        bus.tick_ppu(9);
+        bus.write(0x2001, 0x08); // Qualified high edge at dot 23.
         bus.tick_ppu(1);
         assert!(bus.irq_pending(), "the PPU IRQ must propagate through CpuBus to the CPU IRQ line");
     }
@@ -1611,7 +1611,7 @@ mod mmc3_ppu_irq_integration_regressions {
     #[test]
     fn cpu_ppudata_pattern_accesses_drive_mmc3_a12_and_irq() {
         let mut bus = mmc3_bus();
-        bus.tick_ppu(9); // Establish a low A12 baseline for at least eight dots.
+        bus.tick_ppu(9); // Establish a low A12 baseline for at least nine dots.
         bus.write(0x2006, 0x10);
         bus.write(0x2006, 0x00);
         let _ = bus.read(0x2007); // CPU reads CHR at $1000, driving A12 high.
@@ -1660,7 +1660,7 @@ mod mmc3_ppu_irq_integration_regressions {
         bus.write(0x2000, 0x10); // Background pattern table at $1000.
         bus.write(0x2001, 0x08); // Background rendering only.
         bus.tick_ppu(9); // First high pulse lasts five dots before A12 falls again.
-        assert!(!bus.irq_pending(), "an A12 high edge after fewer than eight low dots must be filtered");
+        assert!(!bus.irq_pending(), "an A12 high edge after fewer than nine low dots must be filtered");
     }
 
     #[test]
@@ -2454,7 +2454,7 @@ mod mmc3_ppudata_irq_regressions {
         // automatic VRAM increment moves the next read to $1000.
         bus.write(0x2006, 0x0F);
         bus.write(0x2006, 0xFF);
-        bus.tick_ppu(8);
+        bus.tick_ppu(9);
 
         let _ = bus.read(0x2007); // Reads $0FFF, then increments the bus address to $1000.
         assert!(bus.irq_pending(),
