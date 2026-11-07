@@ -2412,23 +2412,38 @@ mod irq_poll_sample_regressions {
     }
 
     #[test]
-    fn irq_poll_uses_the_line_sampled_before_the_final_instruction_cycle() {
+    fn irq_poll_samples_the_line_after_the_final_instruction_cycle() {
         let mut bus = CpuBus::new();
         bus.write(0x4017, 0x00);
+        bus.tick_apu(29_831);
+        assert!(!bus.irq_pending());
 
         bus.begin_cpu_instruction();
         let _ = bus.read(0x8000);
-        assert_eq!(bus.end_cpu_instruction(), 1);
-        bus.tick_apu(29_834);
+        let _ = bus.read(0x8001); // The frame IRQ asserts during this second cycle.
+        assert_eq!(bus.end_cpu_instruction(), 2);
+        assert!(bus.irq_pending());
+        assert!(bus.irq_pending_at_cpu_poll(),
+            "ordinary instructions must see an IRQ asserted during their final cycle");
+    }
+
+    #[test]
+    fn branch_can_freeze_the_irq_sample_before_its_final_dummy_cycle() {
+        let mut bus = CpuBus::new();
+        bus.write(0x4017, 0x00);
+        bus.tick_apu(29_830);
+        assert!(!bus.irq_pending());
+
+        bus.begin_cpu_instruction();
+        let _ = bus.read(0x8000);
+        let _ = bus.read(0x8001); // Penultimate cycle: IRQ is still low.
+        assert!(!bus.irq_pending_at_cpu_poll());
+        bus.freeze_irq_poll_sample_for_next_cycle();
+        let _ = bus.read(0x8002); // IRQ rises during the final dummy cycle.
+        assert_eq!(bus.end_cpu_instruction(), 3);
         assert!(bus.irq_pending());
         assert!(!bus.irq_pending_at_cpu_poll(),
-            "an IRQ raised after the sampled penultimate-cycle point is not taken yet");
-
-        bus.begin_cpu_instruction();
-        let _ = bus.read(0x8000);
-        assert_eq!(bus.end_cpu_instruction(), 1);
-        assert!(bus.irq_pending_at_cpu_poll(),
-            "the next instruction's bus access samples the now-asserted IRQ line");
+            "a taken branch must retain its penultimate-cycle IRQ sample");
     }
 }
 
