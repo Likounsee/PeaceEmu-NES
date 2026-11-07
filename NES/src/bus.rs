@@ -631,6 +631,18 @@ impl CpuBus {
     pub(crate) fn irq_pending_at_cpu_poll(&self) -> bool {
         self.irq_poll_sample.unwrap_or_else(|| self.irq_pending())
     }
+
+    /// Latches an asserted level IRQ while OAM DMA holds the CPU's next read.
+    ///
+    /// The CPU cannot execute an instruction during DMA, but a mapper/APU IRQ
+    /// that becomes active while RDY is held must be visible at the first
+    /// resumed instruction boundary. Preserve an earlier positive poll sample;
+    /// never erase it if a source is acknowledged later in the stall.
+    pub(crate) fn capture_irq_line_during_dma(&mut self) {
+        if self.irq_pending() {
+            self.irq_poll_sample = Some(true);
+        }
+    }
     /// Samples the PPU NMI output at a CPU-cycle boundary.
     ///
     /// The 2A03 detects the NMI edge from its sampled input level. A PPU pulse
