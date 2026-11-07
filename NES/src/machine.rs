@@ -333,15 +333,15 @@ impl NesMachine {
         self.clock_devices_for_cpu_cycles(instruction_cycles.saturating_sub(bus_cycles));
         self.bus.finish_cpu_instruction();
 
-        // CpuBus models the IRQ input's one-cycle propagation delay. The
-        // instruction poll uses the device-line sample captured at the start
-        // of the penultimate CPU cycle; do not replace it with a live read here.
+        // IRQ polling is captured by CpuBus at the start of the final real
+        // bus access, after the penultimate CPU cycle has completed. Do not
+        // resample after the instruction, which would move the poll point.
         if let Some(page) = self.bus.take_oam_dma_request() {
             self.perform_oam_dma(page);
             self.bus.release_deferred_nmi_after_dma();
-            // DMA keeps clocking the IRQ input pipeline while the CPU is
-            // halted, so an IRQ raised during the transfer reaches the CPU with
-            // the same one-cycle delay as an ordinary bus cycle.
+            // Keep an IRQ already sampled by the $4014-writing instruction,
+            // while also latching any level IRQ that asserts during the halted
+            // DMA cycles.
         }
         Ok(result)
     }
@@ -391,10 +391,9 @@ impl NesMachine {
     /// the caller then inserts OAM's one-cycle PUT alignment before retrying.
     fn clock_dma_bus_phase(&mut self, phase: DmaBusPhase) -> bool {
         self.bus.advance_cpu_cycle();
-        let irq_sample = self.bus.irq_pending();
         let _crossed_scanlines = self.bus.tick_ppu(3);
         let _dmc_phase_cycles = self.bus.tick_apu_with_dma_access(1, phase.dmc_can_halt());
-        self.bus.latch_irq_sample_for_dma_cycle(irq_sample);
+        self.bus.capture_irq_line_during_dma();
         self.bus.sample_nmi_line();
         let dmc_get = self.bus.take_dmc_dma_get_occurred();
         if dmc_get && phase == DmaBusPhase::Get {
