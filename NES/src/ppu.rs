@@ -42,7 +42,7 @@ const PPU_IO_LATCH_DECAY_DOTS: u64 = 3_221_600;
 /// Implements CPU-visible registers, pattern/nametable/palette access, OAM storage,
 /// VBlank/NMI state, dot-stepped scanline timing, and per-dot background/sprite output.
 /// The rendering pipeline is substantially modeled but is not yet cycle-perfect 2C02 logic.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Ppu {
     ctrl: u8,
     mask: u8,
@@ -135,6 +135,7 @@ pub struct Ppu {
     mapper_bus_events: Vec<(u16, u64)>,
     /// Bounded history of VBlank, PPUSTATUS, and NMI timing transitions.
     #[cfg(feature = "ppu-timing-diagnostics")]
+    #[serde(skip)]
     timing_events: VecDeque<PpuTimingEvent>,
 }
 
