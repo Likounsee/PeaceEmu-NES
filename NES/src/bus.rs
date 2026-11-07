@@ -2482,22 +2482,24 @@ mod irq_poll_sample_regressions {
     }
 
     #[test]
-    fn ordinary_instruction_does_not_sample_an_irq_raised_during_its_final_cycle() {
+    fn ordinary_instruction_uses_the_penultimate_cycle_irq_sample() {
         let mut bus = CpuBus::new();
         bus.write(0x4017, 0x00);
         bus.begin_cpu_instruction();
-        let _ = bus.read(0x8000);
+        let _ = bus.read(0x8000); // Penultimate cycle: IRQ line is still low.
+        let _ = bus.read(0x8000); // Final cycle: the instruction poll uses the prior sample.
         bus.tick_apu(29_834);
+        bus.finish_cpu_cycle(); // IRQ rises after the poll point.
         assert!(bus.irq_pending());
-        assert_eq!(bus.end_cpu_instruction(), 1);
+        assert_eq!(bus.end_cpu_instruction(), 2);
         assert!(!bus.irq_pending_at_cpu_poll(),
-            "an IRQ raised after the final-cycle poll is deferred to the next instruction");
+            "an IRQ raised during the final cycle must not affect this boundary");
 
         bus.begin_cpu_instruction();
         let _ = bus.read(0x8000);
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert!(bus.irq_pending_at_cpu_poll(),
-            "the next instruction samples the now-asserted IRQ line");
+            "the next instruction receives the IRQ detector output");
     }
 
     #[test]
@@ -2505,20 +2507,41 @@ mod irq_poll_sample_regressions {
         let mut bus = CpuBus::new();
         bus.write(0x4017, 0x00);
         bus.begin_cpu_instruction();
-        let _ = bus.read(0x8000); // Opcode/operand cycle before the branch's final dummy read.
+        let _ = bus.read(0x8000); // Opcode fetch.
+        let _ = bus.read(0x8000); // Operand fetch: branch poll point.
         bus.poll_irq_before_final_cycle();
-        let _ = bus.read(0x8000);
+        let _ = bus.read(0x8000); // Final dummy read must not shift the poll latch.
         bus.tick_apu(29_834);
+        bus.finish_cpu_cycle();
         assert!(bus.irq_pending());
-        assert_eq!(bus.end_cpu_instruction(), 2);
+        assert_eq!(bus.end_cpu_instruction(), 3);
         assert!(!bus.irq_pending_at_cpu_poll(),
-            "an IRQ raised after the early branch poll is deferred");
+            "an IRQ raised during the final branch cycle is deferred");
 
         bus.begin_cpu_instruction();
         let _ = bus.read(0x8000);
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert!(bus.irq_pending_at_cpu_poll(),
-            "the deferred IRQ is visible after the following instruction");
+            "the deferred IRQ is visible at the next instruction boundary");
+    }
+
+    #[test]
+    fn irq_asserted_before_oam_dma_remains_pending_after_dma() {
+        let mut bus = CpuBus::new();
+        bus.write(0x4017, 0x00);
+        bus.begin_cpu_instruction();
+        let _ = bus.read(0x8000);
+        bus.tick_apu(29_834);
+        bus.finish_cpu_cycle();
+        let _ = bus.read(0x8000); // The penultimate-cycle sample now sees IRQ high.
+        assert_eq!(bus.end_cpu_instruction(), 2);
+        assert!(bus.irq_pending_at_cpu_poll());
+
+        // OAM DMA must not erase the poll result captured by the STA instruction.
+        bus.tick_apu(2);
+        bus.finish_cpu_cycle();
+        assert!(bus.irq_pending_at_cpu_poll(),
+            "an IRQ sampled before DMA remains pending when the CPU resumes");
     }
 
     #[test]
@@ -2527,13 +2550,14 @@ mod irq_poll_sample_regressions {
         bus.write(0x4017, 0x00);
         bus.begin_cpu_instruction();
         let _ = bus.read(0x8000);
-        bus.end_cpu_instruction();
+        let _ = bus.read(0x8000);
+        assert_eq!(bus.end_cpu_instruction(), 2);
         assert!(!bus.irq_pending_at_cpu_poll());
 
-        // Model the IRQ becoming active while OAM DMA holds RDY. DMA release
-        // itself is not an instruction poll; the resumed instruction samples
-        // the level at its own final-cycle poll point.
+        // Model the IRQ becoming active while OAM DMA holds RDY. DMA cycles
+        // update the detector sample but do not shift the instruction poll latch.
         bus.tick_apu(29_834);
+        bus.finish_cpu_cycle();
         assert!(bus.irq_pending());
         assert!(!bus.irq_pending_at_cpu_poll());
 
@@ -2541,8 +2565,9 @@ mod irq_poll_sample_regressions {
         let _ = bus.read(0x8000);
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert!(bus.irq_pending_at_cpu_poll(),
-            "the first resumed instruction must capture the DMA-time IRQ");
+            "the first resumed instruction receives the DMA-time IRQ sample");
     }
+
 }
 
 
