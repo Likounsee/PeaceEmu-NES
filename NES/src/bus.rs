@@ -2450,7 +2450,7 @@ mod irq_poll_sample_regressions {
     }
 
     #[test]
-    fn ordinary_instruction_samples_irq_after_its_final_bus_cycle() {
+    fn ordinary_instruction_does_not_sample_an_irq_raised_during_its_final_cycle() {
         let mut bus = CpuBus::new();
         bus.write(0x4017, 0x00);
         bus.begin_cpu_instruction();
@@ -2458,8 +2458,14 @@ mod irq_poll_sample_regressions {
         bus.tick_apu(29_834);
         assert!(bus.irq_pending());
         assert_eq!(bus.end_cpu_instruction(), 1);
+        assert!(!bus.irq_pending_at_cpu_poll(),
+            "an IRQ raised after the final-cycle poll is deferred to the next instruction");
+
+        bus.begin_cpu_instruction();
+        let _ = bus.read(0x8000);
+        assert_eq!(bus.end_cpu_instruction(), 1);
         assert!(bus.irq_pending_at_cpu_poll(),
-            "an IRQ asserted during the final cycle is visible at the instruction boundary");
+            "the next instruction samples the now-asserted IRQ line");
     }
 
     #[test]
@@ -2467,13 +2473,14 @@ mod irq_poll_sample_regressions {
         let mut bus = CpuBus::new();
         bus.write(0x4017, 0x00);
         bus.begin_cpu_instruction();
-        let _ = bus.read(0x8000);
+        let _ = bus.read(0x8000); // Opcode/operand cycle before the branch's final dummy read.
         bus.poll_irq_before_final_cycle();
+        let _ = bus.read(0x8000);
         bus.tick_apu(29_834);
         assert!(bus.irq_pending());
-        assert_eq!(bus.end_cpu_instruction(), 1);
+        assert_eq!(bus.end_cpu_instruction(), 2);
         assert!(!bus.irq_pending_at_cpu_poll(),
-            "an IRQ raised during the final branch dummy-read cycle is deferred");
+            "an IRQ raised after the early branch poll is deferred");
 
         bus.begin_cpu_instruction();
         let _ = bus.read(0x8000);
