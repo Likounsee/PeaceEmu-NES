@@ -3337,12 +3337,12 @@ mod mmc3_tests {
         cart.cpu_write(0xC000, 0);
         cart.cpu_write(0xC001, 0);
         cart.observe_ppu_address(0x0000, 0);
-        cart.observe_ppu_address(0x1000, 2);
-        assert!(!cart.irq_pending(), "two M2 cycles do not meet the three-cycle filter");
+        cart.observe_ppu_address(0x1000, 7);
+        assert!(!cart.irq_pending(), "seven PPU dots do not meet the eight-dot filter");
 
         cart.cpu_write(0xE001, 0);
-        cart.observe_ppu_address(0x0000, 3);
-        cart.observe_ppu_address(0x1000, 6);
+        cart.observe_ppu_address(0x0000, 8);
+        cart.observe_ppu_address(0x1000, 16);
         assert!(cart.irq_pending(), "a subsequent qualified edge clocks the enabled counter");
     }
 
@@ -6210,7 +6210,7 @@ mod mmc3_a12_high_pulse_regressions {
     use super::*;
 
     #[test]
-    fn even_a_short_high_pulse_restarts_the_three_cpu_cycle_low_filter() {
+    fn even_a_short_high_pulse_restarts_the_eight_dot_low_filter() {
         let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 2;
@@ -6220,22 +6220,22 @@ mod mmc3_a12_high_pulse_regressions {
         cart.cpu_write(0xC001, 0);
         cart.cpu_write(0xE001, 0);
 
-        // One low M2 cycle is insufficient. The brief high pulse at cycle 1
-        // must discard that interval rather than allowing it to accumulate.
+        // A short low pulse is insufficient. The brief high pulse must
+        // discard that interval rather than allowing it to accumulate.
         cart.observe_ppu_address(0x0000, 0);
-        cart.observe_ppu_address(0x1000, 1);
+        cart.observe_ppu_address(0x1000, 3);
         assert!(!cart.irq_pending());
 
-        // A second one-cycle low interval is also insufficient, even though
-        // the two low intervals span more than three cycles in total.
-        cart.observe_ppu_address(0x0000, 2);
-        cart.observe_ppu_address(0x1000, 3);
+        // A second short low interval is also insufficient, even though the
+        // two low intervals span more than eight dots in total.
+        cart.observe_ppu_address(0x0000, 4);
+        cart.observe_ppu_address(0x1000, 7);
         assert!(!cart.irq_pending(),
             "separated low intervals must never be accumulated");
 
-        // Only a continuous three-cycle low interval may clock the IRQ counter.
-        cart.observe_ppu_address(0x0000, 4);
-        cart.observe_ppu_address(0x1000, 7);
+        // Only a continuous eight-dot low interval may clock the IRQ counter.
+        cart.observe_ppu_address(0x0000, 8);
+        cart.observe_ppu_address(0x1000, 16);
         assert!(cart.irq_pending());
     }
 }
