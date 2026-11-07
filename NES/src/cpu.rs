@@ -740,17 +740,23 @@ impl Cpu {
         let offset = self.fetch(bus) as i8;
         if !take { return 2; }
 
-        // A taken 6502 branch performs a dummy read at the sequential PC. When
-        // crossing a page, it then reads the intermediate address with the old
-        // high byte and target low byte before the target instruction executes.
+        // A taken branch polls IRQ on its penultimate cycle. For a normal
+        // taken branch this is the offset-fetch cycle; for a page crossing it
+        // is the first dummy-read cycle. An IRQ edge on the final dummy cycle
+        // must therefore wait until the following instruction's poll.
         let sequential_pc = self.state.pc;
-        let _ = bus.read(sequential_pc);
-        self.state.pc = sequential_pc.wrapping_add_signed(offset as i16);
-        if sequential_pc & 0xFF00 != self.state.pc & 0xFF00 {
-            let intermediate = (sequential_pc & 0xFF00) | (self.state.pc & 0x00FF);
+        let target = sequential_pc.wrapping_add_signed(offset as i16);
+        if sequential_pc & 0xFF00 != target & 0xFF00 {
+            let _ = bus.read(sequential_pc);
+            bus.freeze_irq_poll_sample_for_next_cycle();
+            let intermediate = (sequential_pc & 0xFF00) | (target & 0x00FF);
             let _ = bus.read(intermediate);
+            self.state.pc = target;
             4
         } else {
+            bus.freeze_irq_poll_sample_for_next_cycle();
+            let _ = bus.read(sequential_pc);
+            self.state.pc = target;
             3
         }
     }
