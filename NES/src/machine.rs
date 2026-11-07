@@ -508,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    fn oam_dma_uses_513_cycles_when_the_post_instruction_parity_is_even() {
+    fn oam_dma_uses_514_cycles_when_the_apu_halt_phase_requires_alignment() {
         // LDA $00 (3 cycles); STA $4014 (4 cycles). Including reset's
         // seven cycles, DMA begins at cycle 14 and needs no alignment cycle.
         let mut machine = NesMachine::from_ines(&nrom_with_program(&[
@@ -867,7 +867,7 @@ mod tests {
         }
         machine.step().unwrap(); // LDA #$02
         machine.step().unwrap(); // STA $4014 starts DMA
-        assert_eq!(machine.total_cycles(), 7 + 2 + 4 + 514);
+        assert_eq!(machine.total_cycles(), 7 + 2 + 4 + 513);
         for i in 0..=u8::MAX {
             machine.write_cpu(0x2003, i);
             assert_eq!(machine.read_cpu(0x2004), expected_oamdata_read(i, i ^ 0x5A));
@@ -888,7 +888,7 @@ mod tests {
         machine.write_cpu(0x4013, 0x00);
         machine.write_cpu(0x4015, 0x10);
         let before = machine.total_cycles();
-        let oam_base_cycles = if before & 1 == 0 { 513 } else { 514 };
+        let oam_base_cycles = if machine.bus.oam_dma_needs_alignment() { 514 } else { 513 };
         machine.perform_oam_dma(0x02);
 
         assert_eq!(machine.total_cycles() - before, oam_base_cycles + 2,
@@ -995,8 +995,8 @@ mod tests {
     }
 
     #[test]
-    fn oam_dma_uses_513_cycles_when_the_write_finishes_on_even_parity() {
-        // JMP takes 3 cycles, making the absolute STA to $4014 finish at cycle 16.
+    fn oam_dma_uses_514_cycles_when_the_apu_halt_phase_is_get() {
+        // JMP, LDA and STA advance the APU to the GET halt phase, requiring alignment.
         let image = nrom_with_program(&[
             0x4C, 0x04, 0x80, // JMP $8004
             0xEA,             // skipped
@@ -1008,7 +1008,7 @@ mod tests {
         machine.step().unwrap();
         machine.step().unwrap();
         machine.step().unwrap();
-        assert_eq!(machine.total_cycles(), 7 + 3 + 2 + 4 + 513);
+        assert_eq!(machine.total_cycles(), 7 + 3 + 2 + 4 + 514);
     }
 
     #[test]
@@ -1175,8 +1175,8 @@ mod tests {
         let before = machine.total_cycles();
         let result = machine.step().unwrap();
         assert_eq!(result.opcode, 0x8D);
-        assert_eq!(machine.total_cycles() - before, 4 + 514,
-            "the odd-parity store must include a 514-cycle OAM DMA stall");
+        assert_eq!(machine.total_cycles() - before, 4 + 513,
+            "the APU PUT halt phase must not require an alignment cycle");
         // DMA increments OAMADDR modulo 256, so the starting address is restored.
         assert_eq!(machine.read_cpu(0x2004), 0, "source byte $0200 reaches OAM address $80");
         machine.write_cpu(0x2003, 0xFF);
