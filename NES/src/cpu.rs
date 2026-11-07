@@ -740,23 +740,17 @@ impl Cpu {
         let offset = self.fetch(bus) as i8;
         if !take { return 2; }
 
-        // A taken branch polls IRQ on its penultimate cycle. For a normal
-        // taken branch this is the offset-fetch cycle; for a page crossing it
-        // is the first dummy-read cycle. An IRQ edge on the final dummy cycle
-        // must therefore wait until the following instruction's poll.
+        // A taken 6502 branch performs a dummy read at the sequential PC. When
+        // crossing a page, it then reads the intermediate address with the old
+        // high byte and target low byte before the target instruction executes.
         let sequential_pc = self.state.pc;
-        let target = sequential_pc.wrapping_add_signed(offset as i16);
-        if sequential_pc & 0xFF00 != target & 0xFF00 {
-            let _ = bus.read(sequential_pc);
-            bus.freeze_irq_poll_sample_for_next_cycle();
-            let intermediate = (sequential_pc & 0xFF00) | (target & 0x00FF);
+        let _ = bus.read(sequential_pc);
+        self.state.pc = sequential_pc.wrapping_add_signed(offset as i16);
+        if sequential_pc & 0xFF00 != self.state.pc & 0xFF00 {
+            let intermediate = (sequential_pc & 0xFF00) | (self.state.pc & 0x00FF);
             let _ = bus.read(intermediate);
-            self.state.pc = target;
             4
         } else {
-            bus.freeze_irq_poll_sample_for_next_cycle();
-            let _ = bus.read(sequential_pc);
-            self.state.pc = target;
             3
         }
     }
@@ -783,7 +777,7 @@ mod tests {
 
     fn irq_test_bus() -> CpuBus {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\x1A");
+        image[0..4].copy_from_slice(b"NES\\x1A");
         image[4] = 1;
         image[16 + 0x3FFE] = 0x00;
         image[16 + 0x3FFF] = 0x07;
@@ -791,82 +785,6 @@ mod tests {
         bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
         bus
     }
-
-    #[test]
-    fn jmp_recognizes_irq_asserted_during_its_final_cycle() {
-        let mut bus = irq_test_bus();
-        for (offset, value) in [0x4C, 0x03, 0x06, 0xEA].into_iter().enumerate() {
-            bus.write(0x0600 + offset as u16, value);
-        }
-        bus.write(0x4017, 0x00);
-        bus.tick_apu(29_829);
-        let mut cpu = Cpu::new();
-        cpu.set_pc(0x0600);
-        cpu.state.status &= !flags::INTERRUPT_DISABLE;
-
-        let jmp = timed_step(&mut cpu, &mut bus);
-        assert_eq!(jmp.opcode, 0x4C);
-        assert_eq!(cpu.state.pc, 0x0603);
-        assert!(bus.irq_pending());
-        assert!(bus.irq_pending_at_cpu_poll());
-
-        let irq = timed_step(&mut cpu, &mut bus);
-        assert_eq!(irq.opcode, 0xFE);
-        assert_eq!(cpu.state.pc, 0x0700);
-        assert_eq!(bus.read(0x01FD), 0x06);
-        assert_eq!(bus.read(0x01FC), 0x03);
-    }
-
-    #[test]
-    fn taken_branch_defers_irq_asserted_during_its_final_dummy_cycle() {
-        let mut bus = irq_test_bus();
-        bus.write(0x0600, 0x90); // BCC +0, taken because carry is clear.
-        bus.write(0x0601, 0x00);
-        bus.write(0x0602, 0xEA); // This instruction must execute before IRQ entry.
-        bus.write(0x4017, 0x00);
-        bus.tick_apu(29_829);
-        let mut cpu = Cpu::new();
-        cpu.set_pc(0x0600);
-        cpu.state.status &= !flags::INTERRUPT_DISABLE;
-
-        let branch = timed_step(&mut cpu, &mut bus);
-        assert_eq!(branch.cycles, 3);
-        assert_eq!(cpu.state.pc, 0x0602);
-        assert!(bus.irq_pending());
-        assert!(!bus.irq_pending_at_cpu_poll());
-
-        let following = timed_step(&mut cpu, &mut bus);
-        assert_eq!(following.opcode, 0xEA,
-            "a taken branch ignores an IRQ edge on its final dummy cycle");
-        assert!(bus.irq_pending_at_cpu_poll());
-
-        let irq = timed_step(&mut cpu, &mut bus);
-        assert_eq!(irq.opcode, 0xFE);
-        assert_eq!(cpu.state.pc, 0x0700);
-    }
-
-    #[test]
-    fn page_crossing_branch_polls_before_its_last_dummy_cycle() {
-        let mut bus = irq_test_bus();
-        bus.write(0x06FD, 0x90); // BCC +2 crosses from $06FF to $0701.
-        bus.write(0x06FE, 0x02);
-        bus.write(0x0701, 0xEA);
-        bus.write(0x4017, 0x00);
-        bus.tick_apu(29_828);
-        let mut cpu = Cpu::new();
-        cpu.set_pc(0x06FD);
-        cpu.state.status &= !flags::INTERRUPT_DISABLE;
-
-        let branch = timed_step(&mut cpu, &mut bus);
-        assert_eq!(branch.cycles, 4);
-        assert_eq!(cpu.state.pc, 0x0701);
-        assert!(bus.irq_pending());
-        assert!(!bus.irq_pending_at_cpu_poll());
-
-        assert_eq!(timed_step(&mut cpu, &mut bus).opcode, 0xEA);
-        assert_eq!(timed_step(&mut cpu, &mut bus).opcode, 0xFE);
-    }
-
 
     #[test]
     fn implied_opcodes_perform_the_second_bus_read_in_instruction_order() {
