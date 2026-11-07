@@ -1088,8 +1088,8 @@ mod tests {
         assert!(!bus.irq_pending(), "the bus must forward and filter a seven-dot A12 interval");
 
         bus.write(0x2001, 0); // Start another low interval at dot 14.
-        tick_ppu_with_cpu_cycles(&mut bus, 9);
-        bus.write(0x2001, 0x08); // Qualified high edge after three M2 cycles.
+        tick_ppu_with_cpu_cycles(&mut bus, 12);
+        bus.write(0x2001, 0x08); // Qualified high edge after three complete M2 cycles.
         bus.tick_ppu(1);
         assert!(bus.irq_pending(), "the PPU IRQ must propagate through CpuBus to the CPU IRQ line");
     }
