@@ -3281,7 +3281,7 @@ mod mmc3_tests {
 
         cart.observe_ppu_address(0x0000, 8);
         cart.observe_ppu_address(0x1000, 18);
-        assert!(cart.irq_pending(), "eight PPU dots qualify an A12 rising edge");
+        assert!(cart.irq_pending(), "ten PPU dots qualify an A12 rising edge");
 
         cart.cpu_write(0xE000, 0);
         cart.cpu_write(0xC000, 1);
@@ -3355,7 +3355,7 @@ mod mmc3_tests {
         assert!(!cart.irq_pending(), "seven elapsed low dots are below the filter");
         cart.observe_ppu_address(0x0000, 125);
         cart.observe_ppu_address(0x1000, 135);
-        assert!(cart.irq_pending(), "eight elapsed low dots qualify the next rising edge");
+        assert!(cart.irq_pending(), "ten elapsed low dots qualify the next rising edge");
     }
 
     #[test]
@@ -3556,7 +3556,7 @@ mod mmc3_tests {
         assert!(!cart.irq_pending(), "A12-high reset sample must not start a low interval");
 
         cart.observe_ppu_address(0x0000, 8);
-        cart.observe_ppu_address(0x1000, 18); // Now eight full low dots.
+        cart.observe_ppu_address(0x1000, 18); // Now ten full low dots.
         assert!(cart.irq_pending());
     }
 
@@ -3571,7 +3571,7 @@ mod mmc3_tests {
         assert!(cart.irq_pending());
 
         cart.cpu_write(0xE000, 0);
-        cart.observe_ppu_address(2x0000, 0);
+        cart.observe_ppu_address(0x0000, 0);
         cart.observe_ppu_address(0x1000, 9);
         assert!(!cart.irq_pending(), "backwards timestamp must not fabricate an A12 edge");
         cart.observe_ppu_address(0x0000, 10);
@@ -5420,7 +5420,7 @@ mod mmc3_a12_exact_boundary_regressions {
 
         cart.observe_ppu_address(0x0000, 18);
         cart.observe_ppu_address(0x1000, 28);
-        assert!(cart.irq_pending(), "eight PPU dots must clock MMC3 IRQ");
+        assert!(cart.irq_pending(), "ten PPU dots must clock MMC3 IRQ");
     }
 }
 
@@ -6272,13 +6272,13 @@ mod mmc3_a12_high_pulse_regressions {
         assert!(!cart.irq_pending());
 
         // A second short low interval is also insufficient, even though the
-        // two low intervals span more than eight dots in total.
+        // two low intervals span more than ten dots in total.
         cart.observe_ppu_address(0x0000, 4);
         cart.observe_ppu_address(0x1000, 7);
         assert!(!cart.irq_pending(),
             "separated low intervals must never be accumulated");
 
-        // Only a continuous eight-dot low interval may clock the IRQ counter.
+        // Only a continuous ten-dot low interval may clock the IRQ counter.
         cart.observe_ppu_address(0x0000, 8);
         cart.observe_ppu_address(0x1000, 18);
         assert!(cart.irq_pending());
