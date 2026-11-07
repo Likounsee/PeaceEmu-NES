@@ -2241,6 +2241,20 @@ mod exact_frame_sequence_timing_regressions {
     }
 
     #[test]
+    fn status_read_on_cycle_29829_is_not_undone_by_cycle_29830_wrap() {
+        let mut apu = Apu::new();
+        apu.tick_cpu_cycles(29_829);
+        assert!(apu.frame_irq_pending());
+        let _ = apu.read(0x4015);
+        assert!(!apu.frame_irq_pending(), "$4015 must acknowledge the pending frame IRQ");
+
+        apu.tick_cpu_cycles(1);
+        assert_eq!(apu.frame_cycles, 0, "the four-step sequence wraps at cycle 29,830");
+        assert!(!apu.frame_irq_pending(),
+            "the wrap cycle must not reassert an IRQ that was acknowledged at cycle 29,829");
+    }
+
+    #[test]
     fn five_step_sequence_resets_at_cycle_37282_without_frame_irq() {
         let mut apu = Apu::new();
         apu.write(0x4017, 0x80);
