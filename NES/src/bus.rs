@@ -2630,7 +2630,7 @@ mod irq_poll_sample_regressions {
     }
 
     #[test]
-    fn irq_asserted_during_oam_dma_is_polled_by_the_first_resumed_instruction() {
+    fn irq_asserted_during_oam_dma_is_polled_at_the_resumed_instruction_poll() {
         let mut bus = CpuBus::new();
         bus.write(0x4017, 0x00);
         bus.begin_cpu_instruction();
@@ -2640,26 +2640,19 @@ mod irq_poll_sample_regressions {
         assert!(!bus.irq_pending_at_cpu_poll());
 
         // Model the IRQ becoming active while OAM DMA holds RDY. DMA cycles
-        // update the detector sample but do not shift the instruction poll latch.
+        // update the detector sample but do not create an instruction boundary.
         bus.tick_apu(29_834);
         bus.finish_cpu_cycle();
         assert!(bus.irq_pending());
-        assert!(!bus.irq_pending_at_cpu_poll());
-
-        // OAM DMA holds the CPU's pending read. On RDY release, the final
-        // detector sample must become the poll result for the first resumed
-        // instruction rather than waiting for another instruction boundary.
-        bus.latch_irq_poll_after_dma();
-        assert!(bus.irq_pending_at_cpu_poll(),
-            "an IRQ sampled during DMA must reach the first resumed instruction");
+        assert!(!bus.irq_pending_at_cpu_poll(),
+            "DMA release must not overwrite the previous instruction's poll result");
 
         bus.begin_cpu_instruction();
         let _ = bus.read(0x8000);
         assert!(bus.irq_pending_at_cpu_poll(),
-            "the first resumed bus access must preserve the DMA-release poll sample");
+            "the first resumed instruction samples the DMA-time IRQ at its normal bus poll point");
         let _ = bus.read(0x8000);
-        assert!(bus.irq_pending_at_cpu_poll(),
-            "the next access must continue with the live IRQ detector sample");
+        assert!(bus.irq_pending_at_cpu_poll());
         assert_eq!(bus.end_cpu_instruction(), 2);
     }
 
