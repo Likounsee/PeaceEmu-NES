@@ -522,7 +522,6 @@ fn blargg_mmc3_mapper_diagnostics_experimental() {
         "mmc3_test_2/rom_singles/3-A12_clocking.nes",
         "mmc3_test_2/rom_singles/4-scanline_timing.nes",
         "mmc3_test_2/rom_singles/5-MMC3.nes",
-        "mmc3_test_2/rom_singles/6-MMC3_alt.nes",
     ];
 
     let mut failures = Vec::new();
@@ -571,6 +570,27 @@ fn blargg_mmc3_mapper_diagnostics_experimental() {
             }
         }
     }
+    // This ROM targets the alternate MMC3 revision found on some cartridges.
+    // The default mapper models the common revision-B behavior; the upstream
+    // test ROM explicitly documents that the final revision tests are mutually
+    // exclusive on a given chip. Treat only this exact revision-A result as a
+    // known hardware-variant difference, not as a core regression.
+    let alternate_revision = root.join("mmc3_test_2/rom_singles/6-MMC3_alt.nes");
+    if !alternate_revision.is_file() {
+        failures.push(format!("missing alternate MMC3 revision ROM: {}", alternate_revision.display()));
+    } else {
+        match run_blargg_rom(&alternate_revision) {
+            Ok(message) => println!("MMC3 REV-A VARIANT ALSO PASSED — {}", message),
+            Err(error)
+                if error.contains("failure code 0x02")
+                    && error.contains("IRQ shouldn't be set when reloading to 0 due to counter naturally reaching 0 previously") =>
+            {
+                println!("MMC3 REV-A VARIANT DIFFERENCE — expected for the default revision-B model");
+            }
+            Err(error) => failures.push(format!("unexpected MMC3 alternate-revision result: {error}")),
+        }
+    }
+
     println!("Blargg MMC3 diagnostics: {passed}/{} passed", ROMS.len());
     assert!(
         failures.is_empty(),
