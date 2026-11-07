@@ -1220,7 +1220,7 @@ mod tests {
     #[test]
     fn nmi_before_vector_latch_hijacks_both_irq_vector_bytes() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16 + 0x3FFA] = 0x78;
         image[16 + 0x3FFB] = 0x56;
@@ -1241,7 +1241,7 @@ mod tests {
     #[test]
     fn nmi_after_vector_latch_cannot_half_hijack_irq_vector() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16 + 0x3FFA] = 0x78;
         image[16 + 0x3FFB] = 0x56;
