@@ -1167,7 +1167,6 @@ pub struct Mmc3 {
     irq_latch: u8, irq_counter: u8, irq_reload: bool, irq_enabled: bool, irq_pending: bool,
     a12_high: bool,
     a12_low_since_ppu_cycle: Option<u64>,
-    a12_low_since_cpu_cycle: Option<u64>,
     last_ppu_cycle: Option<u64>,
 }
 impl Mmc3 {
@@ -1228,7 +1227,7 @@ impl Mmc3 {
             banks: [0, 2, 4, 5, 6, 7, 0, 1], bank_select: 0, mirroring, ram_enabled: true,
             ram_write_protected: false, irq_latch: 0, irq_counter: 0, irq_reload: false,
             irq_enabled: false, irq_pending: false, a12_high: false,
-            a12_low_since_ppu_cycle: None, a12_low_since_cpu_cycle: None,
+            a12_low_since_ppu_cycle: None,
             last_ppu_cycle: None })
     }
     fn prg_index(&self, address: u16) -> usize {
@@ -1331,50 +1330,18 @@ impl Mmc3 {
         self.a12_low_since_ppu_cycle = None;
     }
 
-    /// Samples the current PPU A12 level at an M2 falling edge.
+    /// Receives an A12 observation with the CPU clock for diagnostics.
     ///
-    /// MMC3's low-time filter counts three consecutive M2 samples, not a fixed
-    /// number of PPU dots. The dot timestamp is used only to detect a PPU reset.
+    /// The production bus forwards every PPU address transition with its exact
+    /// dot timestamp. Keep this adapter for callers that also have an M2 count,
+    /// but use the same ten-dot hardware filter as the direct PPU observer.
     fn observe_ppu_address_at_cpu_cycle(
         &mut self,
         address: u16,
         ppu_cycle: u64,
-        cpu_cycle: u64,
+        _cpu_cycle: u64,
     ) {
-        if self.last_ppu_cycle.is_some_and(|last| ppu_cycle < last) {
-            let a12 = address & 0x1000 != 0;
-            self.a12_high = a12;
-            self.a12_low_since_cpu_cycle = if a12 { None } else { Some(cpu_cycle) };
-            self.a12_low_since_ppu_cycle = if a12 { None } else { Some(ppu_cycle) };
-            self.last_ppu_cycle = Some(ppu_cycle);
-            return;
-        }
-        self.last_ppu_cycle = Some(ppu_cycle);
-
-        let a12 = address & 0x1000 != 0;
-        if !a12 {
-            if self.a12_high || self.a12_low_since_cpu_cycle.is_none() {
-                self.a12_low_since_cpu_cycle = Some(cpu_cycle);
-                self.a12_low_since_ppu_cycle = Some(ppu_cycle);
-            }
-            self.a12_high = false;
-            return;
-        }
-
-        if !self.a12_high {
-            // The board's filter requires more than three complete CPU cycles
-            // of low A12. A nine-dot interval ends on the third M2 edge and
-            // must not clock; the first qualifying interval is ten PPU dots.
-            let low_dots = self.a12_low_since_ppu_cycle
-                .map(|start| ppu_cycle.saturating_sub(start))
-                .unwrap_or(0);
-            if low_dots >= 10 {
-                self.clock_irq_counter();
-            }
-        }
-        self.a12_high = true;
-        self.a12_low_since_cpu_cycle = None;
-        self.a12_low_since_ppu_cycle = None;
+        self.observe_ppu_address(address, ppu_cycle);
     }
 
     /// Manually clocks the IRQ counter for diagnostics; normal PPU operation clocks it through filtered A12 rising edges.
@@ -3350,26 +3317,19 @@ mod mmc3_tests {
 
 
     #[test]
-    fn mapper_4_a12_filter_counts_three_m2_falling_edge_samples() {
+    fn mapper_4_a12_filter_rejects_nine_dots_and_accepts_ten() {
         let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
         cart.cpu_write(0xC000, 0);
         cart.cpu_write(0xC001, 0);
         cart.cpu_write(0xE001, 0);
 
-        // Two sampled low M2 edges are insufficient, even if the PPU-dot
-        // interval happens to span ten dots.
-        cart.observe_ppu_address_at_cpu_cycle(0x0000, 100, 0);
-        cart.observe_ppu_address_at_cpu_cycle(0x0000, 103, 1);
-        cart.observe_ppu_address_at_cpu_cycle(0x1000, 108, 2);
-        assert!(!cart.irq_pending(), "two low M2 samples must be filtered");
+        cart.observe_ppu_address(0x0000, 100);
+        cart.observe_ppu_address(0x1000, 109);
+        assert!(!cart.irq_pending(), "nine PPU dots must not clock MMC3 IRQ");
 
-        // A new low interval sampled on three consecutive M2 falling edges
-        // qualifies the next high sample.
-        cart.observe_ppu_address_at_cpu_cycle(0x0000, 109, 3);
-        cart.observe_ppu_address_at_cpu_cycle(0x0000, 112, 4);
-        cart.observe_ppu_address_at_cpu_cycle(0x0000, 115, 5);
-        cart.observe_ppu_address_at_cpu_cycle(0x1000, 118, 6);
-        assert!(cart.irq_pending(), "three sampled low M2 edges must clock MMC3 IRQ");
+        cart.observe_ppu_address(0x0000, 110);
+        cart.observe_ppu_address(0x1000, 120);
+        assert!(cart.irq_pending(), "ten PPU dots qualify an A12 rising edge");
     }
 
     #[test]
