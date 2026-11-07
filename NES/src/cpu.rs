@@ -1218,6 +1218,52 @@ mod tests {
     }
 
     #[test]
+    fn nmi_before_vector_latch_hijacks_both_irq_vector_bytes() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFA] = 0x78;
+        image[16 + 0x3FFB] = 0x56;
+        image[16 + 0x3FFE] = 0x34;
+        image[16 + 0x3FFF] = 0x12;
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
+        bus.tick_ppu(243 * 341 + 1);
+        bus.write(0x2000, 0x80);
+        bus.sample_nmi_line();
+
+        let vector = Cpu::select_interrupt_vector(&mut bus, 0xFFFE);
+        assert_eq!(vector, 0xFFFA);
+        assert_eq!(Cpu::read_interrupt_vector(&mut bus, vector), 0x5678);
+        assert!(!bus.take_nmi_request(), "the NMI edge is consumed by vector hijacking");
+    }
+
+    #[test]
+    fn nmi_after_vector_latch_cannot_half_hijack_irq_vector() {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFA] = 0x78;
+        image[16 + 0x3FFB] = 0x56;
+        image[16 + 0x3FFE] = 0x34;
+        image[16 + 0x3FFF] = 0x12;
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
+
+        // The IRQ vector is latched before the status push. An NMI arriving
+        // after that point must not replace only the vector's high byte.
+        let vector = Cpu::select_interrupt_vector(&mut bus, 0xFFFE);
+        assert_eq!(vector, 0xFFFE);
+        bus.tick_ppu(243 * 341 + 1);
+        bus.write(0x2000, 0x80);
+        bus.sample_nmi_line();
+
+        assert_eq!(Cpu::read_interrupt_vector(&mut bus, vector), 0x1234);
+        assert!(bus.take_nmi_request(),
+            "a late NMI remains pending instead of creating a mixed IRQ/NMI address");
+    }
+
+    #[test]
     fn nmi_during_final_brk_vector_cycle_waits_for_first_handler_instruction() {
         let mut image = vec![0; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
