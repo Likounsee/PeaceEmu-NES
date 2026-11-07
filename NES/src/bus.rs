@@ -1054,7 +1054,7 @@ mod tests {
         bus.write(0xC000, 0); // IRQ latch = 0.
         bus.write(0xC001, 0); // Reload on the next qualified edge.
         bus.tick_ppu(341); // Advance from pre-render to visible scanline zero.
-        bus.write(0x2000, 0x08); // Background pattern table at $1000.
+        bus.write(0x2000, 0x10); // Background pattern table at $1000.
         bus.write(0x2001, 0x08); // Enable background rendering.
 
         bus.tick_ppu(5); // Establish the initial high A12 level before enabling IRQs.
@@ -1610,7 +1610,7 @@ mod mmc3_ppu_irq_integration_regressions {
     #[test]
     fn ppu_generated_a12_edge_clocks_mmc3_irq_without_diagnostic_hook() {
         let mut bus = mmc3_bus();
-        bus.write(0x2000, 0x10); // Sprite pattern table at $1000; background table at $0000.
+        bus.write(0x2000, 0x08); // Sprite pattern table at $1000; background table at $0000.
         bus.write(0x2001, 0x18); // Enable both rendering layers.
         assert!(!bus.irq_pending());
 
@@ -1623,7 +1623,7 @@ mod mmc3_ppu_irq_integration_regressions {
     #[test]
     fn ppu_reset_rebases_mapper_a12_filter_without_false_irq() {
         let mut bus = mmc3_bus();
-        bus.write(0x2000, 0x10);
+        bus.write(0x2000, 0x08);
         bus.write(0x2001, 0x18);
         bus.tick_ppu(261);
         assert!(bus.irq_pending(), "fixture must first clock a real mapper IRQ");
@@ -1632,7 +1632,7 @@ mod mmc3_ppu_irq_integration_regressions {
         bus.reset(); // Cartridge remains inserted while the PPU dot counter restarts.
         bus.write(0xC001, 0);
         bus.write(0xE001, 0);
-        bus.write(0x2000, 0x08);
+        bus.write(0x2000, 0x10);
         bus.write(0x2001, 0x08);
         bus.tick_ppu(9);
 
@@ -1645,7 +1645,7 @@ mod mmc3_ppu_irq_integration_regressions {
     #[test]
     fn short_a12_pulse_does_not_clock_mmc3_irq() {
         let mut bus = mmc3_bus();
-        bus.write(0x2000, 0x08); // Background pattern table at $1000.
+        bus.write(0x2000, 0x10); // Background pattern table at $1000.
         bus.write(0x2001, 0x08); // Background rendering only.
         bus.tick_ppu(9); // First high pulse lasts five dots before A12 falls again.
         assert!(!bus.irq_pending(), "an A12 high edge after fewer than eight low dots must be filtered");
@@ -1892,7 +1892,7 @@ mod dma_and_irq_interaction_regressions {
         bus.write(0xC000, 0);
         bus.write(0xC001, 0);
         bus.write(0xE001, 0);
-        bus.write(0x2000, 0x10); // Sprite pattern table at $1000.
+        bus.write(0x2000, 0x08); // Sprite pattern table at $1000.
         bus.write(0x2001, 0x18);
         bus.tick_ppu(261);
         assert!(bus.irq_pending(), "fixture must raise a real PPU-driven MMC3 IRQ");
