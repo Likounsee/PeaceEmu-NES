@@ -457,6 +457,7 @@ fn blargg_extended_hardware_diagnostics() {
 }
 
 #[test]
+#[ignore = "screen/audio diagnostic; use NES/tests/rom_test_matrix.md"]
 fn blargg_ppu_register_diagnostics_experimental() {
     let Some(root) = std::env::var_os("PEACEEMU_NES_PPU_TEST_ROM_DIR") else {
         eprintln!("Skipping experimental PPU register ROM tests: PEACEEMU_NES_PPU_TEST_ROM_DIR is not set");
@@ -502,6 +503,7 @@ fn blargg_ppu_register_diagnostics_experimental() {
 }
 
 #[test]
+#[ignore = "screen/audio diagnostic; use NES/tests/rom_test_matrix.md"]
 fn blargg_dmc_dma_register_interaction_diagnostics_experimental() {
     let Some(root) = std::env::var_os("PEACEEMU_NES_TEST_ROM_DIR") else {
         eprintln!("Skipping experimental DMC DMA ROM tests: PEACEEMU_NES_TEST_ROM_DIR is not set");
@@ -670,6 +672,7 @@ fn blargg_apu_reset_diagnostics_experimental() {
 
 
 #[test]
+#[ignore = "screen/audio diagnostic; use NES/tests/rom_test_matrix.md"]
 fn blargg_cpu_dummy_reads_diagnostics_experimental() {
     let Some(root) = std::env::var_os("PEACEEMU_NES_TEST_ROM_DIR") else {
         eprintln!("Skipping experimental CPU dummy-read ROM test: PEACEEMU_NES_TEST_ROM_DIR is not set");
