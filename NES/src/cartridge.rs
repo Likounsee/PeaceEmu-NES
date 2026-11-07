@@ -6209,7 +6209,7 @@ mod mmc3_a12_high_pulse_regressions {
     #[test]
     fn even_a_short_high_pulse_restarts_the_eight_dot_low_filter() {
         let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 2;
         image[6] = 0x40;
         let mut cart = Cartridge::parse(&image).unwrap();
