@@ -392,12 +392,8 @@ impl NesMachine {
     fn clock_dma_bus_phase(&mut self, phase: DmaBusPhase) -> bool {
         self.bus.advance_cpu_cycle();
         let _crossed_scanlines = self.bus.tick_ppu(3);
-        // Match the ordinary idle-cycle clock order: the CPU samples IRQ at
-        // the M2 falling edge before the APU advances through the following
-        // cycle. Sampling after tick_apu made frame IRQ visible one cycle early
-        // throughout OAM DMA, which shifts Blargg's irq_and_dma timing matrix.
-        self.bus.finish_cpu_cycle();
         let _dmc_phase_cycles = self.bus.tick_apu_with_dma_access(1, phase.dmc_can_halt());
+        self.bus.finish_cpu_cycle();
         self.bus.sample_nmi_line();
         let dmc_get = self.bus.take_dmc_dma_get_occurred();
         if dmc_get && phase == DmaBusPhase::Get {
