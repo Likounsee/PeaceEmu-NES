@@ -799,7 +799,7 @@ mod tests {
             bus.write(0x0600 + offset as u16, value);
         }
         bus.write(0x4017, 0x00);
-        bus.tick_apu(29_830);
+        bus.tick_apu(29_828);
         let mut cpu = Cpu::new();
         cpu.set_pc(0x0600);
         cpu.state.status &= !flags::INTERRUPT_DISABLE;
