@@ -361,7 +361,7 @@ impl CpuBus {
     /// Samples the mapper-visible A12 line at the M2 falling edge ending this cycle.
     pub(crate) fn finish_cpu_cycle(&mut self) {
         self.sample_mapper_a12_bus();
-        self.irq_cycle_sample = Some(self.irq_pending());
+        self.irq_cycle_sample = Some(self.cpu_irq_input_pending());
     }
 
     /// The CPU's next read is held throughout OAM DMA. At RDY release, latch
@@ -1776,6 +1776,28 @@ mod mmc3_ppu_irq_integration_regressions {
         assert!(bus.irq_pending(),
             "the PPU-generated qualified A12 edge should assert MMC3 IRQ; level={}, cpu_cycle={}, ppu_cycle={}, position={:?}, transitions={:?}",
             bus.mapper_a12_level, bus.cpu_cycle, bus.ppu.cycle_count(), bus.ppu_position(), bus.mapper_a12_trace);
+    }
+
+    #[test]
+    fn mmc3_irq_reaches_cpu_input_after_seventeen_master_half_steps() {
+        let mut bus = mmc3_bus();
+        bus.write(0x2000, 0x08);
+        bus.write(0x2001, 0x18);
+        tick_ppu_with_cpu_cycles(&mut bus, 261);
+
+        assert!(bus.irq_pending(), "the MMC3 /IRQ pin asserts on the qualified A12 edge");
+        assert_eq!(bus.irq_cycle_sample, Some(false),
+            "the mapper pin must not reach the CPU at the same PPU dot");
+
+        bus.tick_ppu(2);
+        bus.finish_cpu_cycle();
+        assert_eq!(bus.irq_cycle_sample, Some(false),
+            "two PPU dots are only sixteen master half-steps");
+
+        bus.tick_ppu(1);
+        bus.finish_cpu_cycle();
+        assert_eq!(bus.irq_cycle_sample, Some(true),
+            "the CPU input sees /IRQ after the seventeenth master half-step");
     }
 
     #[test]
