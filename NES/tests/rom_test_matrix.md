@@ -23,14 +23,13 @@ out.
 | `branch_timing_tests` | 3 | 6502 branch cycles, page crossings and NMI timing | Inspect displayed result and beeps; run in documented order |
 | `sprite_hit_tests_2005.10.05` | 11 | Sprite-zero hit opacity, clipping, alignment and dot timing | Inspect displayed result and beeps; run in documented order |
 | `sprite_overflow_tests` | 5 | Sprite overflow flag and 2C02 evaluation quirks | Inspect displayed result and beeps; run in documented order |
+| `blargg_ppu_tests_2005.09.15b` | 5 | Palette RAM, power-up palette, sprite RAM/OAM DMA, VBlank clear timing and VRAM buffer | Screen result code and audible result; manual |
+| `dmc_dma_during_read4` | 5 | DMC DMA collisions with PPUDATA reads/writes and controller reads | On-screen values and CRC; manual |
+| `cpu_dummy_reads` | 1 | CPU dummy reads for indexed and indirect addressing, including PPU register side effects | Screen result and beeps; manual |
 
 The source/readme for each suite in the pinned upstream `nes-test-roms`
 checkout documents its expected behavior. Capture the framebuffer and audio
 diagnostic output when a GUI/audio-capable test harness is available.
-
-| `blargg_ppu_tests_2005.09.15b` | 5 | Palette RAM, power-up palette, sprite RAM/OAM DMA, VBlank clear timing and VRAM buffer | Screen result code and audible result; manual |
-| `dmc_dma_during_read4` | 5 | DMC DMA collisions with PPUDATA reads/writes and controller reads | On-screen values and CRC; manual |
-| `cpu_dummy_reads` | 1 | CPU dummy reads for indexed and indirect addressing, including PPU register side effects | Screen result and beeps; manual |
 
 These suites do not expose the headless `$6001-$6003` signature required by
 `run_blargg_rom`. They are intentionally marked ignored in the automated Rust
