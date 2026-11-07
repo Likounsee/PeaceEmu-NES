@@ -2490,7 +2490,7 @@ mod irq_poll_sample_regressions {
     }
 
     #[test]
-    fn irq_asserted_during_oam_dma_is_sampled_when_cpu_resumes() {
+    fn irq_asserted_during_oam_dma_is_polled_by_the_first_resumed_instruction() {
         let mut bus = CpuBus::new();
         bus.write(0x4017, 0x00);
         bus.begin_cpu_instruction();
@@ -2498,11 +2498,18 @@ mod irq_poll_sample_regressions {
         bus.end_cpu_instruction();
         assert!(!bus.irq_pending_at_cpu_poll());
 
+        // Model the IRQ becoming active while OAM DMA holds RDY. DMA release
+        // itself is not an instruction poll; the resumed instruction samples
+        // the level at its own final-cycle poll point.
         bus.tick_apu(29_834);
         assert!(bus.irq_pending());
-        bus.sample_irq_line_after_dma();
+        assert!(!bus.irq_pending_at_cpu_poll());
+
+        bus.begin_cpu_instruction();
+        let _ = bus.read(0x8000);
+        assert_eq!(bus.end_cpu_instruction(), 1);
         assert!(bus.irq_pending_at_cpu_poll(),
-            "the CPU must see a level IRQ that asserted while OAM DMA held RDY");
+            "the first resumed instruction must capture the DMA-time IRQ");
     }
 }
 
