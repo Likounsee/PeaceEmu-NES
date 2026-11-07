@@ -2074,7 +2074,7 @@ mod mmc3_ppudata_write_bus_regressions {
         bus.write(0xC000, 0);
         bus.write(0xC001, 0);
         bus.write(0xE001, 0);
-        tick_ppu_with_cpu_cycles(&mut bus, 9);
+        tick_ppu_with_cpu_cycles(&mut bus, 12);
         bus
     }
 
@@ -2462,7 +2462,7 @@ mod mmc3_ppudata_irq_regressions {
         // automatic VRAM increment moves the next read to $1000.
         bus.write(0x2006, 0x0F);
         bus.write(0x2006, 0xFF);
-        tick_ppu_with_cpu_cycles(&mut bus, 9);
+        tick_ppu_with_cpu_cycles(&mut bus, 12);
 
         let _ = bus.read(0x2007); // Reads $0FFF, then increments the bus address to $1000.
         assert!(bus.irq_pending(),
