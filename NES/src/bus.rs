@@ -436,16 +436,15 @@ impl CpuBus {
         self.open_bus = value;
         self.record_bus_access(CpuBusAccessKind::Read, address, value);
         if timed_access && !poll_before_access {
-            // The CPU samples NMI at the register data strobe, before trailing
-            // PPU dots can create a new edge later in this same CPU cycle.
             self.sample_nmi_line();
+        }
+        if timed_access {
+            // The CPU bus strobe is the mapper's M2 sampling point. Preserve
+            // CPU-driven $2006/$2007 transitions before trailing PPU dots.
+            self.finish_cpu_cycle();
         }
         if timed_access && ppu_register {
             self.tick_ppu(3 - ppu_dots_before_access);
-        }
-        if timed_access {
-            // Mapper A12 is sampled at the end-of-cycle M2 falling edge.
-            self.finish_cpu_cycle();
         }
         value
     }
@@ -497,15 +496,12 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
         if timed_access {
-            // NMI is sampled at the CPU bus strobe; mapper A12 is sampled at
-            // the later M2 falling edge after the remaining PPU dots.
             self.sample_nmi_line();
+            // CPU writes to $2006/$2007 drive A12 at this same M2 strobe.
+            self.finish_cpu_cycle();
         }
         if timed_access && ppu_register {
             self.tick_ppu(3 - ppu_dots_before_access);
-        }
-        if timed_access {
-            self.finish_cpu_cycle();
         }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
