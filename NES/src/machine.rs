@@ -510,7 +510,7 @@ mod tests {
     #[test]
     fn oam_dma_uses_514_cycles_when_the_apu_halt_phase_requires_alignment() {
         // LDA $00 (3 cycles); STA $4014 (4 cycles). Including reset's
-        // seven cycles, DMA begins at cycle 14 and needs no alignment cycle.
+        // seven cycles, the next APU cycle is GET and needs alignment.
         let mut machine = NesMachine::from_ines(&nrom_with_program(&[
             0xA5, 0x00,
             0x8D, 0x14, 0x40,
@@ -524,7 +524,7 @@ mod tests {
         assert_eq!(machine.step().unwrap().cycles, 3);
         let before = machine.total_cycles();
         assert_eq!(machine.step().unwrap().cycles, 4);
-        assert_eq!(machine.total_cycles() - before, 4 + 513);
+        assert_eq!(machine.total_cycles() - before, 4 + 514);
         for offset in 0..=u8::MAX {
             machine.write_cpu(0x2003, offset);
             assert_eq!(machine.read_cpu(0x2004), expected_oamdata_read(offset, offset ^ 0xA5));
@@ -532,9 +532,9 @@ mod tests {
     }
 
     #[test]
-    fn oam_dma_adds_alignment_stall_cycles_and_advances_ppu() {
-        // LDA #$02; STA $4014. Reset starts at 7 cycles, so six instruction
-        // cycles leave odd parity and the DMA takes 514 cycles.
+    fn oam_dma_uses_513_cycles_on_the_apu_put_halt_phase() {
+        // LDA #$02; STA $4014. Six APU ticks leave the next halt slot on PUT,
+        // so OAM can proceed directly to its first GET without alignment.
         let mut machine = NesMachine::from_ines(&nrom_with_program(&[
             0xA9, 0x02,
             0x8D, 0x14, 0x40,
@@ -547,8 +547,8 @@ mod tests {
         let result = machine.step().unwrap();
 
         assert_eq!(result.cycles, 4, "STA retains its nominal instruction cycles");
-        assert_eq!(machine.total_cycles() - before_cycles, 4 + 514,
-            "odd CPU parity adds one alignment cycle to OAM DMA");
+        assert_eq!(machine.total_cycles() - before_cycles, 4 + 513,
+            "the APU PUT halt phase does not require an alignment cycle");
         assert_ne!(machine.ppu_position(), before_position,
             "OAM DMA stalls must advance the PPU as well as CPU time");
     }
