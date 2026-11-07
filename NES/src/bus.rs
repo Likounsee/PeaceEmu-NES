@@ -490,11 +490,16 @@ impl CpuBus {
     }
 
     /// Forwards PPU address-bus transitions to cartridge IRQ circuitry.
+    ///
+    /// MMC3 samples A12 on the CPU's M2 clock, not continuously on every PPU
+    /// dot. Quantize all PPU transitions in one CPU cycle to the same timestamp
+    /// (three NTSC PPU dots per M2 cycle) so sub-cycle pulses cannot clock IRQ.
     fn sync_mapper_bus_events(&mut self) {
         let events = self.ppu.take_mapper_bus_events();
         if let Some(cartridge) = self.cartridge.as_mut() {
-            for (address, cycle) in events {
-                cartridge.observe_ppu_address(address, cycle);
+            let mapper_cycle = self.cpu_cycle.saturating_mul(3);
+            for (address, _ppu_cycle) in events {
+                cartridge.observe_ppu_address(address, mapper_cycle);
             }
         }
     }
