@@ -366,6 +366,48 @@ mod tests {
         session.set_controller_state(1, 0b0000_0010);
         assert_eq!(session.total_cycles(), 7);
     }
+
+    #[test]
+    fn full_machine_save_state_restores_deterministic_execution() {
+        let config = NesConfig { audio_sample_rate: 48_000 };
+        let mut session = NesSession::load(&looping_rom(), config).unwrap();
+        session.set_controller_state(0, 0b1000_0001);
+        session.advance_frame().unwrap();
+        let snapshot = session.save_state().unwrap();
+        let expected_cycles = session.total_cycles();
+        let expected_ppu = session.ppu_position();
+        let expected_cpu = session.cpu_state();
+
+        let mut expected = NesSession::load(&looping_rom(), config).unwrap();
+        expected.load_state(&snapshot).unwrap();
+        let expected_frame = expected.advance_frame().unwrap();
+
+        session.advance_frame().unwrap();
+        session.load_state(&snapshot).unwrap();
+        assert_eq!(session.total_cycles(), expected_cycles);
+        assert_eq!(session.ppu_position(), expected_ppu);
+        assert_eq!(session.cpu_state(), expected_cpu);
+        assert_eq!(session.config(), config);
+
+        let restored_frame = session.advance_frame().unwrap();
+        assert_eq!(restored_frame.palette_indices, expected_frame.palette_indices);
+        assert_eq!(restored_frame.audio_samples, expected_frame.audio_samples);
+        assert_eq!(restored_frame.cpu_cycles, expected_frame.cpu_cycles);
+    }
+
+    #[test]
+    fn malformed_save_state_is_rejected_without_mutating_the_running_session() {
+        let mut session = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
+        session.advance_frame().unwrap();
+        let cycles = session.total_cycles();
+        let ppu = session.ppu_position();
+        assert_eq!(
+            session.load_state(b"not a valid NES state"),
+            Err(NesSessionError::InvalidSaveState)
+        );
+        assert_eq!(session.total_cycles(), cycles);
+        assert_eq!(session.ppu_position(), ppu);
+    }
     #[test]
     fn session_exposes_and_clears_machine_bus_trace() {
         let mut session = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
