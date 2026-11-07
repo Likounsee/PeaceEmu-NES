@@ -118,7 +118,9 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 };
                 // Preserve the edge history before host-side message/status reads
                 // add unrelated PPUSTATUS traffic to the diagnostic stream.
-                let ppu_nmi_timing_snapshot = if path.to_string_lossy().contains("cpu_interrupts_v2") {
+                let ppu_timing_snapshot = if path.to_string_lossy().contains("cpu_interrupts_v2")
+                    || path.to_string_lossy().contains("mmc3_test_2")
+                {
                     machine.ppu_timing_events()
                 } else {
                     Vec::new()
@@ -176,10 +178,50 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 } else {
                     String::new()
                 };
+                let mapper_debug = if path.to_string_lossy().contains("mmc3_test_2") {
+                    let ppu_events = ppu_timing_snapshot.iter()
+                        .filter(|event| matches!(
+                            event.kind,
+                            "MAPPER_A12_RISE" | "MAPPER_A12_FALL" | "PPUCTRL_WRITE" | "PPUMASK_WRITE"
+                        ))
+                        .rev()
+                        .take(256)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .map(|event| format!(
+                            "ppu_cycle={} beam={}:{} {} ctrl=${:02X}",
+                            event.cycle, event.scanline, event.dot, event.kind, event.ctrl
+                        ))
+                        .collect::<Vec<_>>()
+                        .join("\\n");
+                    let entries = machine.bus_trace();
+                    let bus_events = entries.iter().enumerate()
+                        .filter(|(index, entry)| {
+                            let previous = index.checked_sub(1).map(|previous| &entries[previous]);
+                            matches!(entry.address, 0x2000 | 0x2001 | 0xC000 | 0xC001 | 0xE000 | 0xE001)
+                                || previous.is_some_and(|previous| previous.irq_line != entry.irq_line)
+                        })
+                        .rev()
+                        .take(256)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .map(|(_, entry)| format!(
+                            "cpu_cycle={} beam={}:{} {:?} ${:04X}=${:02X} irq={}",
+                            entry.cycle, entry.ppu_scanline, entry.ppu_dot, entry.kind,
+                            entry.address, entry.value, entry.irq_line
+                        ))
+                        .collect::<Vec<_>>()
+                        .join("\\n");
+                    format!("\\nMMC3 PPU A12/CTRL trace:\\n{ppu_events}\\nMMC3 CPU register/IRQ trace:\\n{bus_events}")
+                } else {
+                    String::new()
+                };
                 let cpu_debug = if path.to_string_lossy().contains("cpu_interrupts_v2") {
                     let state = machine.cpu_state();
                     // Captured before reading the Blargg message above.
-                    let ppu_nmi_events = ppu_nmi_timing_snapshot
+                    let ppu_nmi_events = ppu_timing_snapshot
                         .into_iter()
                         .filter(|event| matches!(
                             event.kind,
@@ -231,11 +273,12 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                     String::new()
                 };
                 return Err(format!(
-                    "{}: Blargg failure code 0x{failure:02X}: {}{}{}",
+                    "{}: Blargg failure code 0x{failure:02X}: {}{}{}{}",
                     path.display(),
                     message,
                     trace,
-                    cpu_debug
+                    cpu_debug,
+                    mapper_debug
                 ));
             }
             other => {
