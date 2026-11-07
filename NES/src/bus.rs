@@ -1694,7 +1694,9 @@ mod mmc3_ppu_irq_integration_regressions {
         // On the pre-render scanline, sprite pattern fetches drive A12 high after
         // a long low interval. The real PPU bus event must clock the mapper IRQ.
         tick_ppu_with_cpu_cycles(&mut bus, 261);
-        assert!(bus.irq_pending(), "the PPU-generated qualified A12 edge should assert MMC3 IRQ");
+        assert!(bus.irq_pending(),
+            "the PPU-generated qualified A12 edge should assert MMC3 IRQ; level={}, cpu_cycle={}, ppu_cycle={}, position={:?}, transitions={:?}",
+            bus.mapper_a12_level, bus.cpu_cycle, bus.ppu.cycle_count(), bus.ppu_position(), bus.mapper_a12_trace);
     }
 
     #[test]
