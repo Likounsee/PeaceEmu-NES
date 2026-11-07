@@ -76,7 +76,7 @@ impl DmaBusPhase {
 /// The wrapper supports instruction stepping, frame execution, snapshot rendering, controller
 /// input, and queued PCM output. The PPU renderer and hardware timing remain approximate,
 /// so commercial-game compatibility is not yet established.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct NesMachine {
     cpu: Cpu,
     bus: CpuBus,
