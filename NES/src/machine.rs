@@ -393,8 +393,9 @@ impl NesMachine {
     fn clock_dma_bus_phase(&mut self, phase: DmaBusPhase) -> bool {
         self.bus.advance_cpu_cycle();
         let _crossed_scanlines = self.bus.tick_ppu(3);
+        let irq_sample = self.bus.irq_pending();
         let _dmc_phase_cycles = self.bus.tick_apu_with_dma_access(1, phase.dmc_can_halt());
-        self.bus.capture_irq_line_during_dma();
+        self.bus.latch_irq_sample_for_dma_cycle(irq_sample);
         self.bus.sample_nmi_line();
         let dmc_get = self.bus.take_dmc_dma_get_occurred();
         if dmc_get && phase == DmaBusPhase::Get {
