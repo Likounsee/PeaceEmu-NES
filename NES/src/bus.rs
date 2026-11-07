@@ -746,6 +746,10 @@ impl CpuBus {
         }
         stall_cycles
     }
+    /// Returns whether the next CPU cycle is an OAM DMA alignment cycle.
+    pub(crate) fn oam_dma_needs_alignment(&self) -> bool {
+        self.apu.oam_dma_needs_alignment()
+    }
     /// Returns one approximate normalized mono sample from the APU mixer.
     pub fn apu_sample(&self) -> f32 { self.apu.sample() }
     /// Returns the configured host PCM output rate in samples per second.
