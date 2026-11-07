@@ -81,9 +81,8 @@ pub struct StepResult {
 pub struct Cpu {
     state: CpuState,
     cycles: u64,
-    // CLI and PLP defer maskable IRQ recognition for one instruction on the 2A03.
-    irq_poll_delay: bool,
-    // SEI changes I after the 2A03 has sampled the IRQ mask for this boundary.
+    // CLI, SEI and PLP are polled using the pre-instruction I mask.
+    // RTI restores I early enough for its normal poll point.
     irq_poll_i_override: Option<bool>,
     // KIL/JAM unofficial opcodes halt the 2A03 until reset.
     jammed: bool,
@@ -97,7 +96,7 @@ impl Default for Cpu {
 impl Cpu {
     /// Creates CPU state before reset-vector initialization.
     pub fn new() -> Self {
-        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED }, cycles: 0, irq_poll_delay: false, irq_poll_i_override: None, jammed: false, jam_opcode: 0x02, reset_seen: false }
+        Self { state: CpuState { a: 0, x: 0, y: 0, sp: 0xFD, pc: 0, status: flags::INTERRUPT_DISABLE | flags::UNUSED }, cycles: 0, irq_poll_i_override: None, jammed: false, jam_opcode: 0x02, reset_seen: false }
     }
     /// Returns the current registers and flags.
     pub fn state(&self) -> CpuState { self.state }
@@ -117,7 +116,6 @@ impl Cpu {
             self.reset_seen = true;
         }
         self.state.status = (self.state.status | flags::INTERRUPT_DISABLE | flags::UNUSED) & !flags::BREAK;
-        self.irq_poll_delay = false;
         self.irq_poll_i_override = None;
         self.jammed = false;
         self.jam_opcode = 0x02;
@@ -156,9 +154,8 @@ impl Cpu {
         }
         if bus.take_nmi_request() {
             // NMI supersedes the pending maskable-IRQ poll. In particular, do not
-            // carry CLI/PLP's one-instruction delay or SEI's pre-update I sample
-            // into the NMI handler, where I is set by interrupt entry.
-            self.irq_poll_delay = false;
+            // carry a pre-instruction I-mask sample into the NMI handler,
+            // where I is set by interrupt entry.
             self.irq_poll_i_override = None;
             // Interrupt entry spends two cycles reading the next opcode address
             // before the stack writes. These reads matter for memory-mapped I/O.
@@ -174,12 +171,10 @@ impl Cpu {
             self.state.status |= flags::UNUSED;
             return Ok(StepResult { pc, opcode: 0xFF, cycles: 7 });
         }
-        let defer_irq_poll = self.irq_poll_delay;
-        self.irq_poll_delay = false;
         let irq_disabled_at_poll = self.irq_poll_i_override
             .take()
             .unwrap_or_else(|| self.flag(flags::INTERRUPT_DISABLE));
-        if bus.irq_pending_at_cpu_poll() && !irq_disabled_at_poll && !defer_irq_poll {
+        if bus.irq_pending_at_cpu_poll() && !irq_disabled_at_poll {
             // IRQ/NMI entry has two discarded reads before pushing the return state.
             let _ = bus.read(self.state.pc);
             let _ = bus.read(self.state.pc);
@@ -507,17 +502,18 @@ impl Cpu {
                 let _ = bus.read(0x0100 | u16::from(self.state.sp));
                 let irq_disabled_before_plp = self.flag(flags::INTERRUPT_DISABLE);
                 self.state.status = (self.pop(bus) | flags::UNUSED) & !flags::BREAK;
-                // PLP changes I immediately in the visible register, but the
-                // IRQ poll after this instruction uses the pre-PLP I value.
-                // Preserve the prior poll sample rather than adding another
-                // full instruction of delay on top of a preceding CLI/SEI.
-                self.irq_poll_delay = false;
+                // PLP restores I before its normal IRQ poll point, but the
+                // 2A03 uses the pre-PLP mask for this instruction's poll.
                 self.irq_poll_i_override = Some(irq_disabled_before_plp);
                 4
             }
             0x18 => { self.set_flag(flags::CARRY, false); 2 }
             0x38 => { self.set_flag(flags::CARRY, true); 2 }
-            0x58 => { self.set_flag(flags::INTERRUPT_DISABLE, false); self.irq_poll_delay = true; 2 }
+            0x58 => {
+                self.irq_poll_i_override = Some(self.flag(flags::INTERRUPT_DISABLE));
+                self.set_flag(flags::INTERRUPT_DISABLE, false);
+                2
+            }
             0x78 => {
                 self.irq_poll_i_override = Some(self.flag(flags::INTERRUPT_DISABLE));
                 self.set_flag(flags::INTERRUPT_DISABLE, true);
