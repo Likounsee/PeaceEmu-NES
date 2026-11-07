@@ -323,8 +323,8 @@ impl CpuBus {
                 pending_stall_cycles -= 1;
                 self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
                 self.tick_ppu(3);
-                self.finish_cpu_cycle();
                 let additional_stalls = self.tick_apu_with_dma_access(1, true);
+                self.finish_cpu_cycle();
                 self.instruction_dmc_stalls = self.instruction_dmc_stalls
                     .saturating_add(additional_stalls);
                 pending_stall_cycles = pending_stall_cycles.saturating_add(additional_stalls);
