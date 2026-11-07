@@ -121,6 +121,7 @@ impl CpuBus {
     /// Controller button levels and the configured host audio sample rate are retained;
     /// controller serial latches, pending DMA, PPU timing, and APU state are reset.
     fn reset_with_apu_state(&mut self, console_reset: bool) {
+        let sample_rate = self.apu.sample_rate();
         self.open_bus = 0;
         self.ppu = Ppu::new();
         if console_reset {
