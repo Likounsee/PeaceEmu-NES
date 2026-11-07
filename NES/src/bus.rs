@@ -298,6 +298,15 @@ impl CpuBus {
                 pending_stall_cycles = pending_stall_cycles.saturating_add(additional_stalls);
                 self.sample_nmi_line();
             }
+
+            // A DMC halt holds the current CPU bus access open. The instruction's
+            // IRQ poll point is reached only when that access resumes, so refresh
+            // the CPU input from the line now present after the stolen cycles.
+            if dmc_stalls != 0 {
+                let resumed_irq = self.irq_pending();
+                self.irq_poll_sample = Some(resumed_irq);
+                self.irq_cycle_sample = Some(resumed_irq);
+            }
         }
     }
 
