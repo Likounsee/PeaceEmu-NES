@@ -1760,7 +1760,7 @@ mod mmc3_ppu_irq_integration_regressions {
 
         // On the pre-render scanline, sprite pattern fetches drive A12 high after
         // a long low interval. The real PPU bus event must clock the mapper IRQ.
-        tick_ppu_with_cpu_cycles(&mut bus, 261);
+        tick_ppu_with_cpu_cycles(&mut bus, 260);
         assert!(bus.irq_pending(),
             "the PPU-generated qualified A12 edge should assert MMC3 IRQ; level={}, cpu_cycle={}, ppu_cycle={}, position={:?}, transitions={:?}",
             bus.mapper_a12_level, bus.cpu_cycle, bus.ppu.cycle_count(), bus.ppu_position(), bus.mapper_a12_trace);
@@ -1771,7 +1771,7 @@ mod mmc3_ppu_irq_integration_regressions {
         let mut bus = mmc3_bus();
         bus.write(0x2000, 0x08);
         bus.write(0x2001, 0x18);
-        tick_ppu_with_cpu_cycles(&mut bus, 261);
+        tick_ppu_with_cpu_cycles(&mut bus, 260);
 
         assert!(bus.irq_pending(), "the MMC3 /IRQ pin asserts on the qualified A12 edge");
         assert_eq!(bus.irq_cycle_sample, Some(false),
@@ -1793,7 +1793,7 @@ mod mmc3_ppu_irq_integration_regressions {
         let mut bus = mmc3_bus();
         bus.write(0x2000, 0x08);
         bus.write(0x2001, 0x18);
-        tick_ppu_with_cpu_cycles(&mut bus, 261);
+        tick_ppu_with_cpu_cycles(&mut bus, 260);
         assert!(bus.irq_pending(), "fixture must first clock a real mapper IRQ");
 
         bus.write(0xE000, 0); // Acknowledge and disable IRQ before resetting the PPU.
@@ -2062,7 +2062,7 @@ mod dma_and_irq_interaction_regressions {
         bus.write(0xE001, 0);
         bus.write(0x2000, 0x08); // Sprite pattern table at $1000.
         bus.write(0x2001, 0x18);
-        tick_ppu_with_cpu_cycles(&mut bus, 261);
+        tick_ppu_with_cpu_cycles(&mut bus, 260);
         assert!(bus.irq_pending(), "fixture must raise a real PPU-driven MMC3 IRQ");
         bus
     }
