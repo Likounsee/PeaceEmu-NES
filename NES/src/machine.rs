@@ -1525,13 +1525,13 @@ mod dma_irq_poll_regressions {
     #[test]
     fn frame_irq_asserted_during_oam_dma_is_latched_before_cpu_resumes() {
         let mut image = vec![0; 16 + 16_384];
-        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         let mut machine = NesMachine::from_ines(&image).unwrap();
 
         // Position the four-step frame sequencer one cycle before its IRQ.
         // The CPU's pre-DMA poll is false; the frame IRQ rises during HALT.
-        machine.bus.tick_apu(29_821); // Power-on frame position starts at cycle 6.
+        machine.bus.tick_apu(29_820); // Power-on frame position starts at cycle 6.
         machine.bus.begin_cpu_instruction();
         let _ = machine.bus.read(0x0000);
         assert_eq!(machine.bus.end_cpu_instruction(), 1);
