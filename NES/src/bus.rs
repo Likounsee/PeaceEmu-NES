@@ -65,12 +65,10 @@ pub struct CpuBusTraceEntry {
     pub cpu_nmi_pending: bool,
     /// IRQ input level visible after this transaction's side effects.
     pub irq_line: bool,
-    /// CPU IRQ input retained from the preceding CPU cycle.
+    /// IRQ level sampled at the start of the final bus access of the instruction.
     ///
-    /// This is distinct from irq_line: the 2A03 samples the device IRQ line
-    /// at the start of a cycle and presents that sample to the CPU one cycle
-    /// later. The instruction poll therefore uses the sample from its
-    /// penultimate cycle, not a live read of the device line.
+    /// This is distinct from irq_line: a device edge caused by that final
+    /// access must not retroactively alter the already-latched poll result.
     pub irq_poll_sample: Option<bool>,
 }
 
