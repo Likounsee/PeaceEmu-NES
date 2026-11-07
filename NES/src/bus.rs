@@ -311,9 +311,6 @@ impl CpuBus {
             // not the stale parity left over from the previous instruction.
             // Clock the PPU to the CPU bus-access point.
             self.tick_ppu(ppu_dots_before_access);
-            if ppu_dots_before_access == 3 {
-                self.finish_cpu_cycle();
-            }
             let dmc_stalls = self.tick_apu_with_dma_access(1, dmc_dma_can_halt);
             self.instruction_dmc_stalls = self.instruction_dmc_stalls.saturating_add(dmc_stalls);
 
@@ -437,9 +434,9 @@ impl CpuBus {
             // cycle. Finish the remaining PPU dots before sampling mapper A12
             // at the M2 falling edge.
             self.tick_ppu(3 - ppu_dots_before_access);
-            if ppu_dots_before_access != 3 {
-                self.finish_cpu_cycle();
-            }
+        }
+        if timed_access {
+            self.finish_cpu_cycle();
         }
         if timed_access && !poll_before_access {
             self.sample_nmi_line();
@@ -498,9 +495,9 @@ impl CpuBus {
         }
         if timed_access && ppu_register {
             self.tick_ppu(3 - ppu_dots_before_access);
-            if ppu_dots_before_access != 3 {
-                self.finish_cpu_cycle();
-            }
+        }
+        if timed_access {
+            self.finish_cpu_cycle();
         }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
