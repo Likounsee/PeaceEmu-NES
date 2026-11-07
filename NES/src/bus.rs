@@ -231,11 +231,6 @@ impl CpuBus {
         core::mem::take(&mut self.instruction_bus_cycles)
     }
 
-    /// Captures the IRQ input when the CPU resumes after an RDY-halted OAM DMA.
-    pub(crate) fn sample_irq_line_after_dma(&mut self) {
-        self.irq_poll_sample = Some(self.irq_pending());
-    }
-
     #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
     fn record_bus_access(&mut self, kind: CpuBusAccessKind, address: u16, value: u8) {
         const TRACE_CAPACITY: usize = 131_072;
