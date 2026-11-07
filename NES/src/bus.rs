@@ -1117,12 +1117,14 @@ mod tests {
         tick_ppu_with_cpu_cycles(&mut bus, 7);
         bus.write(0x2001, 0x08); // Next high edge after seven low PPU dots: filtered.
         bus.tick_ppu(1);
+        bus.advance_cpu_cycle(); // Sample the line at the next M2 falling edge.
         assert!(!bus.irq_pending(), "the bus must forward and filter a seven-dot A12 interval");
 
         bus.write(0x2001, 0); // Start another low interval after the short pulse.
         tick_ppu_with_cpu_cycles(&mut bus, 12);
         bus.write(0x2001, 0x08); // Re-enable the pattern table after the low filter interval.
         tick_ppu_with_cpu_cycles(&mut bus, 6); // Advance through the next pattern-table fetch.
+        bus.advance_cpu_cycle(); // Sample the resulting A12 level at M2.
         assert!(bus.irq_pending(),
             "the PPU IRQ must propagate through CpuBus to the CPU IRQ line; cpu_cycle={}, ppu_position={:?}, A12 trace={:?}",
             bus.cpu_cycle, bus.ppu_position(), bus.mapper_a12_trace);
@@ -1646,6 +1648,7 @@ mod mmc3_ppu_irq_integration_regressions {
         bus.write(0x2006, 0x10);
         bus.write(0x2006, 0x00);
         let _ = bus.read_dmc_dma_source(0x2007);
+        bus.advance_cpu_cycle(); // The PPUDATA-driven A12 level is sampled at M2.
         assert!(bus.irq_pending(),
             "DMC reads from PPUDATA must reach the MMC3 A12 IRQ filter");
     }
@@ -1657,6 +1660,7 @@ mod mmc3_ppu_irq_integration_regressions {
         bus.write(0x2006, 0x10);
         bus.write(0x2006, 0x00);
         let _ = bus.read(0x2007); // CPU reads CHR at $1000, driving A12 high.
+        bus.advance_cpu_cycle(); // Sample the PPUDATA address at the next M2 edge.
         assert!(bus.irq_pending(),
             "a CPU PPUDATA pattern-table access must be visible to MMC3's A12 IRQ filter");
     }
