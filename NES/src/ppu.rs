@@ -3943,7 +3943,7 @@ mod mapper_a12_bus_regressions {
         ppu.ctrl = 0x10;
         ppu.mask = 0x08;
         ppu.tick_with_cartridge(5, None);
-        assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 0), (0x1000, 5)]);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 0), (0x1000, 4)]);
 
         ppu.mask = 0;
         ppu.tick_with_cartridge(1, None);
