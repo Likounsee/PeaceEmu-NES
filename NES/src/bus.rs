@@ -351,11 +351,12 @@ impl CpuBus {
         self.irq_cycle_sample = Some(self.irq_pending());
     }
 
-    /// The CPU's next read is held throughout OAM DMA. Carry the last IRQ
-    /// detector sample across RDY release so an IRQ raised during DMA is
-    /// visible to the first resumed instruction, not one instruction later.
+    /// The CPU's next read is held throughout OAM DMA. At RDY release, latch
+    /// the live IRQ input for the first resumed instruction's poll point; using
+    /// the previous detector sample can leave an edge from the final DMA phase
+    /// one instruction late.
     pub(crate) fn latch_irq_poll_after_dma(&mut self) {
-        self.irq_poll_sample = self.irq_cycle_sample;
+        self.irq_poll_sample = Some(self.irq_pending());
     }
 
     /// Takes DMC stalls discovered while clocking instruction bus accesses.
