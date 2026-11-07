@@ -510,9 +510,8 @@ impl CpuBus {
     fn sync_mapper_bus_events(&mut self) {
         let events = self.ppu.take_mapper_bus_events();
         if let Some(cartridge) = self.cartridge.as_mut() {
-            let mapper_cycle = self.cpu_cycle.saturating_mul(3);
-            for (address, _ppu_cycle) in events {
-                cartridge.observe_ppu_address(address, mapper_cycle);
+            for (address, ppu_cycle) in events {
+                cartridge.observe_ppu_address_at_cpu_cycle(address, ppu_cycle, self.cpu_cycle);
             }
         }
     }
