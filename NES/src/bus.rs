@@ -110,7 +110,7 @@ pub struct CpuBus {
     ppu_bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::power_on(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096) } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -120,10 +120,15 @@ impl CpuBus {
     ///
     /// Controller button levels and the configured host audio sample rate are retained;
     /// controller serial latches, pending DMA, PPU timing, and APU state are reset.
-    pub fn reset(&mut self) {
+    fn reset_with_apu_state(&mut self, console_reset: bool) {
         self.open_bus = 0;
         self.ppu = Ppu::new();
-        self.apu.reset();
+        if console_reset {
+            self.apu.reset();
+        } else {
+            self.apu = Apu::new();
+            let _ = self.apu.set_sample_rate(sample_rate);
+        }
         self.pending_oam_dma = None;
         self.controller_shift = [0; 2];
         self.controller_strobe = false;
@@ -151,6 +156,21 @@ impl CpuBus {
             cartridge.reset_cpu_write_timing();
         }
     }
+    /// Resets volatile bus state for isolated bus tests and fresh device instances.
+    pub fn reset(&mut self) {
+        self.reset_with_apu_state(false);
+    }
+
+    /// Applies a console reset, preserving the last APU $4017 mode.
+    pub(crate) fn reset_console(&mut self) {
+        self.reset_with_apu_state(true);
+    }
+
+    /// Applies the power-on APU state immediately before the CPU reset sequence.
+    pub(crate) fn initialize_apu_power_on(&mut self) {
+        self.apu = Apu::power_on();
+    }
+
     /// Attaches a parsed cartridge.
     pub fn insert_cartridge(&mut self, cartridge: Cartridge) { self.cartridge = Some(cartridge); }
 
