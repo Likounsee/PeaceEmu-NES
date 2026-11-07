@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Version tag to create or update (for example nes-module-0.1.0)
+        description: Version tag to create or update (for example nes-module-1.0.0)
         required: true
         type: string
 
@@ -37,6 +37,24 @@ jobs:
             throw "Release tag must use nes-module-MAJOR.MINOR.PATCH."
           }
 
+      - name: Prepare release metadata
+        id: release_metadata
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          $version = $env:RELEASE_TAG -replace '^nes-module-', ''
+          if ($version -eq "1.0.0") {
+            $releaseName = "PeaceEmu NES module 1.0.0 — Alter Release"
+            "body_path=RELEASE_NOTES_v1.0.0.md" >> $env:GITHUB_OUTPUT
+            "generate_release_notes=false" >> $env:GITHUB_OUTPUT
+          } else {
+            $releaseName = "PeaceEmu NES module $version"
+            "body_path=" >> $env:GITHUB_OUTPUT
+            "generate_release_notes=true" >> $env:GITHUB_OUTPUT
+          }
+          "release_name=$releaseName" >> $env:GITHUB_OUTPUT
+
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -60,8 +78,9 @@ jobs:
         with:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           target_commitish: ${{ github.sha }}
-          name: PeaceEmu NES module ${{ inputs.release_tag || github.ref_name }}
-          generate_release_notes: true
+          name: ${{ steps.release_metadata.outputs.release_name }}
+          body_path: ${{ steps.release_metadata.outputs.body_path }}
+          generate_release_notes: ${{ steps.release_metadata.outputs.generate_release_notes }}
           fail_on_unmatched_files: true
           files: |
             NES/target/release/peaceemu-nes-desktop.exe
