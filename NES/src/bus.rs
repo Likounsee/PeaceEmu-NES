@@ -1112,7 +1112,8 @@ mod tests {
         bus.write(0x2000, 0x10); // Background pattern table at $1000.
         bus.write(0x2001, 0x08); // Enable background rendering.
 
-        tick_ppu_with_cpu_cycles(&mut bus, 5); // Establish the initial high A12 level before enabling IRQs.
+        tick_ppu_with_cpu_cycles(&mut bus, 5); // Drive the initial background-pattern A12 pulse.
+        bus.advance_cpu_cycle(); // Ensure MMC3 samples that high level before the low interval.
         assert!(!bus.irq_pending());
         bus.write(0xE001, 0); // Enable IRQ after the initial bus transition.
 
