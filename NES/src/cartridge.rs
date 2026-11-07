@@ -3491,7 +3491,7 @@ mod mmc3_tests {
         cart.cpu_write(0xE001, 0);
 
         cart.observe_ppu_address(0x0000, 0);
-        cart.observe_ppu_address(0x1000, 8);
+        cart.observe_ppu_address(0x1000, 9);
         assert!(cart.irq_pending());
 
         cart.cpu_write(0xE000, 0);
@@ -3499,8 +3499,8 @@ mod mmc3_tests {
         cart.cpu_write(0xE001, 0);
         assert!(!cart.irq_pending(), "enabling IRQ must not immediately restore the old pending state");
 
-        cart.observe_ppu_address(0x0000, 9);
-        cart.observe_ppu_address(0x1000, 17);
+        cart.observe_ppu_address(0x0000, 10);
+        cart.observe_ppu_address(0x1000, 19);
         assert!(cart.irq_pending(), "a new qualified A12 edge may assert IRQ again");
     }
 
