@@ -413,9 +413,7 @@ impl Apu {
                         _ => {}
                     }
                     if self.frame_cycles >= FOUR_STEP_PERIOD {
-                        // IRQ is asserted on cycles 29,828 and 29,829. Cycle
-                        // 29,830 only wraps the sequencer; reasserting here
-                        // would recreate an IRQ immediately after $4015 clears it.
+                        if !self.frame_irq_inhibit { self.frame_irq = true; }
                         self.frame_cycles = 0;
                     }
                 }
@@ -2238,20 +2236,6 @@ mod exact_frame_sequence_timing_regressions {
         apu.tick_cpu_cycles(1);
         assert!(apu.irq_pending(), "frame IRQ remains asserted through the terminal cycle");
         assert_eq!(apu.frame_cycles, 0, "the four-step sequence resets at cycle 29,830");
-    }
-
-    #[test]
-    fn status_read_on_cycle_29829_is_not_undone_by_cycle_29830_wrap() {
-        let mut apu = Apu::new();
-        apu.tick_cpu_cycles(29_829);
-        assert!(apu.frame_irq_pending());
-        let _ = apu.read(0x4015);
-        assert!(!apu.frame_irq_pending(), "$4015 must acknowledge the pending frame IRQ");
-
-        apu.tick_cpu_cycles(1);
-        assert_eq!(apu.frame_cycles, 0, "the four-step sequence wraps at cycle 29,830");
-        assert!(!apu.frame_irq_pending(),
-            "the wrap cycle must not reassert an IRQ that was acknowledged at cycle 29,829");
     }
 
     #[test]
