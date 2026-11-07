@@ -82,10 +82,8 @@ pub struct CpuBus {
     /// PPU-dot phase at which CPU register accesses occur (0..=2).
     ppu_bus_phase: u8,
     instruction_bus_cycles: u16,
-    /// CPU IRQ input line after the one-cycle device-to-CPU sampling delay.
+    /// IRQ level sampled at the start of the final bus access of the instruction.
     irq_poll_sample: Option<bool>,
-    /// Device IRQ level sampled at the start of the most recent CPU cycle.
-    irq_cycle_sample: Option<bool>,
     /// Absolute CPU-cycle timeline shared with cycle-sensitive cartridge mappers.
     cpu_cycle: u64,
     /// Address retained on the CPU bus while DMA suspends the processor.
@@ -113,7 +111,7 @@ pub struct CpuBus {
     ppu_bus_trace: VecDeque<CpuBusTraceEntry>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, irq_cycle_sample: None, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096) } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, cpu_cycle: 0, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096) } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -144,7 +142,6 @@ impl CpuBus {
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
         self.irq_poll_sample = None;
-        self.irq_cycle_sample = None;
         self.pending_dmc_dma = None;
         self.nmi_pending = false;
         self.nmi_sample_cycle = None;
@@ -266,13 +263,10 @@ impl CpuBus {
     /// Advances the PPU to the sampling point of the current CPU bus access.
     fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool, ppu_dots_before_access: u32) {
         if self.instruction_timing {
-            // The device IRQ line is sampled at the start of this cycle;
-            // the CPU sees that sample one cycle later. Shift the previous
-            // cycle's sample onto the CPU input before capturing this cycle's
-            // device line. At the instruction boundary this leaves the sample
-            // from the penultimate cycle, matching the 2A03 IRQ poll point.
-            self.irq_poll_sample = self.irq_cycle_sample;
-            self.irq_cycle_sample = Some(self.irq_pending());
+            // Sample the IRQ line at the start of the final bus cycle. Any
+            // device edge caused by this cycle's access is visible only to the
+            // next instruction poll.
+            self.irq_poll_sample = Some(self.irq_pending());
             self.instruction_bus_cycles = self.instruction_bus_cycles.saturating_add(1);
             self.cpu_cycle = self.cpu_cycle.wrapping_add(1);
             // Clock the APU in the same order as CPU bus accesses. In particular,
@@ -299,14 +293,6 @@ impl CpuBus {
                 self.sample_nmi_line();
             }
 
-            // A DMC halt holds the current CPU bus access open. The instruction's
-            // IRQ poll point is reached only when that access resumes, so refresh
-            // the CPU input from the line now present after the stolen cycles.
-            if dmc_stalls != 0 {
-                let resumed_irq = self.irq_pending();
-                self.irq_poll_sample = Some(resumed_irq);
-                self.irq_cycle_sample = Some(resumed_irq);
-            }
         }
     }
 
@@ -648,13 +634,15 @@ impl CpuBus {
         self.irq_poll_sample.unwrap_or_else(|| self.irq_pending())
     }
 
-    /// Advances the CPU-side IRQ input for one OAM-DMA cycle.
+    /// Latches an asserted level IRQ while OAM DMA holds the CPU's next read.
     ///
-    /// The caller supplies the device line sampled before this cycle's APU/PPU
-    /// clocks. A line raised during this cycle reaches the CPU on the next one.
-    pub(crate) fn latch_irq_sample_for_dma_cycle(&mut self, sampled_irq: bool) {
-        self.irq_poll_sample = Some(sampled_irq);
-        self.irq_cycle_sample = Some(sampled_irq);
+    /// The CPU cannot execute an instruction during DMA, but a mapper/APU IRQ
+    /// that becomes active while RDY is held must be visible at the first
+    /// resumed instruction boundary.
+    pub(crate) fn capture_irq_line_during_dma(&mut self) {
+        if self.irq_pending() {
+            self.irq_poll_sample = Some(true);
+        }
     }
     /// Samples the PPU NMI output at a CPU-cycle boundary.
     ///
@@ -2422,29 +2410,23 @@ mod irq_poll_sample_regressions {
     }
 
     #[test]
-    fn irq_poll_uses_the_device_sample_from_the_penultimate_cycle() {
+    fn irq_poll_uses_the_line_sampled_before_the_final_instruction_cycle() {
         let mut bus = CpuBus::new();
+        bus.write(0x4017, 0x00);
 
-        // Model a normal two-cycle instruction. The CPU input is still low
-        // because no device IRQ was present at the start of its first cycle.
         bus.begin_cpu_instruction();
         let _ = bus.read(0x8000);
-        let _ = bus.read(0x8000);
-        assert_eq!(bus.end_cpu_instruction(), 2);
-        assert!(!bus.irq_pending_at_cpu_poll());
-
-        // An IRQ raised now is sampled at the start of the next instruction's
-        // first cycle, then reaches the CPU input one cycle later.
+        assert_eq!(bus.end_cpu_instruction(), 1);
         bus.tick_apu(29_834);
         assert!(bus.irq_pending());
-        assert!(!bus.irq_pending_at_cpu_poll());
+        assert!(!bus.irq_pending_at_cpu_poll(),
+            "an IRQ raised after the sampled penultimate-cycle point is not taken yet");
 
         bus.begin_cpu_instruction();
         let _ = bus.read(0x8000);
-        let _ = bus.read(0x8000);
-        assert_eq!(bus.end_cpu_instruction(), 2);
+        assert_eq!(bus.end_cpu_instruction(), 1);
         assert!(bus.irq_pending_at_cpu_poll(),
-            "the penultimate-cycle sample must reach the CPU at the next poll");
+            "the next instruction's bus access samples the now-asserted IRQ line");
     }
 }
 
