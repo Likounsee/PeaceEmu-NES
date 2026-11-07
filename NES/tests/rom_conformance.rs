@@ -37,6 +37,11 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
     let mut machine = NesMachine::from_ines_with_ppu_startup_phase(&image, ppu_phase)
         .map_err(|error| format!("{}: cartridge load failed: {error}", path.display()))?;
     let mut reset_delay = None;
+    // Keep a compact record of CPU stalls caused by DMA for the interrupt timing ROM.
+    // This is emitted only on failure and lets us distinguish IRQ poll timing from
+    // a one-cycle OAM DMA parity error.
+    let trace_dma_timing = path.to_string_lossy().contains("cpu_interrupts_v2");
+    let mut dma_timing_events = Vec::new();
     // Keep PPU-register transactions across Blargg-requested soft resets. The
     // machine reset intentionally clears its live bus ring, but these ROMs use
     // status 0x81 to restart individual timing subtests before reporting a result.
@@ -44,9 +49,18 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
     let mut ppu_timing_history = Vec::new();
 
     for instruction in 0..MAX_INSTRUCTIONS {
-        machine.step().map_err(|error| {
+        let cycles_before = machine.total_cycles();
+        let step = machine.step().map_err(|error| {
             format!("{}: emulator stopped at instruction {instruction}: {error}", path.display())
         })?;
+        let elapsed = machine.total_cycles().saturating_sub(cycles_before);
+        let dma_stall = elapsed.saturating_sub(u64::from(step.cycles));
+        if trace_dma_timing && dma_stall != 0 {
+            dma_timing_events.push((instruction, cycles_before, step.cycles, dma_stall));
+            if dma_timing_events.len() > 32 {
+                dma_timing_events.remove(0);
+            }
+        }
 
         if machine.read_cpu(0x6001) != 0xDE
             || machine.read_cpu(0x6002) != 0xB0
@@ -227,7 +241,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                 } else {
                     String::new()
                 };
-                let cpu_debug = if path.to_string_lossy().contains("cpu_interrupts_v2") {
+                let cpu_debug = if trace_dma_timing {
                     let state = machine.cpu_state();
                     // Captured before reading the Blargg message above.
                     let ppu_nmi_events = ppu_timing_snapshot
@@ -275,7 +289,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                         .collect::<Vec<_>>()
                         .join("\\n");
                     format!(
-                        "\\nCPU debug: state={state:?} cycles={}\\nZP $00-$7F: {zero_page}\\nStack $01F0-$01FF: {stack}\\nRecent CPU bus/IRQ trace:\\n{irq_bus_trace}\\nRecent PPU NMI timing events:\\n{ppu_nmi_events}\\nNametable $2000:\\n{screen}",
+                        "\\nCPU debug: state={state:?} cycles={}\\nDMA timing events (instruction, cycle-before, instruction-cycles, DMA-stall): {dma_timing_events:?}\\nZP $00-$7F: {zero_page}\\nStack $01F0-$01FF: {stack}\\nRecent CPU bus/IRQ trace:\\n{irq_bus_trace}\\nRecent PPU NMI timing events:\\n{ppu_nmi_events}\\nNametable $2000:\\n{screen}",
                         machine.total_cycles()
                     )
                 } else {
