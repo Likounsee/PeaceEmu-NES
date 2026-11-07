@@ -93,8 +93,13 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                             let previous = index.checked_sub(1).map(|previous| &entries[previous]);
                             entry.ppu_nmi_line
                                 || entry.cpu_nmi_pending
-                                || matches!(entry.address, 0x2000 | 0x2002 | 0xFFFA..=0xFFFF)
-                                || (entry.kind == peaceemu_nes::bus::CpuBusAccessKind::Write
+                                // Keep interrupt-vector, APU IRQ-source, and stack traffic,
+                                // but omit the ROM's high-frequency PPUSTATUS polling reads.
+                                // Those reads otherwise evict the IRQ-entry sequence from
+                                // the bounded trace before a timing test reports its CRC.
+                                || matches!(entry.address, 0x4015 | 0x4017 | 0xFFFA..=0xFFFF)
+                                || ((entry.kind == peaceemu_nes::bus::CpuBusAccessKind::Write
+                                    || entry.kind == peaceemu_nes::bus::CpuBusAccessKind::Read)
                                     && (0x0100..=0x01FF).contains(&entry.address))
                                 || previous.is_some_and(|previous| {
                                     previous.irq_line != entry.irq_line
