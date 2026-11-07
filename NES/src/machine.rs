@@ -333,11 +333,11 @@ impl NesMachine {
         self.clock_devices_for_cpu_cycles(instruction_cycles.saturating_sub(bus_cycles));
         self.bus.finish_cpu_instruction();
 
-        // IRQ polling is captured by CpuBus at the start of each real bus
-        // access, which is the end of the preceding CPU cycle. The final
-        // access therefore already retains the penultimate-cycle IRQ sample
-        // required by the 2A03 (including taken branches). Do not resample
-        // after the instruction: that would move the poll point one cycle late.
+        // IRQ polling is captured by CpuBus at the end of each real bus
+        // access. Ordinary instructions use their final cycle; taken branches
+        // explicitly preserve the sample from their penultimate cycle, matching
+        // the 2A03 branch-specific IRQ delay. Do not resample here: the CPU
+        // instruction has already latched its hardware poll point.
         if let Some(page) = self.bus.take_oam_dma_request() {
             self.perform_oam_dma(page);
             self.bus.release_deferred_nmi_after_dma();
