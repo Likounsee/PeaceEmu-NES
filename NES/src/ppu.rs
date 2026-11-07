@@ -1522,6 +1522,9 @@ impl Ppu {
     /// Returns the current scanline and dot for diagnostics and tests.
     pub fn position(&self) -> (u16, u16) { (self.scanline, self.dot) }
 
+    /// Total PPU-dot count used to detect timing-counter resets in mapper sampling.
+    pub(crate) fn cycle_count(&self) -> u64 { self.ppu_cycle }
+
     /// Returns a read-only view of the primary OAM bytes.
     pub fn oam(&self) -> &[u8; 256] { &self.oam }
 
