@@ -200,7 +200,15 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                         ))
                         .collect::<Vec<_>>()
                         .join("\\n");
-                    let zero_page = (0x10u16..0x80)
+                    // Interrupt test variables are allocated at the start of
+                    // zero page ($00-$03); include them rather than starting at $10.
+                    let zero_page = (0x00u16..0x80)
+                        .map(|address| format!("{:02X}", machine.read_cpu(address)))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    // The most recent interrupt status/return address remains in
+                    // the top of the stack after RTI, even when SP is back at $FD.
+                    let stack = (0x01F0u16..=0x01FF)
                         .map(|address| format!("{:02X}", machine.read_cpu(address)))
                         .collect::<Vec<_>>()
                         .join(" ");
@@ -216,7 +224,7 @@ fn run_blargg_rom_with_ppu_phase(path: &Path, ppu_phase: u8) -> Result<String, S
                         .collect::<Vec<_>>()
                         .join("\\n");
                     format!(
-                        "\\nCPU debug: state={state:?} cycles={}\\nZP $10-$7F: {zero_page}\\nRecent CPU bus/IRQ trace:\\n{irq_bus_trace}\\nRecent PPU NMI timing events:\\n{ppu_nmi_events}\\nNametable $2000:\\n{screen}",
+                        "\\nCPU debug: state={state:?} cycles={}\\nZP $00-$7F: {zero_page}\\nStack $01F0-$01FF: {stack}\\nRecent CPU bus/IRQ trace:\\n{irq_bus_trace}\\nRecent PPU NMI timing events:\\n{ppu_nmi_events}\\nNametable $2000:\\n{screen}",
                         machine.total_cycles()
                     )
                 } else {
