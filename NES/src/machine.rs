@@ -335,8 +335,9 @@ impl NesMachine {
 
         // Ordinary instructions sample IRQ after their final bus cycle;
         // same-page taken branches retain their special early poll point.
-        // If OAM DMA halts the CPU after this instruction, refresh the input
-        // when RDY is released so IRQs asserted during DMA are not delayed.
+        // OAM DMA suspends the CPU between instructions; it does not add an
+        // instruction IRQ poll. The first resumed instruction samples the IRQ
+        // detector at its ordinary penultimate-cycle poll point.
         if let Some(page) = self.bus.take_oam_dma_request() {
             self.perform_oam_dma(page);
             self.bus.release_deferred_nmi_after_dma();
