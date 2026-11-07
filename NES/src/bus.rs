@@ -96,8 +96,6 @@ pub struct CpuBus {
     instruction_bus_cycles: u16,
     /// IRQ detector output consumed at the next instruction boundary.
     irq_poll_sample: Option<bool>,
-    /// Preserve the DMA-release IRQ poll sample through the first resumed bus access.
-    irq_poll_sample_held_after_dma: bool,
     /// IRQ input sampled during the previous CPU cycle's phi2 phase.
     irq_cycle_sample: Option<bool>,
     /// Branches taken without a page crossing poll before their final dummy-read cycle.
@@ -136,7 +134,7 @@ pub struct CpuBus {
     mapper_a12_trace: Vec<(u16, u64, u64)>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, irq_poll_sample_held_after_dma: false, irq_cycle_sample: Some(false), irq_poll_before_final_cycle: false, cpu_cycle: 0, mapper_a12_level: false, mapper_irq_asserted_at_ppu_cycle: None, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096), #[cfg(test)] mapper_a12_trace: Vec::new() } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, irq_cycle_sample: Some(false), irq_poll_before_final_cycle: false, cpu_cycle: 0, mapper_a12_level: false, mapper_irq_asserted_at_ppu_cycle: None, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096), #[cfg(test)] mapper_a12_trace: Vec::new() } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -169,7 +167,6 @@ impl CpuBus {
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
         self.irq_poll_sample = None;
-        self.irq_poll_sample_held_after_dma = false;
         self.irq_cycle_sample = Some(self.cpu_irq_input_pending());
         self.irq_poll_before_final_cycle = false;
         self.pending_dmc_dma = None;
@@ -315,11 +312,11 @@ impl CpuBus {
             // one-cycle poll latch at the start of the next bus cycle. The
             // instruction boundary consumes the sample from the penultimate
             // cycle. A same-page taken branch polls earlier, before cycle 2.
-            if self.irq_poll_sample_held_after_dma {
-                // DMA release already latched the live input. The first held
-                // read must not overwrite it with the stale pre-DMA sample.
-                self.irq_poll_sample_held_after_dma = false;
-            } else if !self.irq_poll_before_final_cycle {
+            if !self.irq_poll_before_final_cycle {
+                // DMA suspends the CPU between instructions; it does not create
+                // a new instruction poll point. The first resumed instruction
+                // executes, and its normal penultimate-cycle poll consumes the
+                // IRQ level sampled during the DMA-held interval.
                 self.irq_poll_sample = self.irq_cycle_sample;
             }
             self.irq_poll_before_final_cycle = false;
@@ -362,15 +359,6 @@ impl CpuBus {
     pub(crate) fn finish_cpu_cycle(&mut self) {
         self.sample_mapper_a12_bus();
         self.irq_cycle_sample = Some(self.cpu_irq_input_pending());
-    }
-
-    /// The CPU's next read is held throughout OAM DMA. At RDY release, latch
-    /// the live IRQ input for the first resumed instruction's poll point; using
-    /// the previous detector sample can leave an edge from the final DMA phase
-    /// one instruction late.
-    pub(crate) fn latch_irq_poll_after_dma(&mut self) {
-        self.irq_poll_sample = Some(self.cpu_irq_input_pending());
-        self.irq_poll_sample_held_after_dma = true;
     }
 
     /// Takes DMC stalls discovered while clocking instruction bus accesses.
