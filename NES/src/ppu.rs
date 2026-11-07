@@ -726,8 +726,11 @@ impl Ppu {
         let mut address = 0u16;
         if (1..=256).contains(&dot) || (321..=336).contains(&dot) {
             let phase = (dot - 1) & 7;
-            if (4..=7).contains(&phase) {
-                // The fetched tile number also contributes to CHR A12.
+            if (3..=7).contains(&phase) {
+                // The background pattern address is present on the setup dot
+                // before the pattern-low read (dot 4 for the first visible
+                // fetch group, dot 324 for the pre-render prefetch). MMC3
+                // samples this address transition on M2, not the data-read dot.
                 let tile_address = 0x2000 | (self.v & 0x0FFF);
                 let tile = self.mem_read(tile_address, cartridge) as u16;
                 let fine_y = (self.v >> 12) & 7;
@@ -3868,7 +3871,7 @@ mod mapper_a12_bus_regressions {
 
         assert_eq!(
             ppu.take_mapper_bus_events(),
-            vec![(0, 0), (0x1000, 5), (0, 9)],
+            vec![(0, 0), (0x1000, 4), (0, 9)],
             "A12 must rise on the pattern-fetch slot and fall when the next nametable slot begins"
         );
     }
