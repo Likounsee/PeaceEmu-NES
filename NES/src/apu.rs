@@ -154,6 +154,38 @@ impl Apu {
     /// Creates an APU register model with all channels disabled.
     pub fn new() -> Self { Self::default() }
 
+    /// Creates the APU in the state observed when the CPU begins executing after power-on.
+    ///
+    /// The 2A03 behaves as though $00 was written to $4017 roughly ten CPU clocks
+    /// before the first instruction. The four-cycle sequencer-reset delay has
+    /// therefore elapsed, leaving approximately six clocks in the four-step mode.
+    /// The CPU reset-vector sequence advances the shared CPU parity to an odd phase.
+    pub fn power_on() -> Self {
+        let mut apu = Self::default();
+        apu.registers[0x17] = 0x00;
+        apu.frame_cycles = 6;
+        apu.cpu_cycle_odd = true;
+        apu
+    }
+
+    /// Applies the APU portion of a console reset while retaining the last $4017 mode.
+    ///
+    /// Reset silences the channels and clears pending IRQ/DMC state. The frame
+    /// sequencer restarts as though the last $4017 value had been written during
+    /// the reset interval, with its startup delay already elapsed at CPU entry.
+    pub fn reset(&mut self) {
+        let sample_rate = self.sample_rate;
+        let frame_counter = self.registers[0x17];
+        *self = Self::default();
+        let _ = self.set_sample_rate(sample_rate);
+        self.registers[0x17] = frame_counter;
+        self.five_step_mode = frame_counter & 0x80 != 0;
+        self.frame_irq_inhibit = frame_counter & 0x40 != 0;
+        self.frame_cycles = 6;
+        self.cpu_cycle_odd = true;
+    }
+
+
     /// Configures the PCM output rate; accepted rates are 8 kHz through 192 kHz.
     ///
     /// Changing the rate resets the fractional resampling phase and discards queued
@@ -2298,4 +2330,36 @@ mod dmc_disable_output_regressions {
         assert_eq!(apu.take_dmc_dma_request_for_bus(), None,
             "a cancelled startup request must not reappear after its original delay");
     }
+    #[test]
+    fn power_on_replays_zero_frame_counter_write_before_first_instruction() {
+        let apu = Apu::power_on();
+        assert_eq!(apu.registers[0x17], 0x00);
+        assert_eq!(apu.frame_cycles, 6,
+            "the implicit $4017 write and its four-cycle delay precede CPU execution");
+        assert!(!apu.five_step_mode);
+        assert!(!apu.frame_irq_inhibit);
+        assert_eq!(apu.enabled_channels, 0);
+    }
+
+    #[test]
+    fn reset_replays_last_frame_counter_mode_and_silences_channels() {
+        let mut apu = Apu::new();
+        apu.set_sample_rate(48_000);
+        apu.write(0x4017, 0x80);
+        apu.tick_cpu_cycles(4);
+        apu.write(0x4015, 0x0F);
+        apu.write(0x4003, 0xF8);
+        apu.frame_irq = true;
+
+        apu.reset();
+
+        assert_eq!(apu.sample_rate(), 48_000);
+        assert_eq!(apu.registers[0x17], 0x80);
+        assert!(apu.five_step_mode, "reset must replay the last $4017 mode");
+        assert_eq!(apu.enabled_channels, 0, "$4015 is cleared on reset");
+        assert_eq!(apu.length_counters, [0; 4]);
+        assert!(!apu.frame_irq);
+        assert_eq!(apu.frame_cycles, 6);
+    }
+
 }
