@@ -2610,8 +2610,6 @@ mod irq_entry_bus_trace_regressions {
         assert_eq!(result.cycles, 7);
         assert_eq!(cpu.state().sp, 0xFA);
         assert_ne!(cpu.state().status & flags::INTERRUPT_DISABLE, 0);
-        assert_eq!(bus.read(0x01FB) & (flags::BREAK | flags::UNUSED), flags::UNUSED,
-            "IRQ pushes B=0 and the unused bit set");
 
         let accesses: Vec<_> = bus.bus_trace().iter()
             .map(|entry| (entry.kind, entry.address))
@@ -2625,6 +2623,8 @@ mod irq_entry_bus_trace_regressions {
             (CpuBusAccessKind::Read, 0xFFFE),
             (CpuBusAccessKind::Read, 0xFFFF),
         ], "IRQ entry must preserve the seven-cycle 2A03 bus ordering");
+        assert_eq!(bus.read(0x01FB) & (flags::BREAK | flags::UNUSED), flags::UNUSED,
+            "IRQ pushes B=0 and the unused bit set");
     }
 }
 
