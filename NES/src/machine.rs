@@ -508,9 +508,9 @@ mod tests {
     }
 
     #[test]
-    fn oam_dma_uses_514_cycles_when_the_apu_halt_phase_requires_alignment() {
+    fn oam_dma_uses_513_cycles_when_the_apu_halt_phase_is_put() {
         // LDA $00 (3 cycles); STA $4014 (4 cycles). Including reset's
-        // seven cycles, the next APU cycle is GET and needs alignment.
+        // seven cycles, the next APU halt cycle is PUT and needs no alignment.
         let mut machine = NesMachine::from_ines(&nrom_with_program(&[
             0xA5, 0x00,
             0x8D, 0x14, 0x40,
@@ -524,7 +524,7 @@ mod tests {
         assert_eq!(machine.step().unwrap().cycles, 3);
         let before = machine.total_cycles();
         assert_eq!(machine.step().unwrap().cycles, 4);
-        assert_eq!(machine.total_cycles() - before, 4 + 514);
+        assert_eq!(machine.total_cycles() - before, 4 + 513);
         for offset in 0..=u8::MAX {
             machine.write_cpu(0x2003, offset);
             assert_eq!(machine.read_cpu(0x2004), expected_oamdata_read(offset, offset ^ 0xA5));
@@ -532,9 +532,9 @@ mod tests {
     }
 
     #[test]
-    fn oam_dma_uses_513_cycles_on_the_apu_put_halt_phase() {
-        // LDA #$02; STA $4014. Six APU ticks leave the next halt slot on PUT,
-        // so OAM can proceed directly to its first GET without alignment.
+    fn oam_dma_uses_513_cycles_after_jmp_when_the_apu_halt_phase_is_put() {
+        // LDA #$02; STA $4014. Six APU ticks leave the next halt slot on GET,
+        // so OAM needs one alignment cycle before its first GET.
         let mut machine = NesMachine::from_ines(&nrom_with_program(&[
             0xA9, 0x02,
             0x8D, 0x14, 0x40,
@@ -547,8 +547,8 @@ mod tests {
         let result = machine.step().unwrap();
 
         assert_eq!(result.cycles, 4, "STA retains its nominal instruction cycles");
-        assert_eq!(machine.total_cycles() - before_cycles, 4 + 513,
-            "the APU PUT halt phase does not require an alignment cycle");
+        assert_eq!(machine.total_cycles() - before_cycles, 4 + 514,
+            "the APU GET halt phase requires one alignment cycle");
         assert_ne!(machine.ppu_position(), before_position,
             "OAM DMA stalls must advance the PPU as well as CPU time");
     }
@@ -867,7 +867,7 @@ mod tests {
         }
         machine.step().unwrap(); // LDA #$02
         machine.step().unwrap(); // STA $4014 starts DMA
-        assert_eq!(machine.total_cycles(), 7 + 2 + 4 + 513);
+        assert_eq!(machine.total_cycles(), 7 + 2 + 4 + 514);
         for i in 0..=u8::MAX {
             machine.write_cpu(0x2003, i);
             assert_eq!(machine.read_cpu(0x2004), expected_oamdata_read(i, i ^ 0x5A));
@@ -996,7 +996,7 @@ mod tests {
 
     #[test]
     fn oam_dma_uses_514_cycles_when_the_apu_halt_phase_is_get() {
-        // JMP, LDA and STA advance the APU to the GET halt phase, requiring alignment.
+        // JMP, LDA and STA leave the next APU halt slot on PUT, requiring no alignment.
         let image = nrom_with_program(&[
             0x4C, 0x04, 0x80, // JMP $8004
             0xEA,             // skipped
@@ -1008,7 +1008,7 @@ mod tests {
         machine.step().unwrap();
         machine.step().unwrap();
         machine.step().unwrap();
-        assert_eq!(machine.total_cycles(), 7 + 3 + 2 + 4 + 514);
+        assert_eq!(machine.total_cycles(), 7 + 3 + 2 + 4 + 513);
     }
 
     #[test]
