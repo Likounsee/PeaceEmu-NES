@@ -220,13 +220,14 @@ impl CpuBus {
         self.irq_poll_before_final_cycle = true;
     }
 
-    /// Samples the IRQ input at the instruction boundary unless the CPU selected
-    /// the early branch poll point. The final bus access may itself clock a device IRQ.
+    /// Ends instruction bus tracking without resampling IRQ after the final cycle.
+    ///
+    /// The CPU input was sampled at the instruction-specific hardware poll point
+    /// before the corresponding bus cycle advanced the APU/PPU. Sampling here
+    /// would incorrectly include IRQ edges raised by that final cycle.
     pub(crate) fn end_cpu_instruction(&mut self) -> u16 {
-        if !self.irq_poll_before_final_cycle {
-            self.irq_poll_sample = Some(self.irq_pending());
-        }
         self.instruction_timing = false;
+        self.irq_poll_before_final_cycle = false;
         core::mem::take(&mut self.instruction_bus_cycles)
     }
 
@@ -295,9 +296,13 @@ impl CpuBus {
     /// Advances the PPU to the sampling point of the current CPU bus access.
     fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool, ppu_dots_before_access: u32) {
         if self.instruction_timing {
-            // Retain the early sample for the special same-page branch poll.
-            // Ordinary instructions replace it with the final-cycle level in end_cpu_instruction().
-            self.irq_poll_sample = Some(self.irq_pending());
+            // The 2A03 samples IRQ at the start of the final bus cycle. A
+            // same-page taken branch is the exception: its poll occurs before
+            // the final dummy-read cycle, so preserve the preceding sample.
+            if !self.irq_poll_before_final_cycle {
+                self.irq_poll_sample = Some(self.irq_pending());
+            }
+            self.irq_poll_before_final_cycle = false;
             self.instruction_bus_cycles = self.instruction_bus_cycles.saturating_add(1);
             self.advance_cpu_cycle();
             // Clock the APU in the same order as CPU bus accesses. In particular,
