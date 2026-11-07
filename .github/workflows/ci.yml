@@ -37,14 +37,6 @@ jobs:
           components: rustfmt, clippy
       - name: Check formatting
         run: cargo fmt --manifest-path NES/Cargo.toml
-      - name: Regenerate dependency lockfiles for this validation run
-        run: |
-          cargo generate-lockfile --manifest-path NES/Cargo.toml
-          cargo generate-lockfile --manifest-path Cargo.toml
-          echo "NES_NESTED_LOCKFILE_BEGIN"
-          cat NES/Cargo.lock
-          echo "NES_ROOT_LOCKFILE_BEGIN"
-          cat Cargo.lock
       - name: Run tests
         run: cargo test --manifest-path NES/Cargo.toml --locked
       - name: Run Blargg CPU diagnostic ROMs
