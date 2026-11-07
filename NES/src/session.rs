@@ -428,7 +428,7 @@ mod tests {
         let mut session = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
         session.advance_frame().unwrap();
         let snapshot = session.save_state().unwrap();
-        assert!(snapshot.starts_with(b"PENESST\\0"));
+        assert!(snapshot.starts_with(b"PENESST\0"));
 
         let mut different_rom = looping_rom();
         different_rom[0x100] ^= 0x5A;
