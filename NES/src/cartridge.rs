@@ -1165,7 +1165,7 @@ pub struct Mmc3 {
     banks: [u8; 8], bank_select: u8, mirroring: Mirroring,
     ram_enabled: bool, ram_write_protected: bool,
     irq_latch: u8, irq_counter: u8, irq_reload: bool, irq_enabled: bool, irq_pending: bool,
-    a12_high: bool, a12_low_since_cpu_cycle: Option<u64>, last_ppu_cycle: Option<u64>,
+    a12_high: bool, a12_low_since_ppu_cycle: Option<u64>, last_ppu_cycle: Option<u64>,
 }
 impl Mmc3 {
     /// Parses an iNES or NES 2.0 mapper-4 image (MMC3/TxROM).
@@ -1224,7 +1224,7 @@ impl Mmc3 {
         Ok(Self { prg_rom: image[prg_start..chr_start].to_vec(), prg_ram, chr, chr_is_ram,
             banks: [0, 2, 4, 5, 6, 7, 0, 1], bank_select: 0, mirroring, ram_enabled: true,
             ram_write_protected: false, irq_latch: 0, irq_counter: 0, irq_reload: false,
-            irq_enabled: false, irq_pending: false, a12_high: false, a12_low_since_cpu_cycle: None,
+            irq_enabled: false, irq_pending: false, a12_high: false, a12_low_since_ppu_cycle: None,
             last_ppu_cycle: None })
     }
     fn prg_index(&self, address: u16) -> usize {
@@ -1290,21 +1290,17 @@ impl Mmc3 {
     }
     /// Observes the PPU address bus for MMC3's filtered A12 rising-edge IRQ clock.
     ///
-    /// MMC3 samples A12 on M2. The low filter therefore counts CPU cycles, while
-    /// the PPU-dot timestamp is retained only to detect a PPU counter reset.
-    /// Call once for each actual PPU bus address transition.
-    fn observe_ppu_address_at_cpu_cycle(
-        &mut self,
-        address: u16,
-        ppu_cycle: u64,
-        cpu_cycle: u64,
-    ) {
-        // A PPU reset can restart the dot counter while the cartridge remains
-        // inserted. Rebase the A12 filter at the current CPU cycle.
+    /// MMC3 clocks on a rising A12 edge only after the line has remained low
+    /// for at least eight PPU dots. Keep this in the PPU clock domain: CPU
+    /// register writes ($2006/$2007) can change the external address bus between
+    /// M2 samples and must retain their exact dot timestamps.
+    pub fn observe_ppu_address(&mut self, address: u16, ppu_cycle: u64) {
+        // A PPU reset can restart its dot counter while the cartridge remains
+        // inserted. Rebase the filter to the observed bus level after reset.
         if self.last_ppu_cycle.is_some_and(|last| ppu_cycle < last) {
             let a12 = address & 0x1000 != 0;
             self.a12_high = a12;
-            self.a12_low_since_cpu_cycle = if a12 { None } else { Some(cpu_cycle) };
+            self.a12_low_since_ppu_cycle = if a12 { None } else { Some(ppu_cycle) };
             self.last_ppu_cycle = Some(ppu_cycle);
             return;
         }
@@ -1312,28 +1308,23 @@ impl Mmc3 {
 
         let a12 = address & 0x1000 != 0;
         if !a12 {
-            if self.a12_high || self.a12_low_since_cpu_cycle.is_none() {
-                self.a12_low_since_cpu_cycle = Some(cpu_cycle);
+            if self.a12_high || self.a12_low_since_ppu_cycle.is_none() {
+                self.a12_low_since_ppu_cycle = Some(ppu_cycle);
             }
             self.a12_high = false;
             return;
         }
 
         if !self.a12_high {
-            let low_cycles = self.a12_low_since_cpu_cycle
-                .map(|start| cpu_cycle.saturating_sub(start))
+            let low_dots = self.a12_low_since_ppu_cycle
+                .map(|start| ppu_cycle.saturating_sub(start))
                 .unwrap_or(0);
-            if low_cycles >= 3 {
+            if low_dots >= 8 {
                 self.clock_irq_counter();
             }
         }
         self.a12_high = true;
-        self.a12_low_since_cpu_cycle = None;
-    }
-
-    /// Test/diagnostic entry point using a synthetic CPU-cycle timestamp.
-    pub fn observe_ppu_address(&mut self, address: u16, cpu_cycle: u64) {
-        self.observe_ppu_address_at_cpu_cycle(address, cpu_cycle.saturating_mul(3), cpu_cycle);
+        self.a12_low_since_ppu_cycle = None;
     }
 
     /// Manually clocks the IRQ counter for diagnostics; normal PPU operation clocks it through filtered A12 rising edges.
@@ -2302,20 +2293,8 @@ impl Cartridge {
         match self { Self::Nrom(c) => c.chr_is_ram(), Self::Mmc1(c) => c.chr_is_ram(), Self::Uxrom(c) => c.chr_is_ram(), Self::Cnrom(c) => c.chr_is_ram(), Self::Mmc3(c) => c.chr_is_ram(), Self::Axrom(c) => c.chr_is_ram(), Self::Gxrom(c) => c.chr_is_ram(), Self::Camerica(c) => c.chr_is_ram(), Self::ColorDreams(c) => c.chr_is_ram(), Self::Bnrom(c) => c.chr_is_ram(), Self::Cprom(c) => c.chr_is_ram(), Self::Mmc2(c) => c.chr_is_ram(), Self::Unrom512(c) => c.chr_is_ram(), Self::Mapper15(c) => c.chr_is_ram(), Self::Mapper8(c) => c.chr_is_ram(), Self::Mapper87(c) => c.chr_is_ram() }
     }
     /// Reports a PPU address-bus observation to mappers with edge-clocked IRQs.
-    pub fn observe_ppu_address(&mut self, address: u16, cpu_cycle: u64) {
-        self.observe_ppu_address_at_cpu_cycle(address, cpu_cycle.saturating_mul(3), cpu_cycle);
-    }
-
-    /// Reports the actual PPU-dot and CPU-cycle timestamps for mapper bus sampling.
-    pub(crate) fn observe_ppu_address_at_cpu_cycle(
-        &mut self,
-        address: u16,
-        ppu_cycle: u64,
-        cpu_cycle: u64,
-    ) {
-        if let Self::Mmc3(c) = self {
-            c.observe_ppu_address_at_cpu_cycle(address, ppu_cycle, cpu_cycle);
-        }
+    pub fn observe_ppu_address(&mut self, address: u16, ppu_cycle: u64) {
+        if let Self::Mmc3(c) = self { c.observe_ppu_address(address, ppu_cycle); }
     }
     /// Clocks a mapper IRQ counter once per approximated scanline boundary.
     pub fn clock_irq_counter(&mut self) { if let Self::Mmc3(c) = self { c.clock_irq_counter(); } }
