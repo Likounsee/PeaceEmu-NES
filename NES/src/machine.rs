@@ -1522,7 +1522,8 @@ mod dma_irq_poll_regressions {
 
     #[test]
     fn frame_irq_asserted_during_oam_dma_is_polled_after_the_first_resumed_instruction() {
-        let mut image = vec![0xEA; 16 + 16_384];
+        let mut image = vec![0; 16 + 16_384];
+        image[16..].fill(0xEA);
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
         image[16] = 0x58; // CLI
