@@ -674,7 +674,7 @@ impl Ppu {
                 self.bg_next_attribute = (attribute >> shift) & 3;
             }
             5 => {
-                let table = if self.ctrl & 0x10 != 0 { 0x1000 } else { 0 };
+                let table = if self.ctrl & 0x08 != 0 { 0x1000 } else { 0 };
                 let address = table + u16::from(self.bg_next_tile_id) * 16 + ((self.v >> 12) & 7);
                 self.bg_next_pattern_low = self.mem_read(address, cartridge);
             }
@@ -731,7 +731,7 @@ impl Ppu {
                 let tile_address = 0x2000 | (self.v & 0x0FFF);
                 let tile = self.mem_read(tile_address, cartridge) as u16;
                 let fine_y = (self.v >> 12) & 7;
-                let pattern_base = if self.ctrl & 0x10 != 0 { 0x1000 } else { 0 };
+                let pattern_base = if self.ctrl & 0x08 != 0 { 0x1000 } else { 0 };
                 address = pattern_base + tile * 16 + fine_y;
             }
         } else if (257..=320).contains(&dot) {
@@ -797,7 +797,7 @@ impl Ppu {
             )
         } else {
             (
-                if self.ctrl & 0x08 != 0 { 0x1000u16 } else { 0 },
+                if self.ctrl & 0x10 != 0 { 0x1000u16 } else { 0 },
                 tile_index,
                 source_y,
             )
@@ -899,7 +899,7 @@ impl Ppu {
         let base_coarse_x = (scroll_v & 0x1F) as usize;
         let coarse_y = ((scroll_v >> 5) & 0x1F) as usize;
         let fine_y = ((scroll_v >> 12) & 7) as usize;
-        let pattern_base = if self.ctrl & 0x10 != 0 { 0x1000u16 } else { 0 };
+        let pattern_base = if self.ctrl & 0x08 != 0 { 0x1000u16 } else { 0 };
         let scroll_x = base_coarse_x * 8 + fine_x + x.saturating_sub(self.line_scroll_start_x);
         let tile_x = scroll_x / 8;
         let nt_x = base_nt_x ^ ((tile_x / 32) & 1);
@@ -1334,7 +1334,7 @@ impl Ppu {
         const HEIGHT: usize = 240;
         let rendering_enabled = self.mask & 0x08 != 0;
         let show_left = self.mask & 0x02 != 0;
-        let pattern_base = if self.ctrl & 0x10 != 0 { 0x1000 } else { 0x0000 };
+        let pattern_base = if self.ctrl & 0x08 != 0 { 0x1000 } else { 0x0000 };
         // Direct/manual snapshots before the first pre-render latch use live registers;
         // normal frame rendering uses the captured start scroll rather than end-of-frame v.
         let scroll_v = if self.frame_scroll_valid { self.frame_scroll_v } else { self.v };
@@ -2112,7 +2112,7 @@ mod tests {
         let mut ppu = Ppu::new();
         ppu.scanline = 0;
         ppu.dot = 0;
-        ppu.ctrl = 0x10; // Background pattern table at $1000.
+        ppu.ctrl = 0x08; // Background pattern table at $1000.
         ppu.mask = 0x08; // Background rendering enabled.
         ppu.tick(10);
         let events = ppu.take_mapper_bus_events();
@@ -3344,9 +3344,9 @@ mod sprite_pattern_address_tests {
     #[test]
     fn eight_by_eight_sprite_table_still_comes_from_control_register() {
         let mut ppu = Ppu::new();
-        ppu.ctrl = 0x08;
+        ppu.ctrl = 0x10;
         assert_eq!(ppu.sprite_pattern_address(5, 0, 3), 0x1053);
-        ppu.ctrl = 0;
+        ppu.ctrl = 0x08;
         assert_eq!(ppu.sprite_pattern_address(5, 0, 3), 0x0053);
     }
 
@@ -3881,7 +3881,7 @@ mod mapper_a12_bus_regressions {
     #[test]
     fn sprite_fetch_a12_uses_sprite_pattern_table_control_in_8x8_mode() {
         let mut ppu = Ppu::new();
-        ppu.ctrl = 0x18; // Background and sprite pattern tables both at $1000.
+        ppu.ctrl = 0x18; // Background (bit 3) and sprite (bit 4) pattern tables at $1000.
         ppu.mask = 0x18;
         ppu.scanline = 261;
         ppu.dot = 261;
@@ -3892,7 +3892,7 @@ mod mapper_a12_bus_regressions {
 
         ppu.update_mapper_a12_bus(None);
         assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 261)],
-            "8x8 sprite fetches must use PPUCTRL bit 3, independently of background bit 4");
+            "8x8 sprite fetches must use PPUCTRL bit 4, independently of background bit 3");
     }
 
     #[test]
@@ -3916,7 +3916,7 @@ mod mapper_a12_bus_regressions {
     #[test]
     fn disabling_rendering_emits_a_low_edge_for_mapper_irq_filters() {
         let mut ppu = Ppu::new();
-        ppu.ctrl = 0x10;
+        ppu.ctrl = 0x08;
         ppu.mask = 0x08;
         ppu.tick_with_cartridge(5, None);
         assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 0), (0x1000, 5)]);
