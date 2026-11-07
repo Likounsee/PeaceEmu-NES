@@ -592,14 +592,6 @@ impl Apu {
     /// Returns whether the approximate frame sequencer currently asserts frame IRQ.
     pub fn frame_irq_pending(&self) -> bool { self.frame_irq }
 
-    /// Returns whether the next CPU cycle is the OAM DMA GET halt phase.
-    ///
-    /// The DMA unit follows the APU's alternating GET/PUT clock, whose phase
-    /// must be sampled independently of the CPU's reset-cycle counter. The
-    /// stored bit describes the cycle just clocked, so the upcoming halt phase
-    /// is its opposite.
-    pub(crate) fn oam_dma_needs_alignment(&self) -> bool { !self.cpu_cycle_odd }
-
     /// Returns whether either the frame sequencer or DMC asserts the CPU IRQ line.
     pub fn irq_pending(&self) -> bool { self.frame_irq || self.dmc_irq }
 
