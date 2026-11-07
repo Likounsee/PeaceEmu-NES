@@ -2138,11 +2138,11 @@ mod tests {
         ppu.mask = 0x08;
         ppu.tick_with_cartridge(5, Some(&cartridge));
         for (address, cycle) in ppu.take_mapper_bus_events() {
-            cartridge.observe_ppu_address(address, cycle);
+            cartridge.observe_ppu_address(address, cycle / 3);
         }
-        assert!(!cartridge.irq_pending(), "the initial high transition has not had nine low dots");
+        assert!(!cartridge.irq_pending(), "the initial high transition has not crossed three M2 cycles");
 
-        // Drop A12 at dot 6, then raise it at dot 13: exactly seven low dots.
+        // Drop A12 at dot 6, then raise it at dot 13: only two M2 cycles.
         ppu.mask = 0;
         ppu.tick_with_cartridge(7, Some(&cartridge));
         ppu.mask = 0x08;
@@ -2150,10 +2150,10 @@ mod tests {
         for (address, cycle) in ppu.take_mapper_bus_events() {
             cartridge.observe_ppu_address(address, cycle);
         }
-        assert!(!cartridge.irq_pending(), "the PPU-generated seven-dot low interval must be rejected");
+        assert!(!cartridge.irq_pending(), "the PPU-generated two-cycle low interval must be rejected");
 
         // The next low transition is dot 14. Keep rendering disabled through dot 21,
-        // then the pattern fetch at dot 23 produces a nine-dot qualified edge.
+        // then the pattern fetch at dot 23 arrives after three M2 cycles.
         ppu.mask = 0;
         ppu.tick_with_cartridge(9, Some(&cartridge));
         ppu.mask = 0x08;
@@ -2161,7 +2161,7 @@ mod tests {
         for (address, cycle) in ppu.take_mapper_bus_events() {
             cartridge.observe_ppu_address(address, cycle);
         }
-        assert!(cartridge.irq_pending(), "the PPU-generated nine-dot low interval must clock MMC3 IRQ");
+        assert!(cartridge.irq_pending(), "the PPU-generated three-cycle low interval must clock MMC3 IRQ");
     }
 
     #[test]
