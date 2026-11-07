@@ -202,7 +202,10 @@ impl CpuBus {
     }
 
     /// Attaches a parsed cartridge.
-    pub fn insert_cartridge(&mut self, cartridge: Cartridge) { self.cartridge = Some(cartridge); }
+    pub fn insert_cartridge(&mut self, cartridge: Cartridge) {
+        self.cartridge = Some(cartridge);
+        self.mapper_irq_asserted_at_ppu_cycle = None;
+    }
 
     pub(crate) fn set_ppu_bus_phase(&mut self, phase: u8) {
         assert!(phase < 3, "PPU bus phase must be 0, 1, or 2");
@@ -562,6 +565,7 @@ impl CpuBus {
             events.iter().map(|(address, ppu_cycle)| (*address, *ppu_cycle, self.cpu_cycle))
         );
         if let Some(cartridge) = self.cartridge.as_mut() {
+            let mut asserted_at = self.mapper_irq_asserted_at_ppu_cycle;
             for (address, ppu_cycle) in events {
                 self.mapper_a12_level = address & 0x1000 != 0;
                 // Preserve the exact PPU transition dot for MMC3's ten-dot
@@ -571,11 +575,18 @@ impl CpuBus {
                     ppu_cycle,
                     self.cpu_cycle,
                 );
+                if cartridge.irq_pending() {
+                    asserted_at.get_or_insert(ppu_cycle);
+                } else {
+                    asserted_at = None;
+                }
             }
+            self.mapper_irq_asserted_at_ppu_cycle = asserted_at;
         } else {
             for (address, _) in events {
                 self.mapper_a12_level = address & 0x1000 != 0;
             }
+            self.mapper_irq_asserted_at_ppu_cycle = None;
         }
         self.refresh_mapper_irq_timestamp(self.ppu.cycle_count());
     }
