@@ -58,6 +58,7 @@ pub struct CpuBusTraceEntry {
     /// at the start of a cycle and presents that sample to the CPU one cycle
     /// later. The instruction poll therefore uses the sample from its
     /// penultimate cycle, not a live read of the device line.
+    pub irq_poll_sample: Option<bool>,
 }
 
 /// CPU bus with 2 KiB internal RAM and an optional mapper-backed cartridge.
