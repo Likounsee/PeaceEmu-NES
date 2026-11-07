@@ -582,6 +582,8 @@ mod tests {
         machine.bus.write(0x4015, 0x10);
 
 
+        // Select the even OAM DMA parity so the initial DMC GET collides with OAM GET.
+        machine.cpu.add_stall_cycles(1);
         let before = machine.total_cycles();
         machine.perform_oam_dma(0x02);
 
@@ -648,6 +650,10 @@ mod tests {
         machine.bus.write(0x4015, 0x10);
 
 
+        // Select the even OAM DMA parity to align the initial DMC GET with OAM GET.
+        machine.cpu.add_stall_cycles(1);
+        // Select the even OAM DMA parity to exercise the initial GET collision.
+        machine.cpu.add_stall_cycles(1);
         let before = machine.total_cycles();
         machine.perform_oam_dma(0x02);
         let elapsed = machine.total_cycles() - before;
@@ -674,15 +680,11 @@ mod tests {
         machine.bus.write(0x4013, 0x00);
         machine.bus.write(0x4015, 0x10);
 
-
-        // The test offsets only the CPU-side parity after the DMC request.
-        // On even post-write parity OAM has an alignment slot; the DMC sample
-        // GET is scheduled so it can overlap an OAM PUT without delaying bytes.
-        machine.cpu.add_stall_cycles(1);
+        // Odd post-write parity lets the initial DMC GET overlap an OAM PUT.
         let before = machine.total_cycles();
         machine.perform_oam_dma(0x02);
 
-        assert_eq!(machine.total_cycles() - before, 514,
+        assert_eq!(machine.total_cycles() - before, 513,
             "a DMC sample GET can share an OAM PUT cycle without delaying OAM");
         assert_eq!(machine.bus.read(0x4015) & 0x10, 0,
             "the overlapping DMC sample GET must still complete");
@@ -887,6 +889,8 @@ mod tests {
         machine.write_cpu(0x4012, 0x00);
         machine.write_cpu(0x4013, 0x00);
         machine.write_cpu(0x4015, 0x10);
+        // Even parity makes the initial DMC GET collide with OAM GET.
+        machine.cpu.add_stall_cycles(1);
         let before = machine.total_cycles();
         let oam_base_cycles = if before & 1 == 0 { 514 } else { 513 };
         machine.perform_oam_dma(0x02);
