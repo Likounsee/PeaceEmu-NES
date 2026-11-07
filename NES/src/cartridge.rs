@@ -1165,7 +1165,10 @@ pub struct Mmc3 {
     banks: [u8; 8], bank_select: u8, mirroring: Mirroring,
     ram_enabled: bool, ram_write_protected: bool,
     irq_latch: u8, irq_counter: u8, irq_reload: bool, irq_enabled: bool, irq_pending: bool,
-    a12_high: bool, a12_low_since_ppu_cycle: Option<u64>, last_ppu_cycle: Option<u64>,
+    a12_high: bool,
+    a12_low_since_ppu_cycle: Option<u64>,
+    a12_low_since_cpu_cycle: Option<u64>,
+    last_ppu_cycle: Option<u64>,
 }
 impl Mmc3 {
     /// Parses an iNES or NES 2.0 mapper-4 image (MMC3/TxROM).
@@ -1224,7 +1227,8 @@ impl Mmc3 {
         Ok(Self { prg_rom: image[prg_start..chr_start].to_vec(), prg_ram, chr, chr_is_ram,
             banks: [0, 2, 4, 5, 6, 7, 0, 1], bank_select: 0, mirroring, ram_enabled: true,
             ram_write_protected: false, irq_latch: 0, irq_counter: 0, irq_reload: false,
-            irq_enabled: false, irq_pending: false, a12_high: false, a12_low_since_ppu_cycle: None,
+            irq_enabled: false, irq_pending: false, a12_high: false,
+            a12_low_since_ppu_cycle: None, a12_low_since_cpu_cycle: None,
             last_ppu_cycle: None })
     }
     fn prg_index(&self, address: u16) -> usize {
@@ -1324,6 +1328,49 @@ impl Mmc3 {
             }
         }
         self.a12_high = true;
+        self.a12_low_since_ppu_cycle = None;
+    }
+
+    /// Samples the current PPU A12 level at an M2 falling edge.
+    ///
+    /// MMC3's low-time filter counts three consecutive M2 samples, not a fixed
+    /// number of PPU dots. The dot timestamp is used only to detect a PPU reset.
+    fn observe_ppu_address_at_cpu_cycle(
+        &mut self,
+        address: u16,
+        ppu_cycle: u64,
+        cpu_cycle: u64,
+    ) {
+        if self.last_ppu_cycle.is_some_and(|last| ppu_cycle < last) {
+            let a12 = address & 0x1000 != 0;
+            self.a12_high = a12;
+            self.a12_low_since_cpu_cycle = if a12 { None } else { Some(cpu_cycle) };
+            self.a12_low_since_ppu_cycle = if a12 { None } else { Some(ppu_cycle) };
+            self.last_ppu_cycle = Some(ppu_cycle);
+            return;
+        }
+        self.last_ppu_cycle = Some(ppu_cycle);
+
+        let a12 = address & 0x1000 != 0;
+        if !a12 {
+            if self.a12_high || self.a12_low_since_cpu_cycle.is_none() {
+                self.a12_low_since_cpu_cycle = Some(cpu_cycle);
+                self.a12_low_since_ppu_cycle = Some(ppu_cycle);
+            }
+            self.a12_high = false;
+            return;
+        }
+
+        if !self.a12_high {
+            let low_m2_cycles = self.a12_low_since_cpu_cycle
+                .map(|start| cpu_cycle.saturating_sub(start))
+                .unwrap_or(0);
+            if low_m2_cycles >= 3 {
+                self.clock_irq_counter();
+            }
+        }
+        self.a12_high = true;
+        self.a12_low_since_cpu_cycle = None;
         self.a12_low_since_ppu_cycle = None;
     }
 
@@ -2296,6 +2343,18 @@ impl Cartridge {
     pub fn observe_ppu_address(&mut self, address: u16, ppu_cycle: u64) {
         if let Self::Mmc3(c) = self { c.observe_ppu_address(address, ppu_cycle); }
     }
+    /// Reports the current A12 level at an M2 falling edge.
+    pub(crate) fn observe_ppu_address_at_cpu_cycle(
+        &mut self,
+        address: u16,
+        ppu_cycle: u64,
+        cpu_cycle: u64,
+    ) {
+        if let Self::Mmc3(c) = self {
+            c.observe_ppu_address_at_cpu_cycle(address, ppu_cycle, cpu_cycle);
+        }
+    }
+
     /// Clocks a mapper IRQ counter once per approximated scanline boundary.
     pub fn clock_irq_counter(&mut self) { if let Self::Mmc3(c) = self { c.clock_irq_counter(); } }
     /// Returns whether the cartridge mapper asserts an IRQ line.
