@@ -2412,23 +2412,29 @@ mod irq_poll_sample_regressions {
     }
 
     #[test]
-    fn irq_poll_uses_the_line_sampled_before_the_final_instruction_cycle() {
+    fn irq_poll_uses_the_device_sample_from_the_penultimate_cycle() {
         let mut bus = CpuBus::new();
-        bus.write(0x4017, 0x00);
 
+        // Model a normal two-cycle instruction. The CPU input is still low
+        // because no device IRQ was present at the start of its first cycle.
         bus.begin_cpu_instruction();
         let _ = bus.read(0x8000);
-        assert_eq!(bus.end_cpu_instruction(), 1);
-        bus.tick_apu(29_834);
+        let _ = bus.read(0x8000);
+        assert_eq!(bus.end_cpu_instruction(), 2);
+        assert!(!bus.irq_pending_at_cpu_poll());
+
+        // An IRQ raised now is sampled at the start of the next instruction's
+        // first cycle, then reaches the CPU input one cycle later.
+        bus.apu.frame_irq = true;
         assert!(bus.irq_pending());
-        assert!(!bus.irq_pending_at_cpu_poll(),
-            "an IRQ raised after the sampled penultimate-cycle point is not taken yet");
+        assert!(!bus.irq_pending_at_cpu_poll());
 
         bus.begin_cpu_instruction();
         let _ = bus.read(0x8000);
-        assert_eq!(bus.end_cpu_instruction(), 1);
+        let _ = bus.read(0x8000);
+        assert_eq!(bus.end_cpu_instruction(), 2);
         assert!(bus.irq_pending_at_cpu_poll(),
-            "the next instruction's bus access samples the now-asserted IRQ line");
+            "the penultimate-cycle sample must reach the CPU at the next poll");
     }
 }
 
