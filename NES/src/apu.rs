@@ -180,9 +180,13 @@ impl Apu {
         // 2A03 reset sequence. In particular, its control/halt bit continues
         // to inhibit triangle length-counter clocks across a console reset.
         let triangle_control = self.registers[0x08];
+        // The triangle length counter is not cleared by reset, unlike the
+        // pulse and noise counters. Keep its live count as well as $4008.
+        let triangle_length_counter = self.length_counters[2];
         *self = Self::default();
         let _ = self.set_sample_rate(sample_rate);
         self.registers[0x08] = triangle_control;
+        self.length_counters[2] = triangle_length_counter;
         self.registers[0x17] = frame_counter;
         self.five_step_mode = frame_counter & 0x80 != 0;
         self.frame_irq_inhibit = frame_counter & 0x40 != 0;
@@ -2354,6 +2358,9 @@ mod dmc_disable_output_regressions {
         apu.write(0x4015, 0x0F);
         apu.write(0x4003, 0xF8);
         apu.write(0x4008, 0xFF);
+        apu.write(0x400B, 0x18);
+        let triangle_length = apu.length_counters[2];
+        assert!(triangle_length > 0);
         apu.frame_irq = true;
 
         apu.reset();
@@ -2364,7 +2371,9 @@ mod dmc_disable_output_regressions {
         assert_eq!(apu.registers[0x17], 0x80);
         assert!(apu.five_step_mode, "reset must replay the last $4017 mode");
         assert_eq!(apu.enabled_channels, 0, "$4015 is cleared on reset");
-        assert_eq!(apu.length_counters, [0; 4]);
+        assert_eq!(apu.length_counters, [0, 0, triangle_length, 0],
+            "reset clears pulse/noise length counters but leaves the triangle counter untouched");
+        assert_eq!(apu.read(0x4015) & 0x0F, 0x04);
         assert!(!apu.frame_irq);
         assert_eq!(apu.frame_cycles, 6);
     }
