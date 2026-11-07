@@ -430,14 +430,16 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.open_bus = value;
         self.record_bus_access(CpuBusAccessKind::Read, address, value);
+        if timed_access {
+            // M2 samples A12 at the CPU bus strobe. CPU-driven PPU address
+            // changes from $2006/$2007 must be visible before trailing PPU dots.
+            self.finish_cpu_cycle();
+        }
         if timed_access && ppu_register {
             // A register's data strobe can occur before the end of its CPU
             // cycle. Finish the remaining PPU dots before sampling mapper A12
             // at the M2 falling edge.
             self.tick_ppu(3 - ppu_dots_before_access);
-        }
-        if timed_access {
-            self.finish_cpu_cycle();
         }
         if timed_access && !poll_before_access {
             self.sample_nmi_line();
@@ -492,13 +494,13 @@ impl CpuBus {
         self.sync_mapper_bus_events();
         self.record_bus_access(CpuBusAccessKind::Write, address, value);
         if timed_access {
+            // Sample after the register write has driven its PPU address, at
+            // the M2 bus strobe and before the remaining PPU dots elapse.
+            self.finish_cpu_cycle();
             self.sample_nmi_line();
         }
         if timed_access && ppu_register {
             self.tick_ppu(3 - ppu_dots_before_access);
-        }
-        if timed_access {
-            self.finish_cpu_cycle();
         }
     }
     /// Sets the live button bitmap for controller port 1 or 2 (A, B, Select, Start, Up, Down, Left, Right).
