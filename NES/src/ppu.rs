@@ -752,6 +752,8 @@ impl Ppu {
         }
         let high = address & 0x1000 != 0;
         if high != self.mapper_a12_high {
+            #[cfg(feature = "ppu-timing-diagnostics")]
+            self.record_timing_event(if high { "MAPPER_A12_RISE" } else { "MAPPER_A12_FALL" });
             self.mapper_a12_high = high;
             self.mapper_bus_events.push((if high { 0x1000 } else { 0 }, self.ppu_cycle));
         }
