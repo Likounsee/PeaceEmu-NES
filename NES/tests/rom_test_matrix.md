@@ -28,6 +28,16 @@ The source/readme for each suite in the pinned upstream `nes-test-roms`
 checkout documents its expected behavior. Capture the framebuffer and audio
 diagnostic output when a GUI/audio-capable test harness is available.
 
+| `blargg_ppu_tests_2005.09.15b` | 5 | Palette RAM, power-up palette, sprite RAM/OAM DMA, VBlank clear timing and VRAM buffer | Screen result code and audible result; manual |
+| `dmc_dma_during_read4` | 5 | DMC DMA collisions with PPUDATA reads/writes and controller reads | On-screen values and CRC; manual |
+| `cpu_dummy_reads` | 1 | CPU dummy reads for indexed and indirect addressing, including PPU register side effects | Screen result and beeps; manual |
+
+These suites do not expose the headless `$6001-$6003` signature required by
+`run_blargg_rom`. They are intentionally marked ignored in the automated Rust
+test binary and are not invoked by headless CI. A timeout from that runner
+must not be interpreted as an emulator failure or a pass. Keep them in the
+manual matrix until a framebuffer/audio-aware assertion harness exists.
+
 ## Release evidence rules
 
 - Record pass/fail per ROM, platform and emulator commit.
