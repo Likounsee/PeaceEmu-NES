@@ -80,6 +80,7 @@ pub struct CpuBusTraceEntry {
 /// audio mixing and some interrupt timing remain approximate.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct CpuBus {
+    #[serde(with = "serde_big_array::BigArray")]
     ram: [u8; 0x800],
     cartridge: Option<Cartridge>,
     open_bus: u8,
