@@ -1224,7 +1224,7 @@ impl Mmc3 {
         Ok(Self { prg_rom: image[prg_start..chr_start].to_vec(), prg_ram, chr, chr_is_ram,
             banks: [0, 2, 4, 5, 6, 7, 0, 1], bank_select: 0, mirroring, ram_enabled: true,
             ram_write_protected: false, irq_latch: 0, irq_counter: 0, irq_reload: false,
-            irq_enabled: false, irq_pending: false, a12_high: false, a12_low_since: None,
+            irq_enabled: false, irq_pending: false, a12_high: false, a12_low_since_cpu_cycle: None,
             last_ppu_cycle: None })
     }
     fn prg_index(&self, address: u16) -> usize {
