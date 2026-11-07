@@ -4,6 +4,7 @@
 #![allow(unsafe_code)]
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+#[cfg(any(windows, test))]
 fn aspect_fit(client_width: i32, client_height: i32) -> (i32, i32, i32, i32) {
     if client_width <= 0 || client_height <= 0 {
         return (0, 0, 0, 0);
