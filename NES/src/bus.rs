@@ -620,11 +620,11 @@ impl CpuBus {
         }
     }
 
-    /// The MMC3 /IRQ pin is delayed by 17 master half-steps before reaching
+    /// The MMC3 /IRQ pin is delayed by 14 master half-steps before reaching
     /// the CPU input. One PPU dot is eight half-steps; retaining this fraction
     /// matters for the one-dot scanline timing bracket.
     fn mapper_irq_reached_cpu_input(&self) -> bool {
-        const MAPPER_IRQ_DELAY_MASTER_HALF_STEPS: u64 = 17;
+        const MAPPER_IRQ_DELAY_MASTER_HALF_STEPS: u64 = 14;
         let Some(asserted_at) = self.mapper_irq_asserted_at_ppu_cycle else {
             return false;
         };
@@ -1779,7 +1779,7 @@ mod mmc3_ppu_irq_integration_regressions {
     }
 
     #[test]
-    fn mmc3_irq_reaches_cpu_input_after_seventeen_master_half_steps() {
+    fn mmc3_irq_reaches_cpu_input_after_fourteen_master_half_steps() {
         let mut bus = mmc3_bus();
         bus.write(0x2000, 0x08);
         bus.write(0x2001, 0x18);
@@ -1789,15 +1789,15 @@ mod mmc3_ppu_irq_integration_regressions {
         assert_eq!(bus.irq_cycle_sample, Some(false),
             "the mapper pin must not reach the CPU at the same PPU dot");
 
-        bus.tick_ppu(2);
+        bus.tick_ppu(1);
         bus.finish_cpu_cycle();
         assert_eq!(bus.irq_cycle_sample, Some(false),
-            "two PPU dots are only sixteen master half-steps");
+            "one PPU dot is only eight master half-steps");
 
         bus.tick_ppu(1);
         bus.finish_cpu_cycle();
         assert_eq!(bus.irq_cycle_sample, Some(true),
-            "the CPU input sees /IRQ after the seventeenth master half-step");
+            "the CPU input sees /IRQ after the fourteenth master half-step");
     }
 
     #[test]
