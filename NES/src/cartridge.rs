@@ -1300,7 +1300,7 @@ impl Mmc3 {
         if self.last_ppu_cycle.is_some_and(|last| ppu_cycle < last) {
             // Rebase to the bus level actually observed after reset. Treating a
             // high A12 address as low starts the filter too early and can admit
-            // a rising edge after only seven real low dots.
+            // a rising edge after only eight real low dots.
             let a12 = address & 0x1000 != 0;
             self.a12_high = a12;
             self.a12_low_since = if a12 { None } else { Some(ppu_cycle) };
@@ -5469,7 +5469,7 @@ mod mmc3_filtered_reload_regressions {
     }
 
     #[test]
-    fn seven_dot_edge_does_not_consume_pending_irq_reload() {
+    fn eight_dot_edge_does_not_consume_pending_irq_reload() {
         let mut cart = Cartridge::parse(&test_image()).unwrap();
         cart.cpu_write(0xC000, 1);
         cart.cpu_write(0xC001, 0);
@@ -6234,13 +6234,13 @@ mod mmc3_a12_high_pulse_regressions {
         assert!(!cart.irq_pending());
 
         // A second seven-dot low interval is also insufficient, even though
-        // the two low intervals span more than eight dots in total.
+        // the two low intervals span more than nine dots in total.
         cart.observe_ppu_address(0x0000, 8);
         cart.observe_ppu_address(0x1000, 15);
         assert!(!cart.irq_pending(),
             "separated low intervals must never be accumulated");
 
-        // Only a continuous eight-dot low interval may clock the IRQ counter.
+        // Only a continuous nine-dot low interval may clock the IRQ counter.
         cart.observe_ppu_address(0x0000, 16);
         cart.observe_ppu_address(0x1000, 25);
         assert!(cart.irq_pending());
