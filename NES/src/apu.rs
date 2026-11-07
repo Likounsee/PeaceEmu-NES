@@ -413,7 +413,9 @@ impl Apu {
                         _ => {}
                     }
                     if self.frame_cycles >= FOUR_STEP_PERIOD {
-                        if !self.frame_irq_inhibit { self.frame_irq = true; }
+                        // IRQ is asserted on cycles 29,828 and 29,829. Cycle
+                        // 29,830 only wraps the sequencer; reasserting here
+                        // would recreate an IRQ immediately after $4015 clears it.
                         self.frame_cycles = 0;
                     }
                 }
