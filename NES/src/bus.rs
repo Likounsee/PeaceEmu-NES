@@ -1,5 +1,7 @@
 //! CPU memory bus for the NES machine.
 
+use serde_big_array::BigArray;
+
 use crate::apu::{Apu, DmcDmaPhase};
 use crate::cartridge::Cartridge;
 use crate::ppu::Ppu;
@@ -80,7 +82,7 @@ pub struct CpuBusTraceEntry {
 /// audio mixing and some interrupt timing remain approximate.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct CpuBus {
-    #[serde(with = "serde_big_array::BigArray")]
+    #[serde(with = "BigArray")]
     ram: [u8; 0x800],
     cartridge: Option<Cartridge>,
     open_bus: u8,
