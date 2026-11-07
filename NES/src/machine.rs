@@ -393,6 +393,7 @@ impl NesMachine {
     fn clock_dma_bus_phase(&mut self, phase: DmaBusPhase) -> bool {
         self.bus.advance_cpu_cycle();
         let _crossed_scanlines = self.bus.tick_ppu(3);
+        self.bus.finish_cpu_cycle();
         let _dmc_phase_cycles = self.bus.tick_apu_with_dma_access(1, phase.dmc_can_halt());
         self.bus.sample_nmi_line();
         let dmc_get = self.bus.take_dmc_dma_get_occurred();
@@ -427,6 +428,7 @@ impl NesMachine {
         while cycles != 0 {
             self.bus.advance_cpu_cycle();
             let _crossed_scanlines = self.bus.tick_ppu(3);
+            self.bus.finish_cpu_cycle();
             // MMC3 IRQs now follow filtered PPU A12 transitions instead of scanline clocks.
             let dmc_stalls = self.bus.tick_apu_with_dma_access(1, dmc_dma_can_halt);
             self.bus.sample_nmi_line();
