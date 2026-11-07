@@ -482,6 +482,33 @@ fn blargg_mmc3_mapper_diagnostics_experimental() {
             failures.push(format!("missing MMC3 ROM: {}", path.display()));
             continue;
         }
+        if *relative == "mmc3_test_2/rom_singles/4-scanline_timing.nes" {
+            // This ROM is sensitive to the exact CPU/PPU startup phase. Run
+            // all three possible PPU alignments to distinguish a fetch-dot
+            // error from a phase-zero synchronization offset.
+            let mut phase_zero = None;
+            for phase in 0..3 {
+                let result = run_blargg_rom_with_ppu_phase(&path, phase);
+                match &result {
+                    Ok(message) => println!("MMC3 SCANLINE PHASE {phase} PASS — {message}"),
+                    Err(error) => eprintln!("MMC3 SCANLINE PHASE {phase} FAIL — {error}"),
+                }
+                if phase == 0 {
+                    phase_zero = Some(result);
+                }
+            }
+            match phase_zero.expect("phase zero is always tested") {
+                Ok(message) => {
+                    passed += 1;
+                    println!("EXPERIMENTAL MMC3 PASS {} — {}", relative, message);
+                }
+                Err(error) => {
+                    eprintln!("EXPERIMENTAL MMC3 FAIL {}", error);
+                    failures.push(error);
+                }
+            }
+            continue;
+        }
         match run_blargg_rom(&path) {
             Ok(message) => {
                 passed += 1;
