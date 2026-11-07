@@ -1,5 +1,7 @@
 //! NES picture processing unit registers, video memory, timing, and snapshot renderer.
 
+use serde_big_array::BigArray;
+
 use crate::cartridge::{Cartridge, Mirroring};
 #[cfg(feature = "ppu-timing-diagnostics")]
 use std::collections::VecDeque;
@@ -48,7 +50,7 @@ pub struct Ppu {
     mask: u8,
     status: u8,
     oam_addr: u8,
-    #[serde(with = "serde_big_array::BigArray")]
+    #[serde(with = "BigArray")]
     oam: [u8; 256],
     /// Secondary-OAM bytes produced by the dot-driven sprite evaluator.
     sprite_line_oam: [[u8; 4]; 8],
@@ -80,7 +82,7 @@ pub struct Ppu {
     eval_oam: [[u8; 4]; 8],
     eval_indices: [u8; 8],
     eval_count: u8,
-    #[serde(with = "serde_big_array::BigArray")]
+    #[serde(with = "BigArray")]
     nametables: [u8; 4096],
     palette: [u8; 32],
     v: u16,
