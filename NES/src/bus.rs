@@ -2431,7 +2431,7 @@ mod irq_poll_sample_regressions {
     fn branch_can_freeze_the_irq_sample_before_its_final_dummy_cycle() {
         let mut bus = CpuBus::new();
         bus.write(0x4017, 0x00);
-        bus.tick_apu(29_830);
+        bus.tick_apu(29_829);
         assert!(!bus.irq_pending());
 
         bus.begin_cpu_instruction();
