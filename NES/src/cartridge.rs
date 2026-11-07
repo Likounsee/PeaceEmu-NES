@@ -6200,3 +6200,39 @@ mod nes2_mmc2_mmc4_regressions {
         assert_eq!(cart.cpu_read(0x7000), Some(0xA7));
     }
 }
+
+
+#[cfg(test)]
+mod mmc3_a12_high_pulse_regressions {
+    use super::*;
+
+    #[test]
+    fn even_a_short_high_pulse_restarts_the_eight_dot_low_filter() {
+        let mut image = vec![0; INES_HEADER_LEN + 2 * PRG_BANK_LEN];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 2;
+        image[6] = 0x40;
+        let mut cart = Cartridge::parse(&image).unwrap();
+        cart.cpu_write(0xC000, 0);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+
+        // Seven low dots are insufficient. The brief high pulse at dot 7
+        // must discard that interval rather than allowing it to accumulate.
+        cart.observe_ppu_address(0x0000, 0);
+        cart.observe_ppu_address(0x1000, 7);
+        assert!(!cart.irq_pending());
+
+        // A second seven-dot low interval is also insufficient, even though
+        // the two low intervals span more than eight dots in total.
+        cart.observe_ppu_address(0x0000, 8);
+        cart.observe_ppu_address(0x1000, 15);
+        assert!(!cart.irq_pending(),
+            "separated low intervals must never be accumulated");
+
+        // Only a continuous eight-dot low interval may clock the IRQ counter.
+        cart.observe_ppu_address(0x0000, 16);
+        cart.observe_ppu_address(0x1000, 24);
+        assert!(cart.irq_pending());
+    }
+}
