@@ -2125,7 +2125,7 @@ mod tests {
     }
 
     #[test]
-    fn ppu_generated_a12_edges_obey_the_mmc3_three_cycle_filter() {
+    fn ppu_generated_a12_edges_obey_the_mmc3_ten_dot_filter() {
         let mut image = vec![0; 16 + 2 * 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 2;
@@ -2143,7 +2143,7 @@ mod tests {
         for (address, cycle) in ppu.take_mapper_bus_events() {
             cartridge.observe_ppu_address(address, cycle);
         }
-        assert!(!cartridge.irq_pending(), "the initial high transition has not had eight low PPU dots");
+        assert!(!cartridge.irq_pending(), "the initial high transition has not had ten low PPU dots");
 
         // Drop A12 at dot 6, then raise it at dot 13: seven low dots.
         ppu.mask = 0;
@@ -2156,15 +2156,15 @@ mod tests {
         assert!(!cartridge.irq_pending(), "the PPU-generated seven-dot low interval must be rejected");
 
         // The next low transition is dot 14. Keep rendering disabled through dot 21,
-        // then the pattern fetch at dot 23 arrives after eight low dots.
+        // then the pattern fetch at dot 24 arrives after ten low dots.
         ppu.mask = 0;
-        ppu.tick_with_cartridge(9, Some(&cartridge));
+        ppu.tick_with_cartridge(10, Some(&cartridge));
         ppu.mask = 0x08;
         ppu.tick_with_cartridge(1, Some(&cartridge));
         for (address, cycle) in ppu.take_mapper_bus_events() {
             cartridge.observe_ppu_address(address, cycle);
         }
-        assert!(cartridge.irq_pending(), "the PPU-generated eight-dot low interval must clock MMC3 IRQ");
+        assert!(cartridge.irq_pending(), "the PPU-generated ten-dot low interval must clock MMC3 IRQ");
     }
 
     #[test]
@@ -2188,19 +2188,19 @@ mod tests {
         }
         assert!(!cartridge.irq_pending(), "the first high transition has no qualified low interval");
 
-        // Drive A12 low for three CPU/M2 cycles, then raise it through $2006 again.
+        // Drive A12 low for ten PPU dots, then raise it through $2006 again.
         ppu.cpu_write_register(6, 0x00, None);
         ppu.cpu_write_register(6, 0x00, None);
         for (address, cycle) in ppu.take_mapper_bus_events() {
             cartridge.observe_ppu_address(address, cycle);
         }
-        ppu.tick(9);
+        ppu.tick(10);
         ppu.cpu_write_register(6, 0x10, None);
         ppu.cpu_write_register(6, 0x00, None);
         for (address, cycle) in ppu.take_mapper_bus_events() {
             cartridge.observe_ppu_address(address, cycle);
         }
-        assert!(cartridge.irq_pending(), "a three-cycle A12-low interval created by $2006 writes must clock MMC3");
+        assert!(cartridge.irq_pending(), "a ten-dot A12-low interval created by $2006 writes must clock MMC3");
     }
 
     #[test]
