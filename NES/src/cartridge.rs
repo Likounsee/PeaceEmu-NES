@@ -1362,10 +1362,13 @@ impl Mmc3 {
         }
 
         if !self.a12_high {
-            let low_m2_cycles = self.a12_low_since_cpu_cycle
-                .map(|start| cpu_cycle.saturating_sub(start))
+            // The board's filter requires more than three complete CPU cycles
+            // of low A12. A nine-dot interval ends on the third M2 edge and
+            // must not clock; the first qualifying interval is ten PPU dots.
+            let low_dots = self.a12_low_since_ppu_cycle
+                .map(|start| ppu_cycle.saturating_sub(start))
                 .unwrap_or(0);
-            if low_m2_cycles >= 3 {
+            if low_dots >= 10 {
                 self.clock_irq_counter();
             }
         }
