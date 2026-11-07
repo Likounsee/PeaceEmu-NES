@@ -2446,23 +2446,52 @@ mod irq_poll_sample_regressions {
     }
 
     #[test]
-    fn irq_poll_uses_the_line_sampled_before_the_final_instruction_cycle() {
+    fn ordinary_instruction_samples_irq_after_its_final_bus_cycle() {
         let mut bus = CpuBus::new();
         bus.write(0x4017, 0x00);
-
         bus.begin_cpu_instruction();
         let _ = bus.read(0x8000);
-        assert_eq!(bus.end_cpu_instruction(), 1);
         bus.tick_apu(29_834);
         assert!(bus.irq_pending());
+        assert_eq!(bus.end_cpu_instruction(), 1);
+        assert!(bus.irq_pending_at_cpu_poll(),
+            "an IRQ asserted during the final cycle is visible at the instruction boundary");
+    }
+
+    #[test]
+    fn taken_same_page_branch_keeps_its_early_irq_poll() {
+        let mut bus = CpuBus::new();
+        bus.write(0x4017, 0x00);
+        bus.begin_cpu_instruction();
+        let _ = bus.read(0x8000);
+        bus.poll_irq_before_final_cycle();
+        bus.tick_apu(29_834);
+        assert!(bus.irq_pending());
+        assert_eq!(bus.end_cpu_instruction(), 1);
         assert!(!bus.irq_pending_at_cpu_poll(),
-            "an IRQ raised after the sampled penultimate-cycle point is not taken yet");
+            "an IRQ raised during the final branch dummy-read cycle is deferred");
 
         bus.begin_cpu_instruction();
         let _ = bus.read(0x8000);
         assert_eq!(bus.end_cpu_instruction(), 1);
         assert!(bus.irq_pending_at_cpu_poll(),
-            "the next instruction's bus access samples the now-asserted IRQ line");
+            "the deferred IRQ is visible after the following instruction");
+    }
+
+    #[test]
+    fn irq_asserted_during_oam_dma_is_sampled_when_cpu_resumes() {
+        let mut bus = CpuBus::new();
+        bus.write(0x4017, 0x00);
+        bus.begin_cpu_instruction();
+        let _ = bus.read(0x8000);
+        bus.end_cpu_instruction();
+        assert!(!bus.irq_pending_at_cpu_poll());
+
+        bus.tick_apu(29_834);
+        assert!(bus.irq_pending());
+        bus.sample_irq_line_after_dma();
+        assert!(bus.irq_pending_at_cpu_poll(),
+            "the CPU must see a level IRQ that asserted while OAM DMA held RDY");
     }
 }
 
