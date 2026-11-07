@@ -294,6 +294,10 @@ impl CpuBus {
     /// Advances the PPU to the sampling point of the current CPU bus access.
     fn clock_instruction_bus_access(&mut self, dmc_dma_can_halt: bool, ppu_dots_before_access: u32) {
         if self.instruction_timing {
+            // Close the previous M2 cycle first. MMC3 samples A12 on that
+            // falling edge, and the CPU sees the resulting IRQ level at the
+            // start of this bus cycle.
+            self.advance_cpu_cycle();
             // The 2A03 samples IRQ at the start of the final bus cycle. A
             // same-page taken branch is the exception: its poll occurs before
             // the final dummy-read cycle, so preserve the preceding sample.
@@ -302,7 +306,6 @@ impl CpuBus {
             }
             self.irq_poll_before_final_cycle = false;
             self.instruction_bus_cycles = self.instruction_bus_cycles.saturating_add(1);
-            self.advance_cpu_cycle();
             // Clock the APU in the same order as CPU bus accesses. In particular,
             // $4017's delayed frame-counter reset must sample the current CPU parity,
             // not the stale parity left over from the previous instruction.
