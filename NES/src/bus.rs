@@ -104,6 +104,8 @@ pub struct CpuBus {
     cpu_cycle: u64,
     /// Latest A12 level driven on the external PPU address bus, sampled by MMC3 on M2.
     mapper_a12_level: bool,
+    /// PPU dot at which the mapper first asserted /IRQ; the CPU input has propagation delay.
+    mapper_irq_asserted_at_ppu_cycle: Option<u64>,
     /// Address retained on the CPU bus while DMA suspends the processor.
     cpu_bus_address: u16,
     /// DMC stalls discovered while the instruction's bus accesses clock the APU.
@@ -132,7 +134,7 @@ pub struct CpuBus {
     mapper_a12_trace: Vec<(u16, u64, u64)>,
 }
 impl Default for CpuBus {
-    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, irq_cycle_sample: Some(false), irq_poll_before_final_cycle: false, cpu_cycle: 0, mapper_a12_level: false, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096), #[cfg(test)] mapper_a12_trace: Vec::new() } }
+    fn default() -> Self { Self { ram: [0; 0x800], cartridge: None, open_bus: 0, ppu: Ppu::new(), apu: Apu::new(), pending_oam_dma: None, controller_state: [0; 2], controller_shift: [0; 2], controller_strobe: false, instruction_timing: false, ppu_bus_phase: 0, instruction_bus_cycles: 0, irq_poll_sample: None, irq_cycle_sample: Some(false), irq_poll_before_final_cycle: false, cpu_cycle: 0, mapper_a12_level: false, mapper_irq_asserted_at_ppu_cycle: None, cpu_bus_address: 0, instruction_dmc_stalls: 0, nmi_pending: false, nmi_sample_cycle: None, nmi_deferred: false, interrupt_entry_completed: false, pending_dmc_dma: None, dmc_dma_get_occurred: false, #[cfg(any(test, feature = "ppu-timing-diagnostics"))] bus_trace: VecDeque::with_capacity(2048), #[cfg(any(test, feature = "ppu-timing-diagnostics"))] ppu_bus_trace: VecDeque::with_capacity(4096), #[cfg(test)] mapper_a12_trace: Vec::new() } }
 }
 impl CpuBus {
     /// Creates a bus without a cartridge.
@@ -147,6 +149,7 @@ impl CpuBus {
         self.open_bus = 0;
         self.ppu = Ppu::new();
         self.mapper_a12_level = false;
+        self.mapper_irq_asserted_at_ppu_cycle = None;
         if console_reset {
             self.apu.reset();
         } else {
@@ -164,7 +167,7 @@ impl CpuBus {
         self.instruction_bus_cycles = 0;
         self.instruction_dmc_stalls = 0;
         self.irq_poll_sample = None;
-        self.irq_cycle_sample = Some(self.irq_pending());
+        self.irq_cycle_sample = Some(self.cpu_irq_input_pending());
         self.irq_poll_before_final_cycle = false;
         self.pending_dmc_dma = None;
         self.nmi_pending = false;
@@ -356,7 +359,7 @@ impl CpuBus {
     /// the previous detector sample can leave an edge from the final DMA phase
     /// one instruction late.
     pub(crate) fn latch_irq_poll_after_dma(&mut self) {
-        self.irq_poll_sample = Some(self.irq_pending());
+        self.irq_poll_sample = Some(self.cpu_irq_input_pending());
     }
 
     /// Takes DMC stalls discovered while clocking instruction bus accesses.
@@ -561,9 +564,8 @@ impl CpuBus {
         if let Some(cartridge) = self.cartridge.as_mut() {
             for (address, ppu_cycle) in events {
                 self.mapper_a12_level = address & 0x1000 != 0;
-                // Preserve the PPU's exact transition dot for the MMC3
-                // low-time filter; M2 sampling alone rounds nine dots to
-                // three full CPU cycles and admits the boundary edge.
+                // Preserve the exact PPU transition dot for MMC3's ten-dot
+                // A12 filter rather than rounding it to CPU-cycle boundaries.
                 cartridge.observe_ppu_address_at_cpu_cycle(
                     address,
                     ppu_cycle,
@@ -575,6 +577,7 @@ impl CpuBus {
                 self.mapper_a12_level = address & 0x1000 != 0;
             }
         }
+        self.refresh_mapper_irq_timestamp(self.ppu.cycle_count());
     }
 
     /// Samples A12 at the M2 falling edge ending the previous CPU cycle.
@@ -584,6 +587,39 @@ impl CpuBus {
         if let Some(cartridge) = self.cartridge.as_mut() {
             cartridge.observe_ppu_address_at_cpu_cycle(address, ppu_cycle, self.cpu_cycle);
         }
+        self.refresh_mapper_irq_timestamp(ppu_cycle);
+    }
+
+    /// Tracks the mapper's /IRQ assertion edge so the CPU input can model the
+    /// propagation delay from the cartridge connector to the 2A03 IRQ sampler.
+    fn refresh_mapper_irq_timestamp(&mut self, ppu_cycle: u64) {
+        let asserted = self.cartridge.as_ref().is_some_and(Cartridge::irq_pending);
+        if asserted {
+            self.mapper_irq_asserted_at_ppu_cycle.get_or_insert(ppu_cycle);
+        } else {
+            self.mapper_irq_asserted_at_ppu_cycle = None;
+        }
+    }
+
+    /// The MMC3 /IRQ pin is delayed by 17 master half-steps before reaching
+    /// the CPU input. One PPU dot is eight half-steps; retaining this fraction
+    /// matters for the one-dot scanline timing bracket.
+    fn mapper_irq_reached_cpu_input(&self) -> bool {
+        const MAPPER_IRQ_DELAY_MASTER_HALF_STEPS: u64 = 17;
+        let Some(asserted_at) = self.mapper_irq_asserted_at_ppu_cycle else {
+            return false;
+        };
+        let elapsed_half_steps = self.ppu.cycle_count()
+            .saturating_sub(asserted_at)
+            .saturating_mul(8);
+        elapsed_half_steps >= MAPPER_IRQ_DELAY_MASTER_HALF_STEPS
+            && self.cartridge.as_ref().is_some_and(Cartridge::irq_pending)
+    }
+
+    /// Combined level at the CPU input; APU IRQ is sampled directly, mapper
+    /// IRQ passes through the connector-to-CPU propagation delay.
+    fn cpu_irq_input_pending(&self) -> bool {
+        self.apu.irq_pending() || self.mapper_irq_reached_cpu_input()
     }
     /// Legacy scanline IRQ clock retained for diagnostics.
     pub fn clock_mapper_irq(&mut self) { if let Some(cartridge) = self.cartridge.as_mut() { cartridge.clock_irq_counter(); } }
@@ -718,7 +754,7 @@ impl CpuBus {
     pub(crate) fn cpu_cycle(&self) -> u64 { self.cpu_cycle }
     /// Returns the IRQ level captured at the instruction-specific CPU poll point.
     pub(crate) fn irq_pending_at_cpu_poll(&self) -> bool {
-        self.irq_poll_sample.unwrap_or_else(|| self.irq_pending())
+        self.irq_poll_sample.unwrap_or_else(|| self.cpu_irq_input_pending())
     }
 
     /// Samples the PPU NMI output at a CPU-cycle boundary.
