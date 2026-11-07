@@ -1519,10 +1519,10 @@ impl Ppu {
     /// MMC3 scanline IRQ approximation must not advance while the PPU is idle.
     pub fn rendering_enabled(&self) -> bool { self.mask & 0x18 != 0 }
 
-    /// Returns the current scanline and dot for diagnostics and tests.
     /// Returns the monotonic PPU-dot counter used to rebase mapper sampling after reset.
     pub(crate) fn cycle_count(&self) -> u64 { self.ppu_cycle }
 
+    /// Returns the current scanline and dot for diagnostics and tests.
     pub fn position(&self) -> (u16, u16) { (self.scanline, self.dot) }
 
     /// Returns a read-only view of the primary OAM bytes.
