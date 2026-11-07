@@ -1608,7 +1608,7 @@ mod mmc3_ppu_irq_integration_regressions {
     #[test]
     fn dmc_dma_ppudata_reads_forward_mapper_a12_transitions() {
         let mut bus = mmc3_bus();
-        tick_ppu_with_cpu_cycles(&mut bus, 9);
+        tick_ppu_with_cpu_cycles(&mut bus, 12);
         bus.write(0x2006, 0x10);
         bus.write(0x2006, 0x00);
         let _ = bus.read_dmc_dma_source(0x2007);
@@ -1619,7 +1619,7 @@ mod mmc3_ppu_irq_integration_regressions {
     #[test]
     fn cpu_ppudata_pattern_accesses_drive_mmc3_a12_and_irq() {
         let mut bus = mmc3_bus();
-        tick_ppu_with_cpu_cycles(&mut bus, 9); // Establish a low A12 baseline for three M2 cycles.
+        tick_ppu_with_cpu_cycles(&mut bus, 12); // Include the baseline cycle plus three complete low M2 cycles.
         bus.write(0x2006, 0x10);
         bus.write(0x2006, 0x00);
         let _ = bus.read(0x2007); // CPU reads CHR at $1000, driving A12 high.
