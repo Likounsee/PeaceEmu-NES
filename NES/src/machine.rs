@@ -352,9 +352,11 @@ impl NesMachine {
     /// against an OAM GET, in which case OAM inserts one alignment cycle and
     /// retries the same byte without advancing its index.
     fn perform_oam_dma(&mut self, page: u8) {
-        // OAM DMA is 512 alternating source-read/OAM-write cycles, preceded
-        // by one halt cycle and an extra alignment cycle on odd CPU parity.
-        let dma_cycles = if self.cpu.total_cycles() & 1 == 0 { 513u16 } else { 514u16 };
+        // OAM DMA is 512 alternating GET/PUT cycles, preceded by a halt
+        // cycle. Its optional alignment cycle follows the APU GET/PUT phase,
+        // not the CPU's reset-cycle counter: the two phase origins are not
+        // interchangeable on the 2A03.
+        let dma_cycles = if self.bus.oam_dma_needs_alignment() { 514u16 } else { 513u16 };
         let initial_slots = u32::from(dma_cycles - 512);
         // The CPU has finished the $4014 write and is waiting to fetch its
         // next opcode; preserve that address during OAM's halt/alignment slots.
