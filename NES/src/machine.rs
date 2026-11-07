@@ -532,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn oam_dma_uses_514_cycles_after_jmp_on_even_post_instruction_parity() {
+    fn oam_dma_uses_513_cycles_when_post_instruction_parity_is_odd() {
         // LDA #$02; STA $4014. The post-write CPU count is odd, so no
         // additional OAM alignment slot is required.
         let mut machine = NesMachine::from_ines(&nrom_with_program(&[
@@ -675,9 +675,9 @@ mod tests {
         machine.bus.write(0x4015, 0x10);
 
 
-        // Reset leaves the CPU at cycle 7. One idle CPU stall makes the
-        // OAM halt slot the only initial slot. The APU phase is untouched, so
-        // DMC halts on that GET and its sample GET overlaps OAM's PUT.
+        // The test offsets only the CPU-side parity after the DMC request.
+        // On even post-write parity OAM has an alignment slot; the DMC sample
+        // GET is scheduled so it can overlap an OAM PUT without delaying bytes.
         machine.cpu.add_stall_cycles(1);
         let before = machine.total_cycles();
         machine.perform_oam_dma(0x02);
@@ -995,7 +995,7 @@ mod tests {
     }
 
     #[test]
-    fn oam_dma_uses_513_cycles_when_post_instruction_parity_is_odd() {
+    fn oam_dma_uses_514_cycles_after_jmp_on_even_post_instruction_parity() {
         // JMP, LDA and STA leave an even post-write CPU count, requiring alignment.
         let image = nrom_with_program(&[
             0x4C, 0x04, 0x80, // JMP $8004
