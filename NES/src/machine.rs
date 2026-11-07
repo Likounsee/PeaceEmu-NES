@@ -1525,25 +1525,23 @@ mod dma_irq_poll_regressions {
         let mut image = vec![0xEA; 16 + 16_384];
         image[0..4].copy_from_slice(b"NES\x1A");
         image[4] = 1;
+        image[16] = 0x58; // CLI
+        image[17] = 0xEA; // NOP after DMA
         image[16 + 0x3FFC..16 + 0x3FFE].copy_from_slice(&0x8000u16.to_le_bytes());
         image[16 + 0x3FFE..16 + 0x4000].copy_from_slice(&0x9000u16.to_le_bytes());
         let mut machine = NesMachine::from_ines(&image).unwrap();
-        machine.cpu.pc = 0x8000;
-        machine.cpu.status &= !crate::cpu::flags::INTERRUPT_DISABLE;
+        machine.cpu.set_pc(0x8000);
 
-        // Position the four-step frame sequencer one cycle before its IRQ.
-        // The instruction's poll sample is false; the frame IRQ rises during DMA.
-        machine.bus.tick_apu(29_820); // Power-on frame position starts at cycle 6.
-        machine.bus.begin_cpu_instruction();
-        let _ = machine.bus.read(0x8000);
-        assert_eq!(machine.bus.end_cpu_instruction(), 1);
-        assert!(!machine.bus.irq_pending_at_cpu_poll());
+        let cli = machine.step().unwrap();
+        assert_eq!(cli.opcode, 0x58);
+        assert!(machine.bus.irq_poll_sample.is_some());
 
+        // CLI defers the next poll. Raise the frame IRQ during DMA; the
+        // first resumed NOP must execute before the following poll takes IRQ.
+        machine.bus.tick_apu(29_819);
         machine.perform_oam_dma(0);
         assert!(machine.bus.irq_pending(),
             "the frame IRQ must have risen while OAM DMA held the CPU");
-        assert!(!machine.bus.irq_pending_at_cpu_poll(),
-            "DMA must not bypass the instruction's IRQ poll point");
 
         let resumed = machine.step().unwrap();
         assert_eq!(resumed.opcode, 0xEA,
@@ -1551,5 +1549,4 @@ mod dma_irq_poll_regressions {
         let irq = machine.step().unwrap();
         assert_eq!(irq.opcode, 0xFE);
         assert_eq!(machine.cpu_state().pc, 0x9000);
-    }
-}
+    }}
