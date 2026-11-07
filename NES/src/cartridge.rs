@@ -3347,6 +3347,29 @@ mod mmc3_tests {
 
 
     #[test]
+    fn mapper_4_a12_filter_counts_three_m2_falling_edge_samples() {
+        let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
+        cart.cpu_write(0xC000, 0);
+        cart.cpu_write(0xC001, 0);
+        cart.cpu_write(0xE001, 0);
+
+        // Two sampled low M2 edges are insufficient, even if the PPU-dot
+        // interval happens to span eight dots.
+        cart.observe_ppu_address_at_cpu_cycle(0x0000, 100, 0);
+        cart.observe_ppu_address_at_cpu_cycle(0x0000, 103, 1);
+        cart.observe_ppu_address_at_cpu_cycle(0x1000, 108, 2);
+        assert!(!cart.irq_pending(), "two low M2 samples must be filtered");
+
+        // A new low interval sampled on three consecutive M2 falling edges
+        // qualifies the next high sample.
+        cart.observe_ppu_address_at_cpu_cycle(0x0000, 109, 3);
+        cart.observe_ppu_address_at_cpu_cycle(0x0000, 112, 4);
+        cart.observe_ppu_address_at_cpu_cycle(0x0000, 115, 5);
+        cart.observe_ppu_address_at_cpu_cycle(0x1000, 118, 6);
+        assert!(cart.irq_pending(), "three sampled low M2 edges must clock MMC3 IRQ");
+    }
+
+    #[test]
     fn mapper_4_a12_low_duration_is_measured_from_first_low_ppu_dot() {
         let mut cart = Cartridge::parse(&mmc3_image(2, 1)).unwrap();
         cart.cpu_write(0xC000, 0);
