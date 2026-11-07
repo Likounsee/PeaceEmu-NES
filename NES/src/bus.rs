@@ -557,8 +557,22 @@ impl CpuBus {
         self.mapper_a12_trace.extend(
             events.iter().map(|(address, ppu_cycle)| (*address, *ppu_cycle, self.cpu_cycle))
         );
-        for (address, _) in events {
-            self.mapper_a12_level = address & 0x1000 != 0;
+        if let Some(cartridge) = self.cartridge.as_mut() {
+            for (address, ppu_cycle) in events {
+                self.mapper_a12_level = address & 0x1000 != 0;
+                // Preserve the PPU's exact transition dot for the MMC3
+                // low-time filter; M2 sampling alone rounds nine dots to
+                // three full CPU cycles and admits the boundary edge.
+                cartridge.observe_ppu_address_at_cpu_cycle(
+                    address,
+                    ppu_cycle,
+                    self.cpu_cycle,
+                );
+            }
+        } else {
+            for (address, _) in events {
+                self.mapper_a12_level = address & 0x1000 != 0;
+            }
         }
     }
 
