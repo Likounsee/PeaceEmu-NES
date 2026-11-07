@@ -679,7 +679,7 @@ impl Ppu {
                 self.bg_next_pattern_low = self.mem_read(address, cartridge);
             }
             7 => {
-                let table = if self.ctrl & 0x10 != 0 { 0x1000 } else { 0 };
+                let table = if self.ctrl & 0x08 != 0 { 0x1000 } else { 0 };
                 let address = table + u16::from(self.bg_next_tile_id) * 16 + ((self.v >> 12) & 7) + 8;
                 self.bg_next_pattern_high = self.mem_read(address, cartridge);
             }
@@ -3348,6 +3348,37 @@ mod sprite_pattern_address_tests {
         assert_eq!(ppu.sprite_pattern_address(5, 0, 3), 0x1053);
         ppu.ctrl = 0x08;
         assert_eq!(ppu.sprite_pattern_address(5, 0, 3), 0x0053);
+    }
+
+    #[test]
+    fn background_pattern_table_uses_ctrl_bit_three_independently_of_sprite_bit_four() {
+        let mut image = vec![0; 16 + 16_384 + 8_192];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[5] = 1;
+        let chr = 16 + 16_384;
+        image[chr + 0x1000] = 0x80;
+        let cartridge = Cartridge::parse(&image).unwrap();
+
+        let mut ppu = Ppu::new();
+        ppu.mask = 0x0A;
+        ppu.palette[1] = 0x2A;
+        ppu.ctrl = 0x08;
+        ppu.render_background_pixel(0, 0, Some(&cartridge));
+        assert_eq!(
+            ppu.framebuffer[0],
+            ppu.output_color(0x2A),
+            "PPUCTRL bit 3 must select the high background pattern table"
+        );
+
+        ppu.ctrl = 0x10;
+        ppu.bg_tile_cache_valid = false;
+        ppu.render_background_pixel(0, 0, Some(&cartridge));
+        assert_eq!(
+            ppu.framebuffer[0],
+            ppu.output_color(0),
+            "PPUCTRL bit 4 selects the sprite table, not the background table"
+        );
     }
 
     #[test]
