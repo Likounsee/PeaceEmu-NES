@@ -104,6 +104,7 @@ impl NesMachine {
         let battery_backed = image.get(6).is_some_and(|flags| flags & 0x02 != 0);
         let mut bus = CpuBus::new();
         bus.insert_cartridge(cartridge);
+        bus.initialize_apu_power_on();
         // The divider phase is an initial PPU-beam offset relative to the
         // CPU clock. Keep the register strobe fixed and shift the beam itself.
         bus.set_ppu_bus_phase(0);
@@ -118,7 +119,7 @@ impl NesMachine {
     ///
     /// CPU RAM and cartridge RAM are preserved, matching a console reset rather than a power cycle.
     pub fn reset(&mut self) {
-        self.bus.reset();
+        self.bus.reset_console();
         self.bus.set_ppu_bus_phase(0);
         self.bus.tick_ppu(u32::from(self.ppu_startup_phase));
         self.cpu.reset(&mut self.bus);
