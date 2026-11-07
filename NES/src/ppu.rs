@@ -2125,9 +2125,9 @@ mod tests {
         ppu.mask = 0x08; // Background rendering enabled.
         ppu.tick(10);
         let events = ppu.take_mapper_bus_events();
-        assert_eq!(events, vec![(0, 0), (0x1000, 5), (0x0000, 9)]);
+        assert_eq!(events, vec![(0, 0), (0x1000, 4), (0x0000, 9)]);
         ppu.tick(4);
-        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 13)]);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 12)]);
     }
 
     #[test]
@@ -2248,7 +2248,7 @@ mod tests {
         ppu.ctrl = 0x10;
         ppu.mask = 0x08;
         ppu.tick(5);
-        assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 0), (0x1000, 5)]);
+        assert_eq!(ppu.take_mapper_bus_events(), vec![(0, 0), (0x1000, 4)]);
 
         ppu.mask = 0;
         ppu.tick(1);
