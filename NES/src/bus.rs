@@ -2145,7 +2145,6 @@ mod mmc3_ppudata_write_bus_regressions {
         bus.write(0x2006, 0x00);
         bus.write(0x2007, 0x5A);
         bus.advance_cpu_cycle();
-        bus.tick_ppu(3);
         bus.finish_cpu_cycle();
         assert!(bus.irq_pending(),
             "CPU PPUDATA writes to CHR space must be forwarded to MMC3 A12 filtering");
@@ -2572,7 +2571,6 @@ mod mmc3_ppudata_irq_regressions {
 
         let _ = bus.read(0x2007); // Reads $0FFF, then increments the bus address to $1000.
         bus.advance_cpu_cycle();
-        bus.tick_ppu(3);
         bus.finish_cpu_cycle();
         assert!(bus.irq_pending(),
             "the PPUDATA read's $0FFF->$1000 increment must publish the qualified A12 edge");
