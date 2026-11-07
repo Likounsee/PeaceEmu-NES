@@ -2426,7 +2426,7 @@ mod irq_poll_sample_regressions {
 
         // An IRQ raised now is sampled at the start of the next instruction's
         // first cycle, then reaches the CPU input one cycle later.
-        bus.apu.frame_irq = true;
+        bus.tick_apu(29_834);
         assert!(bus.irq_pending());
         assert!(!bus.irq_pending_at_cpu_poll());
 
