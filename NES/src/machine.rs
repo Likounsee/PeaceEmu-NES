@@ -341,6 +341,7 @@ impl NesMachine {
         if let Some(page) = self.bus.take_oam_dma_request() {
             self.perform_oam_dma(page);
             self.bus.release_deferred_nmi_after_dma();
+            self.bus.defer_irq_poll_until_resumed_bus_access();
         }
         Ok(result)
     }
