@@ -771,6 +771,102 @@ mod tests {
         for (i, v) in program.iter().copied().enumerate() { bus.write(0x0600 + i as u16, v); }
         let mut cpu = Cpu::new(); cpu.set_pc(0x0600); (cpu, bus)
     }
+    fn timed_step(cpu: &mut Cpu, bus: &mut CpuBus) -> StepResult {
+        bus.begin_cpu_instruction();
+        let result = cpu.step(bus).unwrap();
+        let bus_cycles = bus.end_cpu_instruction();
+        assert_eq!(bus_cycles, u16::from(result.cycles),
+            "every tested instruction must issue its complete set of CPU bus cycles");
+        bus.finish_cpu_instruction();
+        result
+    }
+
+    fn irq_test_bus() -> CpuBus {
+        let mut image = vec![0; 16 + 16_384];
+        image[0..4].copy_from_slice(b"NES\\x1A");
+        image[4] = 1;
+        image[16 + 0x3FFE] = 0x00;
+        image[16 + 0x3FFF] = 0x07;
+        let mut bus = CpuBus::new();
+        bus.insert_cartridge(crate::cartridge::Cartridge::parse(&image).unwrap());
+        bus
+    }
+
+    #[test]
+    fn jmp_recognizes_irq_asserted_during_its_final_cycle() {
+        let mut bus = irq_test_bus();
+        for (offset, value) in [0x4C, 0x03, 0x06, 0xEA].into_iter().enumerate() {
+            bus.write(0x0600 + offset as u16, value);
+        }
+        bus.write(0x4017, 0x00);
+        bus.tick_apu(29_830);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        cpu.state.status &= !flags::INTERRUPT_DISABLE;
+
+        let jmp = timed_step(&mut cpu, &mut bus);
+        assert_eq!(jmp.opcode, 0x4C);
+        assert_eq!(cpu.state.pc, 0x0603);
+        assert!(bus.irq_pending());
+        assert!(bus.irq_pending_at_cpu_poll());
+
+        let irq = timed_step(&mut cpu, &mut bus);
+        assert_eq!(irq.opcode, 0xFE);
+        assert_eq!(cpu.state.pc, 0x0700);
+        assert_eq!(bus.read(0x01FD), 0x06);
+        assert_eq!(bus.read(0x01FC), 0x03);
+    }
+
+    #[test]
+    fn taken_branch_defers_irq_asserted_during_its_final_dummy_cycle() {
+        let mut bus = irq_test_bus();
+        bus.write(0x0600, 0x90); // BCC +0, taken because carry is clear.
+        bus.write(0x0601, 0x00);
+        bus.write(0x0602, 0xEA); // This instruction must execute before IRQ entry.
+        bus.write(0x4017, 0x00);
+        bus.tick_apu(29_830);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x0600);
+        cpu.state.status &= !flags::INTERRUPT_DISABLE;
+
+        let branch = timed_step(&mut cpu, &mut bus);
+        assert_eq!(branch.cycles, 3);
+        assert_eq!(cpu.state.pc, 0x0602);
+        assert!(bus.irq_pending());
+        assert!(!bus.irq_pending_at_cpu_poll());
+
+        let following = timed_step(&mut cpu, &mut bus);
+        assert_eq!(following.opcode, 0xEA,
+            "a taken branch ignores an IRQ edge on its final dummy cycle");
+        assert!(bus.irq_pending_at_cpu_poll());
+
+        let irq = timed_step(&mut cpu, &mut bus);
+        assert_eq!(irq.opcode, 0xFE);
+        assert_eq!(cpu.state.pc, 0x0700);
+    }
+
+    #[test]
+    fn page_crossing_branch_polls_before_its_last_dummy_cycle() {
+        let mut bus = irq_test_bus();
+        bus.write(0x06FD, 0x90); // BCC +2 crosses from $06FF to $0701.
+        bus.write(0x06FE, 0x02);
+        bus.write(0x0701, 0xEA);
+        bus.write(0x4017, 0x00);
+        bus.tick_apu(29_829);
+        let mut cpu = Cpu::new();
+        cpu.set_pc(0x06FD);
+        cpu.state.status &= !flags::INTERRUPT_DISABLE;
+
+        let branch = timed_step(&mut cpu, &mut bus);
+        assert_eq!(branch.cycles, 4);
+        assert_eq!(cpu.state.pc, 0x0701);
+        assert!(bus.irq_pending());
+        assert!(!bus.irq_pending_at_cpu_poll());
+
+        assert_eq!(timed_step(&mut cpu, &mut bus).opcode, 0xEA);
+        assert_eq!(timed_step(&mut cpu, &mut bus).opcode, 0xFE);
+    }
+
 
     #[test]
     fn implied_opcodes_perform_the_second_bus_read_in_instruction_order() {
