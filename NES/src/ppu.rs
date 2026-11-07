@@ -5352,8 +5352,8 @@ mod palette_write_mapper_bus_regressions {
 
         ppu.cpu_write_register(7, 0x5A, None);
 
-        assert_eq!(ppu.mapper_bus_events, vec![(0x1000, 0)],
-            "CHR writes are external PPU bus accesses and must retain their A12 edge");
+        assert_eq!(ppu.mapper_bus_events, vec![(0x1000, 0), (0x1000, 0)],
+            "the CHR write and its post-increment address both remain on A12 high");
     }
 }
 
@@ -6037,5 +6037,35 @@ mod mapper_bus_access_regressions {
         ppu.ppu_cycle = 20;
         ppu.record_mapper_bus_address(0x1000);
         assert_eq!(ppu.take_mapper_bus_events(), vec![(0x1000, 20)]);
+    }
+
+    #[test]
+    fn ppudata_read_exposes_a12_rising_on_vram_address_increment() {
+        let mut ppu = Ppu::new();
+        ppu.mapper_bus_initialized = true;
+        ppu.mapper_a12_high = false;
+        ppu.mapper_bus_events.clear();
+        ppu.v = 0x0FFF;
+
+        let _ = ppu.cpu_read_register(7, None);
+
+        assert_eq!(ppu.v, 0x1000);
+        assert_eq!(ppu.mapper_bus_events.last(), Some(&(0x1000, 0)),
+            "reading $0FFF increments V to $1000 and must expose A12 high");
+    }
+
+    #[test]
+    fn ppudata_write_exposes_a12_rising_on_vram_address_increment() {
+        let mut ppu = Ppu::new();
+        ppu.mapper_bus_initialized = true;
+        ppu.mapper_a12_high = false;
+        ppu.mapper_bus_events.clear();
+        ppu.v = 0x0FFF;
+
+        ppu.cpu_write_register(7, 0x5A, None);
+
+        assert_eq!(ppu.v, 0x1000);
+        assert_eq!(ppu.mapper_bus_events.last(), Some(&(0x1000, 0)),
+            "writing $0FFF increments V to $1000 and must expose A12 high");
     }
 }
