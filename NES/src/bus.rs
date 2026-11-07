@@ -6,6 +6,19 @@ use crate::ppu::Ppu;
 use std::collections::VecDeque;
 
 #[cfg(test)]
+fn tick_ppu_with_cpu_cycles(bus: &mut CpuBus, dots: u32) {
+    let full_cycles = dots / 3;
+    for _ in 0..full_cycles {
+        bus.advance_cpu_cycle();
+        bus.tick_ppu(3);
+    }
+    let remainder = dots % 3;
+    if remainder != 0 {
+        bus.tick_ppu(remainder);
+    }
+}
+
+#[cfg(test)]
 fn expected_oamdata_read(address: u8, value: u8) -> u8 {
     if address & 3 == 2 { value & !0x1C } else { value }
 }
@@ -1071,23 +1084,23 @@ mod tests {
         bus.insert_cartridge(Cartridge::parse(&image).unwrap());
         bus.write(0xC000, 0); // IRQ latch = 0.
         bus.write(0xC001, 0); // Reload on the next qualified edge.
-        bus.tick_ppu(341); // Advance from pre-render to visible scanline zero.
+        tick_ppu_with_cpu_cycles(&mut bus, 341); // Advance from pre-render to visible scanline zero.
         bus.write(0x2000, 0x10); // Background pattern table at $1000.
         bus.write(0x2001, 0x08); // Enable background rendering.
 
-        bus.tick_ppu(5); // Establish the initial high A12 level before enabling IRQs.
+        tick_ppu_with_cpu_cycles(&mut bus, 5); // Establish the initial high A12 level before enabling IRQs.
         assert!(!bus.irq_pending());
         bus.write(0xE001, 0); // Enable IRQ after the initial bus transition.
 
         bus.write(0x2001, 0); // Force A12 low at dot 6.
-        bus.tick_ppu(7);
-        bus.write(0x2001, 0x08); // Next high edge at dot 13: seven low dots.
+        tick_ppu_with_cpu_cycles(&mut bus, 7);
+        bus.write(0x2001, 0x08); // Next high edge after two M2 cycles: filtered.
         bus.tick_ppu(1);
         assert!(!bus.irq_pending(), "the bus must forward and filter a seven-dot A12 interval");
 
         bus.write(0x2001, 0); // Start another low interval at dot 14.
-        bus.tick_ppu(9);
-        bus.write(0x2001, 0x08); // Qualified high edge at dot 23.
+        tick_ppu_with_cpu_cycles(&mut bus, 9);
+        bus.write(0x2001, 0x08); // Qualified high edge after three M2 cycles.
         bus.tick_ppu(1);
         assert!(bus.irq_pending(), "the PPU IRQ must propagate through CpuBus to the CPU IRQ line");
     }
@@ -1606,7 +1619,7 @@ mod mmc3_ppu_irq_integration_regressions {
     #[test]
     fn dmc_dma_ppudata_reads_forward_mapper_a12_transitions() {
         let mut bus = mmc3_bus();
-        bus.tick_ppu(9);
+        tick_ppu_with_cpu_cycles(&mut bus, 9);
         bus.write(0x2006, 0x10);
         bus.write(0x2006, 0x00);
         let _ = bus.read_dmc_dma_source(0x2007);
@@ -1617,7 +1630,7 @@ mod mmc3_ppu_irq_integration_regressions {
     #[test]
     fn cpu_ppudata_pattern_accesses_drive_mmc3_a12_and_irq() {
         let mut bus = mmc3_bus();
-        bus.tick_ppu(9); // Establish a low A12 baseline for at least nine dots.
+        tick_ppu_with_cpu_cycles(&mut bus, 9); // Establish a low A12 baseline for three M2 cycles.
         bus.write(0x2006, 0x10);
         bus.write(0x2006, 0x00);
         let _ = bus.read(0x2007); // CPU reads CHR at $1000, driving A12 high.
@@ -1634,7 +1647,7 @@ mod mmc3_ppu_irq_integration_regressions {
 
         // On the pre-render scanline, sprite pattern fetches drive A12 high after
         // a long low interval. The real PPU bus event must clock the mapper IRQ.
-        bus.tick_ppu(261);
+        tick_ppu_with_cpu_cycles(&mut bus, 261);
         assert!(bus.irq_pending(), "the PPU-generated qualified A12 edge should assert MMC3 IRQ");
     }
 
@@ -1643,7 +1656,7 @@ mod mmc3_ppu_irq_integration_regressions {
         let mut bus = mmc3_bus();
         bus.write(0x2000, 0x08);
         bus.write(0x2001, 0x18);
-        bus.tick_ppu(261);
+        tick_ppu_with_cpu_cycles(&mut bus, 261);
         assert!(bus.irq_pending(), "fixture must first clock a real mapper IRQ");
 
         bus.write(0xE000, 0); // Acknowledge and disable IRQ before resetting the PPU.
@@ -1652,7 +1665,7 @@ mod mmc3_ppu_irq_integration_regressions {
         bus.write(0xE001, 0);
         bus.write(0x2000, 0x10);
         bus.write(0x2001, 0x08);
-        bus.tick_ppu(9);
+        tick_ppu_with_cpu_cycles(&mut bus, 9);
 
         assert!(
             !bus.irq_pending(),
@@ -1665,7 +1678,7 @@ mod mmc3_ppu_irq_integration_regressions {
         let mut bus = mmc3_bus();
         bus.write(0x2000, 0x10); // Background pattern table at $1000.
         bus.write(0x2001, 0x08); // Background rendering only.
-        bus.tick_ppu(9); // First high pulse lasts five dots before A12 falls again.
+        tick_ppu_with_cpu_cycles(&mut bus, 9); // First high pulse lasts five dots before A12 falls again.
         assert!(!bus.irq_pending(), "an A12 high edge after fewer than nine low dots must be filtered");
     }
 
@@ -2072,7 +2085,7 @@ mod mmc3_ppudata_write_bus_regressions {
         bus.write(0xC000, 0);
         bus.write(0xC001, 0);
         bus.write(0xE001, 0);
-        bus.tick_ppu(9);
+        tick_ppu_with_cpu_cycles(&mut bus, 9);
         bus
     }
 
@@ -2460,7 +2473,7 @@ mod mmc3_ppudata_irq_regressions {
         // automatic VRAM increment moves the next read to $1000.
         bus.write(0x2006, 0x0F);
         bus.write(0x2006, 0xFF);
-        bus.tick_ppu(9);
+        tick_ppu_with_cpu_cycles(&mut bus, 9);
 
         let _ = bus.read(0x2007); // Reads $0FFF, then increments the bus address to $1000.
         assert!(bus.irq_pending(),
