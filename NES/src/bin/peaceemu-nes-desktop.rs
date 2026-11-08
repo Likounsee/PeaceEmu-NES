@@ -25,6 +25,23 @@ fn aspect_fit(client_width: i32, client_height: i32) -> (i32, i32, i32, i32) {
 }
 
 
+#[cfg(any(windows, test))]
+fn parse_virtual_keys(value: &str) -> Option<[i32; 8]> {
+    let mut result = [0; 8];
+    let mut parts = value.split(',');
+    for key in &mut result {
+        let parsed = parts.next()?.parse::<i32>().ok()?;
+        if !(0..=255).contains(&parsed) {
+            return None;
+        }
+        *key = parsed;
+    }
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(result)
+}
+
 #[cfg(not(windows))]
 fn main() {
     eprintln!("peaceemu-nes-desktop is currently available on Windows only.");
@@ -33,7 +50,7 @@ fn main() {
 
 #[cfg(windows)]
 mod win {
-    use super::aspect_fit;
+    use super::{aspect_fit, parse_virtual_keys};
     use peaceemu_nes::session::{NesConfig, NesSession};
     use std::ffi::c_void;
     use std::fs;
@@ -615,6 +632,20 @@ mod win {
                             Err(error) => report_host_error(&mut host_events, "BUTTONS", error),
                         }
                     }
+                    value if value.starts_with("KEYS ") => match parse_virtual_keys(&value[5..]) {
+                        Some(mapping) => {
+                            keys = mapping;
+                            report_host_event(&mut host_events, "OK|KEYS");
+                        }
+                        None => report_host_event(&mut host_events, "ERROR|KEYS|Expected eight virtual-key codes from 0 to 255"),
+                    },
+                    value if value.starts_with("KEYS2 ") => match parse_virtual_keys(&value[6..]) {
+                        Some(mapping) => {
+                            keys2 = mapping;
+                            report_host_event(&mut host_events, "OK|KEYS2");
+                        }
+                        None => report_host_event(&mut host_events, "ERROR|KEYS2|Expected eight virtual-key codes from 0 to 255"),
+                    },
                     "QUIT" => {
                         report_host_event(&mut host_events, "OK|QUIT");
                         running = false;
@@ -754,7 +785,19 @@ fn main() {
 
 #[cfg(test)]
 mod frontend_geometry_tests {
-    use super::aspect_fit;
+    use super::{aspect_fit, parse_virtual_keys};
+
+    #[test]
+    fn parse_virtual_keys_requires_eight_valid_virtual_keys() {
+        assert_eq!(
+            parse_virtual_keys("90,88,32,13,38,40,37,39"),
+            Some([90, 88, 32, 13, 38, 40, 37, 39])
+        );
+        assert_eq!(parse_virtual_keys("1,2,3"), None);
+        assert_eq!(parse_virtual_keys("1,2,3,4,5,6,7,8,9"), None);
+        assert_eq!(parse_virtual_keys("1,2,3,4,5,6,7,256"), None);
+        assert_eq!(parse_virtual_keys("1,2,3,4,5,6,7,no"), None);
+    }
 
     #[test]
     fn aspect_fit_preserves_nes_ratio_in_widescreen_client_area() {
