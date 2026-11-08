@@ -59,6 +59,7 @@ mod win {
     use std::collections::VecDeque;
     use std::time::{Duration, Instant};
     use std::io::{BufRead, Write};
+    use std::os::windows::ffi::OsStrExt;
     use std::sync::mpsc;
 
     type Handle = *mut c_void;
@@ -73,6 +74,9 @@ mod win {
 
     const WM_DESTROY: u32 = 0x0002;
     const WM_QUIT: u32 = 0x0012;
+    const WM_SETICON: u32 = 0x0080;
+    const ICON_SMALL: usize = 0;
+    const ICON_BIG: usize = 1;
     const WS_OVERLAPPEDWINDOW: u32 = 0x00CF0000;
     const WS_POPUP: u32 = 0x8000_0000;
     const GWL_STYLE: i32 = -16;
@@ -183,6 +187,7 @@ mod win {
         fn GetForegroundWindow() -> Hwnd;
         fn AdjustWindowRect(rect: *mut Rect, style: u32, menu: Bool) -> Bool;
         fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, kind: u32) -> i32;
+        fn SendMessageW(hwnd: Hwnd, message: u32, w_param: Wparam, l_param: Lparam) -> Lresult;
     }
     #[link(name = "gdi32")]
     extern "system" {
@@ -203,6 +208,18 @@ mod win {
         fn waveOutReset(output: Handle) -> u32;
         fn waveOutClose(output: Handle) -> u32;
     }
+    #[link(name = "shell32")]
+    extern "system" {
+        fn SetCurrentProcessExplicitAppUserModelID(app_id: *const u16) -> i32;
+        fn ExtractIconExW(
+            file_name: *const u16,
+            icon_index: i32,
+            large_icons: *mut Handle,
+            small_icons: *mut Handle,
+            icon_count: u32,
+        ) -> u32;
+    }
+
     #[link(name = "kernel32")]
     extern "system" {
         fn GetModuleHandleW(module_name: *const u16) -> Hinstance;
@@ -442,14 +459,22 @@ mod win {
     }
 
     pub fn run() -> Result<(), String> {
+        let app_id: Vec<u16> = "Likounsee.PeaceEmu\0".encode_utf16().collect();
+        // SAFETY: app_id is a stable, NUL-terminated UTF-16 identifier for this call.
+        let app_id_result = unsafe { SetCurrentProcessExplicitAppUserModelID(app_id.as_ptr()) };
+        if app_id_result < 0 {
+            eprintln!("Could not set PeaceEmu Windows taskbar identity (HRESULT 0x{:08X}).", app_id_result as u32);
+        }
+
         let mut args = std::env::args_os().skip(1);
         let path = args.next().ok_or_else(|| {
-            "usage: peaceemu-nes-desktop <game.nes> [--scale 1..6] [--audio-rate 8000..192000] [--keys A,B,SELECT,START,UP,DOWN,LEFT,RIGHT] [--keys2 A,B,SELECT,START,UP,DOWN,LEFT,RIGHT]".to_owned()
+            "usage: peaceemu-nes-desktop <game.nes> [--scale 1..6] [--audio-rate 8000..192000] [--keys A,B,SELECT,START,UP,DOWN,LEFT,RIGHT] [--keys2 A,B,SELECT,START,UP,DOWN,LEFT,RIGHT] [--host-executable PeaceEmu.exe]".to_owned()
         })?;
         let mut scale = 3i32;
         let mut audio_rate = 44_100u32;
         let mut keys = [0x5A, 0x58, 0x10, 0x0D, 0x26, 0x28, 0x25, 0x27];
         let mut keys2 = [0x61, 0x63, 0x60, 0x6E, 0x68, 0x62, 0x64, 0x66];
+        let mut host_executable: Option<std::path::PathBuf> = None;
         while let Some(argument) = args.next() {
             let value = args.next().ok_or_else(|| format!("missing value for {}", argument.to_string_lossy()))?;
             match argument.to_string_lossy().as_ref() {
@@ -477,6 +502,9 @@ mod win {
                     }
                     keys2.copy_from_slice(&parsed);
                 }
+                "--host-executable" => {
+                    host_executable = Some(std::path::PathBuf::from(value));
+                }
                 _ => return Err(format!("unknown option: {}", argument.to_string_lossy())),
             }
         }
@@ -499,10 +527,20 @@ mod win {
         let class_name: Vec<u16> = "PeaceEmuNesWindow\0".encode_utf16().collect();
         let title: Vec<u16> = format!("PeaceEmu-NES — {}", std::path::Path::new(&path).file_name().unwrap_or_default().to_string_lossy())
             .encode_utf16().chain(Some(0)).collect();
+        let host_icons = host_executable.as_ref().and_then(|host_executable| {
+            let wide_path: Vec<u16> = host_executable.as_os_str().encode_wide().chain(Some(0)).collect();
+            let mut large = null_mut();
+            let mut small = null_mut();
+            // SAFETY: wide_path is a valid NUL-terminated Windows path and both output
+            // pointers refer to live local HICON slots for the duration of the call.
+            let extracted = unsafe { ExtractIconExW(wide_path.as_ptr(), 0, &mut large, &mut small, 1) };
+            (extracted > 0 && (!large.is_null() || !small.is_null())).then_some((large, small))
+        });
+        let large_icon = host_icons.map(|(large, _)| large).unwrap_or(null_mut());
         let instance = unsafe { GetModuleHandleW(null()) };
         let class = WndClassW {
             style: 0, wnd_proc: Some(window_proc), cls_extra: 0, wnd_extra: 0,
-            instance, icon: null_mut(), cursor: null_mut(),
+            instance, icon: large_icon, cursor: null_mut(),
             background: 6usize as Handle, menu_name: null(), class_name: class_name.as_ptr(),
         };
         if unsafe { RegisterClassW(&class) } == 0 {
@@ -516,6 +554,16 @@ mod win {
                 null_mut(), null_mut(), instance, null_mut())
         };
         if hwnd.is_null() { return Err("CreateWindowExW failed".into()); }
+        if let Some((large, small)) = host_icons {
+            unsafe {
+                if !large.is_null() {
+                    SendMessageW(hwnd, WM_SETICON, ICON_BIG, large as isize);
+                }
+                if !small.is_null() {
+                    SendMessageW(hwnd, WM_SETICON, ICON_SMALL, small as isize);
+                }
+            }
+        }
         unsafe {
             ShowWindow(hwnd, SW_SHOW);
             UpdateWindow(hwnd);
