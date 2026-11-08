@@ -453,8 +453,7 @@ mod win {
         let message = error
             .to_string()
             .replace('|', "/")
-            .replace('\n', " ")
-            .replace('\r', " ");
+            .replace(['\n', '\r'], " ");
         report_host_event(writer, &format!("ERROR|{command}|{message}"));
     }
 
