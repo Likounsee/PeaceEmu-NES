@@ -602,31 +602,6 @@ mod win {
     }
 }
 
-
-
-#[cfg(test)]
-mod frontend_geometry_tests {
-    use super::aspect_fit;
-
-    #[test]
-    fn aspect_fit_preserves_nes_ratio_in_widescreen_client_area() {
-        let (x, y, width, height) = aspect_fit(1920, 1080);
-        assert_eq!((x, y, width, height), (384, 0, 1152, 1080));
-        assert_eq!(i64::from(width) * 240, i64::from(height) * 256);
-    }
-
-    #[test]
-    fn aspect_fit_letterboxes_tall_client_area() {
-        let (x, y, width, height) = aspect_fit(800, 1000);
-        assert_eq!((x, y, width, height), (0, 125, 800, 750));
-    }
-
-    #[test]
-    fn aspect_fit_handles_zero_sized_client_area() {
-        assert_eq!(aspect_fit(0, 720), (0, 0, 0, 0));
-    }
-}
-
 #[cfg(windows)]
 fn main() {
     if let Err(error) = win::run() {
@@ -663,5 +638,28 @@ fn main() {
     if let Err(error) = win::run() {
         win::report_error(&error);
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod frontend_geometry_tests {
+    use super::aspect_fit;
+
+    #[test]
+    fn aspect_fit_preserves_nes_ratio_in_widescreen_client_area() {
+        let (x, y, width, height) = aspect_fit(1920, 1080);
+        assert_eq!((x, y, width, height), (384, 0, 1152, 1080));
+        assert_eq!(i64::from(width) * 240, i64::from(height) * 256);
+    }
+
+    #[test]
+    fn aspect_fit_letterboxes_tall_client_area() {
+        let (x, y, width, height) = aspect_fit(800, 1000);
+        assert_eq!((x, y, width, height), (0, 125, 800, 750));
+    }
+
+    #[test]
+    fn aspect_fit_handles_zero_sized_client_area() {
+        assert_eq!(aspect_fit(0, 720), (0, 0, 0, 0));
     }
 }
