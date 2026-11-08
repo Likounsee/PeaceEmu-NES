@@ -1,5 +1,7 @@
 //! NES picture processing unit registers, video memory, timing, and snapshot renderer.
 
+use serde_big_array::BigArray;
+
 use crate::cartridge::{Cartridge, Mirroring};
 #[cfg(feature = "ppu-timing-diagnostics")]
 use std::collections::VecDeque;
@@ -42,12 +44,13 @@ const PPU_IO_LATCH_DECAY_DOTS: u64 = 3_221_600;
 /// Implements CPU-visible registers, pattern/nametable/palette access, OAM storage,
 /// VBlank/NMI state, dot-stepped scanline timing, and per-dot background/sprite output.
 /// The rendering pipeline is substantially modeled but is not yet cycle-perfect 2C02 logic.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Ppu {
     ctrl: u8,
     mask: u8,
     status: u8,
     oam_addr: u8,
+    #[serde(with = "BigArray")]
     oam: [u8; 256],
     /// Secondary-OAM bytes produced by the dot-driven sprite evaluator.
     sprite_line_oam: [[u8; 4]; 8],
@@ -79,6 +82,7 @@ pub struct Ppu {
     eval_oam: [[u8; 4]; 8],
     eval_indices: [u8; 8],
     eval_count: u8,
+    #[serde(with = "BigArray")]
     nametables: [u8; 4096],
     palette: [u8; 32],
     v: u16,
@@ -135,6 +139,7 @@ pub struct Ppu {
     mapper_bus_events: Vec<(u16, u64)>,
     /// Bounded history of VBlank, PPUSTATUS, and NMI timing transitions.
     #[cfg(feature = "ppu-timing-diagnostics")]
+    #[serde(skip)]
     timing_events: VecDeque<PpuTimingEvent>,
 }
 

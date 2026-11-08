@@ -49,7 +49,7 @@ impl fmt::Display for CpuError {
 impl std::error::Error for CpuError {}
 
 /// Public CPU register snapshot.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CpuState {
     /// Accumulator.
     pub a: u8,
@@ -77,7 +77,7 @@ pub struct StepResult {
 }
 
 /// Ricoh 2A03 CPU state.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Cpu {
     state: CpuState,
     cycles: u64,

@@ -4,6 +4,7 @@
 use crate::bus::CpuBusTraceEntry;
 use crate::cpu::CpuState;
 use crate::machine::{MachineError, NesMachine};
+use bincode::Options;
 
 /// Native NES output dimensions.
 pub const NES_FRAME_WIDTH: usize = 256;
@@ -15,7 +16,7 @@ pub const NES_FRAME_PIXELS: usize = NES_FRAME_WIDTH * NES_FRAME_HEIGHT;
 pub const DEFAULT_AUDIO_SAMPLE_RATE: u32 = 44_100;
 
 /// Host-configurable options for a running NES module.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NesConfig {
     /// Mono PCM sample rate in hertz; supported range is 8,000 through 192,000.
     pub audio_sample_rate: u32,
@@ -34,6 +35,8 @@ pub enum NesSessionError {
     UnsupportedAudioSampleRate(u32),
     /// The underlying emulation core could not load or advance the game.
     Machine(MachineError),
+    /// A saved state is malformed, oversized, or internally inconsistent.
+    InvalidSaveState,
 }
 
 impl core::fmt::Display for NesSessionError {
@@ -43,6 +46,7 @@ impl core::fmt::Display for NesSessionError {
                 write!(f, "unsupported NES audio sample rate: {rate}")
             }
             Self::Machine(error) => write!(f, "{error}"),
+            Self::InvalidSaveState => f.write_str("invalid or incompatible NES save state"),
         }
     }
 }
@@ -78,20 +82,86 @@ pub struct NesFrameOutput {
 ///
 /// This type deliberately creates no window, event loop, audio device, or file dialog.
 /// PeaceEmu owns presentation, input mapping, configuration UI, file paths, and persistence.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct NesSession {
     machine: NesMachine,
     config: NesConfig,
+    rom_fingerprint: u64,
 }
 
 impl NesSession {
+    fn fingerprint(image: &[u8]) -> u64 {
+        // Stable FNV-1a identity check: save states from a different ROM are
+        // rejected before the decoded machine can replace the active session.
+        image.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01B3)
+        })
+    }
+
+    /// Maximum accepted serialized machine state size (ROM plus live hardware state).
+    pub const MAX_SAVE_STATE_BYTES: u64 = 64 * 1024 * 1024;
+    const SAVE_STATE_HEADER: &'static [u8; 8] = b"PENESST\0";
+    const SAVE_STATE_FORMAT_VERSION: u16 = 1;
+
+    /// Serializes the complete CPU, bus, cartridge, PPU, APU, and host audio state.
+    ///
+    /// Diagnostic traces are intentionally excluded; all state that affects future
+    /// emulation is retained. The payload is bounded so malformed host state files
+    /// cannot request unbounded allocations during restore.
+    pub fn save_state(&self) -> Result<Vec<u8>, NesSessionError> {
+        let payload = bincode::DefaultOptions::new()
+            .with_limit(Self::MAX_SAVE_STATE_BYTES - 10)
+            .reject_trailing_bytes()
+            .serialize(self)
+            .map_err(|_| NesSessionError::InvalidSaveState)?;
+        let mut state = Vec::with_capacity(payload.len() + 10);
+        state.extend_from_slice(Self::SAVE_STATE_HEADER);
+        state.extend_from_slice(&Self::SAVE_STATE_FORMAT_VERSION.to_le_bytes());
+        state.extend_from_slice(&payload);
+        if state.len() as u64 > Self::MAX_SAVE_STATE_BYTES {
+            return Err(NesSessionError::InvalidSaveState);
+        }
+        Ok(state)
+    }
+
+    /// Restores a complete machine snapshot atomically.
+    ///
+    /// The current session is not modified unless the entire payload decodes and
+    /// its duplicated host audio configuration agrees with the emulated APU state.
+    pub fn load_state(&mut self, data: &[u8]) -> Result<(), NesSessionError> {
+        if data.len() < 10
+            || data.len() as u64 > Self::MAX_SAVE_STATE_BYTES
+            || &data[..8] != Self::SAVE_STATE_HEADER
+            || u16::from_le_bytes([data[8], data[9]]) != Self::SAVE_STATE_FORMAT_VERSION
+        {
+            return Err(NesSessionError::InvalidSaveState);
+        }
+        let restored: Self = bincode::DefaultOptions::new()
+            .with_limit(Self::MAX_SAVE_STATE_BYTES - 10)
+            .reject_trailing_bytes()
+            .deserialize(&data[10..])
+            .map_err(|_| NesSessionError::InvalidSaveState)?;
+        if !(8_000..=192_000).contains(&restored.config.audio_sample_rate)
+            || restored.machine.audio_sample_rate() != restored.config.audio_sample_rate
+            || restored.rom_fingerprint != self.rom_fingerprint
+        {
+            return Err(NesSessionError::InvalidSaveState);
+        }
+        *self = restored;
+        Ok(())
+    }
+
     /// Loads an iNES ROM and applies the host-selected audio configuration.
     pub fn load(image: &[u8], config: NesConfig) -> Result<Self, NesSessionError> {
         let mut machine = NesMachine::from_ines(image)?;
         if !machine.set_audio_sample_rate(config.audio_sample_rate) {
             return Err(NesSessionError::UnsupportedAudioSampleRate(config.audio_sample_rate));
         }
-        Ok(Self { machine, config })
+        Ok(Self {
+            machine,
+            config,
+            rom_fingerprint: Self::fingerprint(image),
+        })
     }
 
     /// Returns the configuration currently applied to this session.
@@ -323,6 +393,61 @@ mod tests {
         session.set_controller_state(0, 0b1000_0001);
         session.set_controller_state(1, 0b0000_0010);
         assert_eq!(session.total_cycles(), 7);
+    }
+
+    #[test]
+    fn full_machine_save_state_restores_deterministic_execution() {
+        let config = NesConfig { audio_sample_rate: 48_000 };
+        let mut session = NesSession::load(&looping_rom(), config).unwrap();
+        session.set_controller_state(0, 0b1000_0001);
+        session.advance_frame().unwrap();
+        let snapshot = session.save_state().unwrap();
+        let expected_cycles = session.total_cycles();
+        let expected_ppu = session.ppu_position();
+        let expected_cpu = session.cpu_state();
+
+        let mut expected = NesSession::load(&looping_rom(), config).unwrap();
+        expected.load_state(&snapshot).unwrap();
+        let expected_frame = expected.advance_frame().unwrap();
+
+        session.advance_frame().unwrap();
+        session.load_state(&snapshot).unwrap();
+        assert_eq!(session.total_cycles(), expected_cycles);
+        assert_eq!(session.ppu_position(), expected_ppu);
+        assert_eq!(session.cpu_state(), expected_cpu);
+        assert_eq!(session.config(), config);
+
+        let restored_frame = session.advance_frame().unwrap();
+        assert_eq!(restored_frame.palette_indices, expected_frame.palette_indices);
+        assert_eq!(restored_frame.audio_samples, expected_frame.audio_samples);
+        assert_eq!(restored_frame.cpu_cycles, expected_frame.cpu_cycles);
+    }
+
+    #[test]
+    fn save_state_is_bound_to_the_original_cartridge_image() {
+        let mut session = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
+        session.advance_frame().unwrap();
+        let snapshot = session.save_state().unwrap();
+        assert!(snapshot.starts_with(b"PENESST\0"));
+
+        let mut different_rom = looping_rom();
+        different_rom[0x100] ^= 0x5A;
+        let mut other = NesSession::load(&different_rom, NesConfig::default()).unwrap();
+        assert_eq!(other.load_state(&snapshot), Err(NesSessionError::InvalidSaveState));
+    }
+
+    #[test]
+    fn malformed_save_state_is_rejected_without_mutating_the_running_session() {
+        let mut session = NesSession::load(&looping_rom(), NesConfig::default()).unwrap();
+        session.advance_frame().unwrap();
+        let cycles = session.total_cycles();
+        let ppu = session.ppu_position();
+        assert_eq!(
+            session.load_state(b"not a valid NES state"),
+            Err(NesSessionError::InvalidSaveState)
+        );
+        assert_eq!(session.total_cycles(), cycles);
+        assert_eq!(session.ppu_position(), ppu);
     }
     #[test]
     fn session_exposes_and_clears_machine_bus_trace() {

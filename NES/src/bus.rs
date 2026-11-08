@@ -1,5 +1,7 @@
 //! CPU memory bus for the NES machine.
 
+use serde_big_array::BigArray;
+
 use crate::apu::{Apu, DmcDmaPhase};
 use crate::cartridge::Cartridge;
 use crate::ppu::Ppu;
@@ -25,7 +27,7 @@ fn expected_oamdata_read(address: u8, value: u8) -> u8 {
 }
 
 /// A DMC transfer whose bus phases are serviced on separate CPU cycles.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct PendingDmcDma {
     sample_address: u16,
     halt_target_is_get: bool,
@@ -78,8 +80,9 @@ pub struct CpuBusTraceEntry {
 /// PPU registers, frame rendering, NMI, OAM DMA and serial controller ports are routed.
 /// APU pulse/triangle/noise synthesis and DMC sample fetching are integrated;
 /// audio mixing and some interrupt timing remain approximate.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct CpuBus {
+    #[serde(with = "BigArray")]
     ram: [u8; 0x800],
     cartridge: Option<Cartridge>,
     open_bus: u8,
@@ -126,13 +129,16 @@ pub struct CpuBus {
     dmc_dma_get_occurred: bool,
     /// Bounded diagnostic history; oldest entries are discarded when full.
     #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
+    #[serde(skip)]
     bus_trace: VecDeque<CpuBusTraceEntry>,
     /// Dedicated bounded history for PPUCTRL/PPUSTATUS accesses; host ROM-status
     /// polling must not evict the transactions needed to diagnose PPU races.
     #[cfg(any(test, feature = "ppu-timing-diagnostics"))]
+    #[serde(skip)]
     ppu_bus_trace: VecDeque<CpuBusTraceEntry>,
     /// Mapper A12 transitions with their PPU-dot and M2-cycle timestamps.
     #[cfg(test)]
+    #[serde(skip)]
     mapper_a12_trace: Vec<(u16, u64, u64)>,
 }
 impl Default for CpuBus {

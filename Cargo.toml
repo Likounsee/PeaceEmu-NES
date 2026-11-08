@@ -16,3 +16,6 @@ default = []
 ppu-timing-diagnostics = []
 
 [dependencies]
+bincode = "=1.3.3"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde-big-array = "=0.5.1"

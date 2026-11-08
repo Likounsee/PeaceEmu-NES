@@ -4,6 +4,27 @@
 #![allow(unsafe_code)]
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+#[cfg(any(windows, test))]
+fn aspect_fit(client_width: i32, client_height: i32) -> (i32, i32, i32, i32) {
+    if client_width <= 0 || client_height <= 0 {
+        return (0, 0, 0, 0);
+    }
+    // Keep the NES framebuffer's exact 256:240 aspect ratio and letterbox
+    // the unused area instead of stretching pixels to the client rectangle.
+    let (width, height) = if i64::from(client_width) * 240 <= i64::from(client_height) * 256 {
+        (client_width, client_width * 240 / 256)
+    } else {
+        (client_height * 256 / 240, client_height)
+    };
+    (
+        (client_width - width) / 2,
+        (client_height - height) / 2,
+        width,
+        height,
+    )
+}
+
+
 #[cfg(not(windows))]
 fn main() {
     eprintln!("peaceemu-nes-desktop is currently available on Windows only.");
@@ -12,6 +33,7 @@ fn main() {
 
 #[cfg(windows)]
 mod win {
+    use super::aspect_fit;
     use peaceemu_nes::machine::NesMachine;
     use std::ffi::c_void;
     use std::fs;
@@ -33,6 +55,13 @@ mod win {
     const WM_DESTROY: u32 = 0x0002;
     const WM_QUIT: u32 = 0x0012;
     const WS_OVERLAPPEDWINDOW: u32 = 0x00CF0000;
+    const WS_POPUP: u32 = 0x8000_0000;
+    const GWL_STYLE: i32 = -16;
+    const SWP_FRAMECHANGED: u32 = 0x0020;
+    const SWP_SHOWWINDOW: u32 = 0x0040;
+    const VK_TAB: i32 = 0x09;
+    const VK_F1: i32 = 0x70;
+    const VK_F11: i32 = 0x7A;
     const CW_USEDEFAULT: i32 = 0x80000000u32 as i32;
     const SW_SHOW: i32 = 5;
     const PM_REMOVE: u32 = 1;
@@ -123,6 +152,11 @@ mod win {
         fn GetDC(hwnd: Hwnd) -> Hdc;
         fn ReleaseDC(hwnd: Hwnd, dc: Hdc) -> i32;
         fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> Bool;
+        fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> Bool;
+        fn GetWindowLongW(hwnd: Hwnd, index: i32) -> i32;
+        fn SetWindowLongW(hwnd: Hwnd, index: i32, value: i32) -> i32;
+        fn SetWindowPos(hwnd: Hwnd, insert_after: Hwnd, x: i32, y: i32, width: i32, height: i32, flags: u32) -> Bool;
+        fn GetSystemMetrics(index: i32) -> i32;
         fn GetAsyncKeyState(key: i32) -> i16;
         fn GetForegroundWindow() -> Hwnd;
         fn AdjustWindowRect(rect: *mut Rect, style: u32, menu: Bool) -> Bool;
@@ -163,6 +197,46 @@ mod win {
 
     fn key_down(key: i32) -> bool {
         unsafe { GetAsyncKeyState(key) < 0 }
+    }
+
+    struct FullscreenState {
+        active: bool,
+        window_style: i32,
+        window_rect: Rect,
+    }
+
+    impl FullscreenState {
+        fn new(hwnd: Hwnd) -> Self {
+            let mut window_rect: Rect = unsafe { zeroed() };
+            unsafe { GetWindowRect(hwnd, &mut window_rect); }
+            Self {
+                active: false,
+                window_style: unsafe { GetWindowLongW(hwnd, GWL_STYLE) },
+                window_rect,
+            }
+        }
+
+        fn toggle(&mut self, hwnd: Hwnd) {
+            if !self.active {
+                unsafe {
+                    GetWindowRect(hwnd, &mut self.window_rect);
+                    self.window_style = GetWindowLongW(hwnd, GWL_STYLE);
+                    SetWindowLongW(hwnd, GWL_STYLE, (self.window_style & !(WS_OVERLAPPEDWINDOW as i32)) | WS_POPUP as i32);
+                    SetWindowPos(hwnd, null_mut(), 0, 0, GetSystemMetrics(0), GetSystemMetrics(1),
+                        SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+                }
+                self.active = true;
+            } else {
+                unsafe {
+                    SetWindowLongW(hwnd, GWL_STYLE, self.window_style);
+                    SetWindowPos(hwnd, null_mut(), self.window_rect.left, self.window_rect.top,
+                        self.window_rect.right - self.window_rect.left,
+                        self.window_rect.bottom - self.window_rect.top,
+                        SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+                }
+                self.active = false;
+            }
+        }
     }
 
     fn gamepad_state(index: u32) -> u8 {
@@ -419,6 +493,9 @@ mod win {
         }
 
         let bitmap = make_bitmap();
+        let mut fullscreen = FullscreenState::new(hwnd);
+        let mut previous_f1 = false;
+        let mut previous_f11 = false;
         let mut pixels = vec![0u8; 256 * 240 * 4];
         let frame_time = Duration::from_micros(16_639);
         let mut next_frame = Instant::now();
@@ -434,14 +511,34 @@ mod win {
             if !running { break; }
 
             let focused = unsafe { GetForegroundWindow() == hwnd };
+            let f1_down = focused && key_down(VK_F1);
+            let f11_down = focused && key_down(VK_F11);
+            if f1_down && !previous_f1 {
+                machine.reset();
+                next_frame = Instant::now();
+            }
+            if f11_down && !previous_f11 {
+                fullscreen.toggle(hwnd);
+            }
+            previous_f1 = f1_down;
+            previous_f11 = f11_down;
+
             let player_one = controller_state(focused, &keys) | if focused { gamepad_state(0) } else { 0 };
             let player_two = controller_state(focused, &keys2) | if focused { gamepad_state(1) } else { 0 };
             machine.set_controller_state(0, player_one);
             machine.set_controller_state(1, player_two);
-            if let Err(error) = machine.step_frame() {
-                runtime_error = Some(format!("emulation stopped: {error}"));
-                break;
+
+            // Hold Tab for a 4x frame burst. The normal frame limiter is disabled
+            // only while turbo is held; release immediately restores 60 Hz pacing.
+            let turbo = focused && key_down(VK_TAB);
+            let frames_this_iteration = if turbo { 4 } else { 1 };
+            for _ in 0..frames_this_iteration {
+                if let Err(error) = machine.step_frame() {
+                    runtime_error = Some(format!("emulation stopped: {error}"));
+                    break;
+                }
             }
+            if runtime_error.is_some() { break; }
             let audio_samples = machine.drain_audio_samples();
             if let Some(output) = audio.as_mut() {
                 if let Err(error) = output.play(&audio_samples) {
@@ -462,7 +559,8 @@ mod win {
                 let dc = unsafe { GetDC(hwnd) };
                 if !dc.is_null() {
                     unsafe {
-                        StretchDIBits(dc, 0, 0, client.right, client.bottom, 0, 0, 256, 240,
+                        let (x, y, width, height) = aspect_fit(client.right, client.bottom);
+                        StretchDIBits(dc, x, y, width, height, 0, 0, 256, 240,
                             pixels.as_ptr().cast(), &bitmap, DIB_RGB_COLORS, SRCCOPY);
                         ReleaseDC(hwnd, dc);
                     }
@@ -483,12 +581,16 @@ mod win {
                     }
                 }
             }
-            next_frame += frame_time;
-            let now = Instant::now();
-            if next_frame > now {
-                unsafe { Sleep(((next_frame - now).as_millis() as u32).min(16)); }
+            if turbo {
+                next_frame = Instant::now();
             } else {
-                next_frame = now;
+                next_frame += frame_time;
+                let now = Instant::now();
+                if next_frame > now {
+                    unsafe { Sleep(((next_frame - now).as_millis() as u32).min(16)); }
+                } else {
+                    next_frame = now;
+                }
             }
         }
         if machine.has_battery_backed_ram() {
@@ -497,6 +599,31 @@ mod win {
         }
         if let Some(error) = runtime_error { return Err(error); }
         Ok(())
+    }
+}
+
+
+
+#[cfg(test)]
+mod frontend_geometry_tests {
+    use super::aspect_fit;
+
+    #[test]
+    fn aspect_fit_preserves_nes_ratio_in_widescreen_client_area() {
+        let (x, y, width, height) = aspect_fit(1920, 1080);
+        assert_eq!((x, y, width, height), (384, 0, 1152, 1080));
+        assert_eq!(i64::from(width) * 240, i64::from(height) * 256);
+    }
+
+    #[test]
+    fn aspect_fit_letterboxes_tall_client_area() {
+        let (x, y, width, height) = aspect_fit(800, 1000);
+        assert_eq!((x, y, width, height), (0, 125, 800, 750));
+    }
+
+    #[test]
+    fn aspect_fit_handles_zero_sized_client_area() {
+        assert_eq!(aspect_fit(0, 720), (0, 0, 0, 0));
     }
 }
 

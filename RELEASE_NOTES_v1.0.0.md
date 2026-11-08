@@ -51,3 +51,12 @@ cargo build --manifest-path NES/Cargo.toml --bin peaceemu-nes-desktop --release 
 ```
 
 Only redistributable homebrew/test ROMs may be included in the repository or release assets. Commercial ROMs must not be bundled.
+
+## Alter desktop controls and session support
+
+- `F11` toggles fullscreen while preserving the NES framebuffer's 256:240 aspect ratio.
+- Hold `Tab` for approximately 4x emulation speed; release it to return to normal pacing.
+- `F1` resets the console without unloading the cartridge.
+- In the PeaceEmu desktop host, `F5` pauses and writes a complete machine save state; `F8` restores that state and resumes the session.
+- Save states contain CPU, bus and RAM, cartridge/mapper, PPU, APU, and audio timing state. They use a bounded, versioned format and are rejected when malformed or associated with a different ROM.
+- NES sessions run through PeaceEmu's shared runtime and appear in its Sessions view rather than launching an isolated process.

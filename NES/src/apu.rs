@@ -30,7 +30,7 @@ fn pulse_sweep_target(period: u16, sweep: u8, channel: usize) -> u16 {
 
 
 /// A slot in the currently approximated DMC sample-fetch sequence.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum DmcDmaPhase {
     /// The CPU is halted while its current read address remains on the bus.
     Halt,
@@ -43,7 +43,7 @@ pub(crate) enum DmcDmaPhase {
 }
 
 /// CPU-visible register state for the NES audio processing unit.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Apu {
     registers: [u8; 0x18],
     enabled_channels: u8,
