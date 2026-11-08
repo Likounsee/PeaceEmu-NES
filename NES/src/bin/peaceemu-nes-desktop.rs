@@ -34,13 +34,15 @@ fn main() {
 #[cfg(windows)]
 mod win {
     use super::aspect_fit;
-    use peaceemu_nes::machine::NesMachine;
+    use peaceemu_nes::session::{NesConfig, NesSession};
     use std::ffi::c_void;
     use std::fs;
     use std::mem::{size_of, zeroed};
     use std::ptr::{null, null_mut};
     use std::collections::VecDeque;
     use std::time::{Duration, Instant};
+    use std::io::BufRead;
+    use std::sync::mpsc;
 
     type Handle = *mut c_void;
     type HWaveOut = Handle;
@@ -445,10 +447,7 @@ mod win {
             }
         }
         let image = fs::read(&path).map_err(|e| format!("cannot read ROM: {e}"))?;
-        let mut machine = NesMachine::from_ines(&image).map_err(|e| e.to_string())?;
-        if !machine.set_audio_sample_rate(audio_rate) {
-            return Err(format!("unsupported audio sample rate: {audio_rate}"));
-        }
+        let mut machine = NesSession::load(&image, NesConfig { audio_sample_rate: audio_rate }).map_err(|e| e.to_string())?;
         let mut audio = match AudioOutput::open(audio_rate) {
             Ok(output) => Some(output),
             Err(error) => {
@@ -492,6 +491,25 @@ mod win {
             SetForegroundWindow(hwnd);
         }
 
+        // The host controls this standalone child over newline-delimited stdin commands.
+        let (command_tx, command_rx) = mpsc::channel::<String>();
+        std::thread::spawn(move || {
+            let stdin = std::io::stdin();
+            for line in stdin.lock().lines() {
+                match line {
+                    Ok(command) if command.len() <= 128 => {
+                        if command_tx.send(command).is_err() { break; }
+                    }
+                    Ok(_) => continue,
+                    Err(_) => break,
+                }
+            }
+        });
+        let mut paused = false;
+        let mut remote_turbo = false;
+        let mut remote_buttons = 0u8;
+        let mut state_path = std::path::PathBuf::from(&path);
+        state_path.set_extension("state");
         let bitmap = make_bitmap();
         let mut fullscreen = FullscreenState::new(hwnd);
         let mut previous_f1 = false;
@@ -510,43 +528,77 @@ mod win {
             }
             if !running { break; }
 
+            while let Ok(command) = command_rx.try_recv() {
+                match command.as_str() {
+                    "PAUSE" => paused = true,
+                    "RESUME" => paused = false,
+                    "TOGGLE_PAUSE" => paused = !paused,
+                    "RESET" => { machine.reset(); next_frame = Instant::now(); }
+                    "FULLSCREEN" => fullscreen.toggle(hwnd),
+                    "TURBO_ON" => remote_turbo = true,
+                    "TURBO_OFF" | "TOGGLE_TURBO" => remote_turbo = !remote_turbo,
+                    "SAVE_STATE" => match machine.save_state() {
+                        Ok(bytes) => if let Err(error) = fs::write(&state_path, bytes) {
+                            eprintln!("save state failed: {error}");
+                        },
+                        Err(error) => eprintln!("save state failed: {error}"),
+                    },
+                    "LOAD_STATE" => match fs::read(&state_path) {
+                        Ok(bytes) => if let Err(error) = machine.load_state(&bytes) {
+                            eprintln!("load state failed: {error}");
+                        } else { next_frame = Instant::now(); },
+                        Err(error) => eprintln!("load state failed: {error}"),
+                    },
+                    value if value.starts_with("BUTTONS ") => {
+                        if let Ok(buttons) = value[8..].parse::<u8>() { remote_buttons = buttons; }
+                    }
+                    "QUIT" => { running = false; }
+                    _ => {}
+                }
+            }
+            if !running { break; }
+
             let focused = unsafe { GetForegroundWindow() == hwnd };
             let f1_down = focused && key_down(VK_F1);
             let f11_down = focused && key_down(VK_F11);
-            if f1_down && !previous_f1 {
-                machine.reset();
-                next_frame = Instant::now();
-            }
-            if f11_down && !previous_f11 {
-                fullscreen.toggle(hwnd);
-            }
+            if f1_down && !previous_f1 { machine.reset(); next_frame = Instant::now(); }
+            if f11_down && !previous_f11 { fullscreen.toggle(hwnd); }
             previous_f1 = f1_down;
             previous_f11 = f11_down;
 
-            let player_one = controller_state(focused, &keys) | if focused { gamepad_state(0) } else { 0 };
-            let player_two = controller_state(focused, &keys2) | if focused { gamepad_state(1) } else { 0 };
+            let player_one = remote_buttons | controller_state(focused, &keys)
+                | if focused { gamepad_state(0) } else { 0 };
+            let player_two = controller_state(focused, &keys2)
+                | if focused { gamepad_state(1) } else { 0 };
             machine.set_controller_state(0, player_one);
             machine.set_controller_state(1, player_two);
 
-            // Hold Tab for a 4x frame burst. The normal frame limiter is disabled
-            // only while turbo is held; release immediately restores 60 Hz pacing.
-            let turbo = focused && key_down(VK_TAB);
-            let frames_this_iteration = if turbo { 4 } else { 1 };
-            for _ in 0..frames_this_iteration {
-                if let Err(error) = machine.step_frame() {
-                    runtime_error = Some(format!("emulation stopped: {error}"));
-                    break;
+            let turbo = remote_turbo || (focused && key_down(VK_TAB));
+            let mut frame_output = None;
+            if !paused {
+                let frames_this_iteration = if turbo { 4 } else { 1 };
+                for _ in 0..frames_this_iteration {
+                    match machine.advance_frame() {
+                        Ok(frame) => frame_output = Some(frame),
+                        Err(error) => {
+                            runtime_error = Some(format!("emulation stopped: {error}"));
+                            break;
+                        }
+                    }
                 }
             }
             if runtime_error.is_some() { break; }
-            let audio_samples = machine.drain_audio_samples();
+            let (frame_pixels, audio_samples) = match frame_output {
+                Some(frame) => (frame.palette_indices, frame.audio_samples),
+                None => (vec![0; 256 * 240], Vec::new()),
+            };
             if let Some(output) = audio.as_mut() {
                 if let Err(error) = output.play(&audio_samples) {
                     eprintln!("audio disabled after playback error: {error}");
                     audio = None;
                 }
             }
-            for (i, &index) in machine.framebuffer().iter().enumerate() {
+            for (i, &index) in frame_pixels.iter().enumerate() {
                 let rgb = PALETTE[(index & 0x3F) as usize];
                 let at = i * 4;
                 pixels[at] = rgb[2];
