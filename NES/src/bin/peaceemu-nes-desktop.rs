@@ -42,6 +42,22 @@ fn parse_virtual_keys(value: &str) -> Option<[i32; 8]> {
     Some(result)
 }
 
+#[cfg(any(windows, test))]
+fn parse_turbo_speed(value: &str) -> Option<f32> {
+    let speed = value.parse::<f32>().ok()?;
+    (speed.is_finite() && (0.5..=4.0).contains(&speed)).then_some(speed)
+}
+
+#[cfg(any(windows, test))]
+fn scaled_frame_interval(base: std::time::Duration, speed: f32) -> Option<std::time::Duration> {
+    if !speed.is_finite() || !(0.5..=4.0).contains(&speed) {
+        return None;
+    }
+    Some(std::time::Duration::from_secs_f64(
+        base.as_secs_f64() / f64::from(speed),
+    ))
+}
+
 #[cfg(not(windows))]
 fn main() {
     eprintln!("peaceemu-nes-desktop is currently available on Windows only.");
@@ -50,7 +66,7 @@ fn main() {
 
 #[cfg(windows)]
 mod win {
-    use super::{aspect_fit, parse_virtual_keys};
+    use super::{aspect_fit, parse_turbo_speed, parse_virtual_keys, scaled_frame_interval};
     use peaceemu_nes::session::{NesConfig, NesSession};
     use std::ffi::c_void;
     use std::fs;
@@ -729,12 +745,12 @@ mod win {
                         );
                     }
                     value if value.starts_with("TURBO_SPEED ") => {
-                        match value[12..].parse::<f32>() {
-                            Ok(speed) if speed.is_finite() && (0.5..=4.0).contains(&speed) => {
+                        match parse_turbo_speed(&value[12..]) {
+                            Some(speed) => {
                                 turbo_speed = speed;
                                 report_host_event(&mut host_events, "OK|TURBO_SPEED");
                             }
-                            _ => report_host_event(
+                            None => report_host_event(
                                 &mut host_events,
                                 "ERROR|TURBO_SPEED|Expected a speed from 0.5 to 4.0",
                             ),
@@ -880,8 +896,8 @@ mod win {
                     }
                 }
             }
-            let target_frame_time =
-                Duration::from_secs_f64(frame_time.as_secs_f64() / f64::from(playback_speed));
+            let target_frame_time = scaled_frame_interval(frame_time, playback_speed)
+                .expect("the selected playback speed must remain in the supported range");
             next_frame += target_frame_time;
             let now = Instant::now();
             if next_frame > now {
@@ -919,7 +935,37 @@ fn main() {
 
 #[cfg(test)]
 mod frontend_geometry_tests {
-    use super::{aspect_fit, parse_virtual_keys};
+    use super::{aspect_fit, parse_turbo_speed, parse_virtual_keys, scaled_frame_interval};
+
+    #[test]
+    fn turbo_speed_accepts_the_supported_range_and_rejects_invalid_values() {
+        assert_eq!(parse_turbo_speed("0.5"), Some(0.5));
+        assert_eq!(parse_turbo_speed("1.7"), Some(1.7));
+        assert_eq!(parse_turbo_speed("4.0"), Some(4.0));
+        assert_eq!(parse_turbo_speed("0.4"), None);
+        assert_eq!(parse_turbo_speed("4.1"), None);
+        assert_eq!(parse_turbo_speed("NaN"), None);
+        assert_eq!(parse_turbo_speed("inf"), None);
+        assert_eq!(parse_turbo_speed("fast"), None);
+    }
+
+    #[test]
+    fn turbo_speed_scales_the_frame_interval_correctly() {
+        let frame = std::time::Duration::from_micros(16_639);
+        assert_eq!(
+            scaled_frame_interval(frame, 0.5).unwrap().as_micros(),
+            33_278
+        );
+        assert_eq!(
+            scaled_frame_interval(frame, 1.0).unwrap().as_micros(),
+            16_639
+        );
+        assert_eq!(
+            scaled_frame_interval(frame, 4.0).unwrap().as_micros(),
+            4_159
+        );
+        assert_eq!(scaled_frame_interval(frame, 0.0), None);
+    }
 
     #[test]
     fn parse_virtual_keys_requires_eight_valid_virtual_keys() {
