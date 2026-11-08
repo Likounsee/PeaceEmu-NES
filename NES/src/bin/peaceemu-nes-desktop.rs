@@ -41,7 +41,7 @@ mod win {
     use std::ptr::{null, null_mut};
     use std::collections::VecDeque;
     use std::time::{Duration, Instant};
-    use std::io::BufRead;
+    use std::io::{BufRead, Write};
     use std::sync::mpsc;
 
     type Handle = *mut c_void;
@@ -410,6 +410,20 @@ mod win {
         }
     }
 
+    fn report_host_event(writer: &mut impl Write, event: &str) {
+        let _ = writeln!(writer, "EVENT|{event}");
+        let _ = writer.flush();
+    }
+
+    fn report_host_error(writer: &mut impl Write, command: &str, error: impl std::fmt::Display) {
+        let message = error
+            .to_string()
+            .replace('|', "/")
+            .replace('\n', " ")
+            .replace('\r', " ");
+        report_host_event(writer, &format!("ERROR|{command}|{message}"));
+    }
+
     pub fn run() -> Result<(), String> {
         let mut args = std::env::args_os().skip(1);
         let path = args.next().ok_or_else(|| {
@@ -508,6 +522,8 @@ mod win {
                 }
             }
         });
+        let stdout = std::io::stdout();
+        let mut host_events = stdout.lock();
         let mut paused = false;
         let mut remote_turbo = false;
         let mut remote_buttons = 0u8;
@@ -527,6 +543,7 @@ mod win {
         let mut running = true;
         let mut runtime_error = None;
         while running {
+            let paused_before_iteration = paused;
             let mut msg: Msg = unsafe { zeroed() };
             while unsafe { PeekMessageW(&mut msg, null_mut(), 0, 0, PM_REMOVE) } != 0 {
                 if msg.message == WM_QUIT { running = false; break; }
@@ -536,30 +553,73 @@ mod win {
 
             while let Ok(command) = command_rx.try_recv() {
                 match command.as_str() {
-                    "PAUSE" => paused = true,
-                    "RESUME" => paused = false,
-                    "TOGGLE_PAUSE" => paused = !paused,
-                    "RESET" => { machine.reset(); next_frame = Instant::now(); }
-                    "FULLSCREEN" => fullscreen.toggle(hwnd),
-                    "TURBO_ON" => remote_turbo = true,
-                    "TURBO_OFF" | "TOGGLE_TURBO" => remote_turbo = !remote_turbo,
+                    "PAUSE" => {
+                        paused = true;
+                        report_host_event(&mut host_events, "OK|PAUSE");
+                    }
+                    "RESUME" => {
+                        paused = false;
+                        report_host_event(&mut host_events, "OK|RESUME");
+                    }
+                    "TOGGLE_PAUSE" => {
+                        paused = !paused;
+                        report_host_event(&mut host_events, "OK|TOGGLE_PAUSE");
+                    }
+                    "RESET" => {
+                        machine.reset();
+                        next_frame = Instant::now();
+                        report_host_event(&mut host_events, "OK|RESET");
+                    }
+                    "FULLSCREEN" => {
+                        fullscreen.toggle(hwnd);
+                        report_host_event(&mut host_events, "OK|FULLSCREEN");
+                    }
+                    "TURBO_ON" => {
+                        remote_turbo = true;
+                        report_host_event(&mut host_events, "OK|TURBO_ON");
+                    }
+                    "TURBO_OFF" => {
+                        remote_turbo = false;
+                        report_host_event(&mut host_events, "OK|TURBO_OFF");
+                    }
+                    "TOGGLE_TURBO" => {
+                        remote_turbo = !remote_turbo;
+                        report_host_event(
+                            &mut host_events,
+                            if remote_turbo { "OK|TURBO_ON" } else { "OK|TURBO_OFF" },
+                        );
+                    }
                     "SAVE_STATE" => match machine.save_state() {
-                        Ok(bytes) => if let Err(error) = fs::write(&state_path, bytes) {
-                            eprintln!("save state failed: {error}");
+                        Ok(bytes) => match fs::write(&state_path, bytes) {
+                            Ok(()) => report_host_event(&mut host_events, "OK|SAVE_STATE"),
+                            Err(error) => report_host_error(&mut host_events, "SAVE_STATE", error),
                         },
-                        Err(error) => eprintln!("save state failed: {error}"),
+                        Err(error) => report_host_error(&mut host_events, "SAVE_STATE", error),
                     },
                     "LOAD_STATE" => match fs::read(&state_path) {
-                        Ok(bytes) => if let Err(error) = machine.load_state(&bytes) {
-                            eprintln!("load state failed: {error}");
-                        } else { next_frame = Instant::now(); },
-                        Err(error) => eprintln!("load state failed: {error}"),
+                        Ok(bytes) => match machine.load_state(&bytes) {
+                            Ok(()) => {
+                                next_frame = Instant::now();
+                                report_host_event(&mut host_events, "OK|LOAD_STATE");
+                            }
+                            Err(error) => report_host_error(&mut host_events, "LOAD_STATE", error),
+                        },
+                        Err(error) => report_host_error(&mut host_events, "LOAD_STATE", error),
                     },
                     value if value.starts_with("BUTTONS ") => {
-                        if let Ok(buttons) = value[8..].parse::<u8>() { remote_buttons = buttons; }
+                        match value[8..].parse::<u8>() {
+                            Ok(buttons) => {
+                                remote_buttons = buttons;
+                                report_host_event(&mut host_events, "OK|BUTTONS");
+                            }
+                            Err(error) => report_host_error(&mut host_events, "BUTTONS", error),
+                        }
                     }
-                    "QUIT" => { running = false; }
-                    _ => {}
+                    "QUIT" => {
+                        report_host_event(&mut host_events, "OK|QUIT");
+                        running = false;
+                    }
+                    _ => report_host_event(&mut host_events, "ERROR|COMMAND|Unknown command"),
                 }
             }
             if !running { break; }
@@ -584,6 +644,12 @@ mod win {
             previous_f8 = f8_down;
             previous_p = p_down;
             previous_f11 = f11_down;
+            if paused != paused_before_iteration {
+                report_host_event(
+                    &mut host_events,
+                    if paused { "STATE|PAUSED" } else { "STATE|RUNNING" },
+                );
+            }
 
             let player_one = remote_buttons | controller_state(focused, &keys)
                 | if focused { gamepad_state(0) } else { 0 };
@@ -607,23 +673,26 @@ mod win {
                 }
             }
             if runtime_error.is_some() { break; }
-            let (frame_pixels, audio_samples) = match frame_output {
-                Some(frame) => (frame.palette_indices, frame.audio_samples),
-                None => (vec![0; 256 * 240], Vec::new()),
+            let audio_samples = if let Some(frame) = frame_output {
+                for (i, &index) in frame.palette_indices.iter().enumerate() {
+                    let rgb = PALETTE[(index & 0x3F) as usize];
+                    let at = i * 4;
+                    pixels[at] = rgb[2];
+                    pixels[at + 1] = rgb[1];
+                    pixels[at + 2] = rgb[0];
+                    pixels[at + 3] = 0;
+                }
+                frame.audio_samples
+            } else {
+                // Keep the last rendered frame visible while paused. Replacing it with
+                // a zero-filled framebuffer made every pause command look like a crash.
+                Vec::new()
             };
             if let Some(output) = audio.as_mut() {
                 if let Err(error) = output.play(&audio_samples) {
                     eprintln!("audio disabled after playback error: {error}");
                     audio = None;
                 }
-            }
-            for (i, &index) in frame_pixels.iter().enumerate() {
-                let rgb = PALETTE[(index & 0x3F) as usize];
-                let at = i * 4;
-                pixels[at] = rgb[2];
-                pixels[at + 1] = rgb[1];
-                pixels[at + 2] = rgb[0];
-                pixels[at + 3] = 0;
             }
             let mut client: Rect = unsafe { zeroed() };
             if unsafe { GetClientRect(hwnd, &mut client) } != 0 {
