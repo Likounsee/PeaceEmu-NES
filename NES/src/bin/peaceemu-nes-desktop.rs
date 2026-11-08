@@ -602,7 +602,21 @@ mod win {
     }
 }
 
+#[cfg(windows)]
+fn main() {
+    if let Err(error) = win::run() {
+        win::report_error(&error);
+        std::process::exit(1);
+    }
+}
 
+#[cfg(windows)]
+fn main() {
+    if let Err(error) = win::run() {
+        win::report_error(&error);
+        std::process::exit(1);
+    }
+}
 
 #[cfg(test)]
 mod frontend_geometry_tests {
@@ -624,13 +638,5 @@ mod frontend_geometry_tests {
     #[test]
     fn aspect_fit_handles_zero_sized_client_area() {
         assert_eq!(aspect_fit(0, 720), (0, 0, 0, 0));
-    }
-}
-
-#[cfg(windows)]
-fn main() {
-    if let Err(error) = win::run() {
-        win::report_error(&error);
-        std::process::exit(1);
     }
 }
