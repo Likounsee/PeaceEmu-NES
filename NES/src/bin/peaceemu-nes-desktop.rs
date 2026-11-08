@@ -67,6 +67,7 @@ mod win {
     type Hwnd = Handle;
     type Hdc = Handle;
     type Hinstance = Handle;
+    type Hmonitor = Handle;
     type Wparam = usize;
     type Lparam = isize;
     type Lresult = isize;
@@ -74,6 +75,8 @@ mod win {
 
     const WM_DESTROY: u32 = 0x0002;
     const WM_QUIT: u32 = 0x0012;
+    const WM_KEYDOWN: u32 = 0x0100;
+    const WM_SYSKEYDOWN: u32 = 0x0104;
     const WM_SETICON: u32 = 0x0080;
     const ICON_SMALL: usize = 0;
     const ICON_BIG: usize = 1;
@@ -88,6 +91,7 @@ mod win {
     const VK_F8: i32 = 0x77;
     const VK_P: i32 = 0x50;
     const VK_F11: i32 = 0x7A;
+    const MONITOR_DEFAULTTONEAREST: u32 = 2;
     const CW_USEDEFAULT: i32 = 0x80000000u32 as i32;
     const SW_SHOW: i32 = 5;
     const PM_REMOVE: u32 = 1;
@@ -160,6 +164,13 @@ mod win {
     struct BitmapInfo { header: BitmapInfoHeader, colors: [RgbQuad; 1] }
     #[repr(C)]
     struct Rect { left: i32, top: i32, right: i32, bottom: i32 }
+    #[repr(C)]
+    struct MonitorInfo {
+        size: u32,
+        monitor: Rect,
+        work: Rect,
+        flags: u32,
+    }
 
     #[link(name = "user32")]
     extern "system" {
@@ -179,10 +190,11 @@ mod win {
         fn ReleaseDC(hwnd: Hwnd, dc: Hdc) -> i32;
         fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> Bool;
         fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> Bool;
+        fn MonitorFromWindow(hwnd: Hwnd, flags: u32) -> Hmonitor;
+        fn GetMonitorInfoW(monitor: Hmonitor, info: *mut MonitorInfo) -> Bool;
         fn GetWindowLongW(hwnd: Hwnd, index: i32) -> i32;
         fn SetWindowLongW(hwnd: Hwnd, index: i32, value: i32) -> i32;
         fn SetWindowPos(hwnd: Hwnd, insert_after: Hwnd, x: i32, y: i32, width: i32, height: i32, flags: u32) -> Bool;
-        fn GetSystemMetrics(index: i32) -> i32;
         fn GetAsyncKeyState(key: i32) -> i16;
         fn GetForegroundWindow() -> Hwnd;
         fn AdjustWindowRect(rect: *mut Rect, style: u32, menu: Bool) -> Bool;
@@ -255,26 +267,71 @@ mod win {
             }
         }
 
-        fn toggle(&mut self, hwnd: Hwnd) {
+        fn toggle(&mut self, hwnd: Hwnd) -> Result<(), String> {
             if !self.active {
-                unsafe {
-                    GetWindowRect(hwnd, &mut self.window_rect);
-                    self.window_style = GetWindowLongW(hwnd, GWL_STYLE);
-                    SetWindowLongW(hwnd, GWL_STYLE, (self.window_style & !(WS_OVERLAPPEDWINDOW as i32)) | WS_POPUP as i32);
-                    SetWindowPos(hwnd, null_mut(), 0, 0, GetSystemMetrics(0), GetSystemMetrics(1),
-                        SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+                let mut window_rect: Rect = unsafe { zeroed() };
+                if unsafe { GetWindowRect(hwnd, &mut window_rect) } == 0 {
+                    return Err("GetWindowRect failed while entering fullscreen".to_owned());
                 }
+                let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+                if monitor.is_null() {
+                    return Err("MonitorFromWindow could not find the game display".to_owned());
+                }
+                let mut monitor_info = MonitorInfo {
+                    size: size_of::<MonitorInfo>() as u32,
+                    monitor: unsafe { zeroed() },
+                    work: unsafe { zeroed() },
+                    flags: 0,
+                };
+                if unsafe { GetMonitorInfoW(monitor, &mut monitor_info) } == 0 {
+                    return Err("GetMonitorInfoW failed while entering fullscreen".to_owned());
+                }
+                let window_style = unsafe { GetWindowLongW(hwnd, GWL_STYLE) };
+                let fullscreen_style =
+                    (window_style & !(WS_OVERLAPPEDWINDOW as i32)) | WS_POPUP as i32;
+                unsafe {
+                    SetWindowLongW(hwnd, GWL_STYLE, fullscreen_style);
+                }
+                let monitor_rect = monitor_info.monitor;
+                let positioned = unsafe {
+                    SetWindowPos(
+                        hwnd,
+                        null_mut(),
+                        monitor_rect.left,
+                        monitor_rect.top,
+                        monitor_rect.right - monitor_rect.left,
+                        monitor_rect.bottom - monitor_rect.top,
+                        SWP_FRAMECHANGED | SWP_SHOWWINDOW,
+                    )
+                };
+                if positioned == 0 {
+                    unsafe { SetWindowLongW(hwnd, GWL_STYLE, window_style); }
+                    return Err("SetWindowPos failed while entering fullscreen".to_owned());
+                }
+                self.window_rect = window_rect;
+                self.window_style = window_style;
                 self.active = true;
             } else {
                 unsafe {
                     SetWindowLongW(hwnd, GWL_STYLE, self.window_style);
-                    SetWindowPos(hwnd, null_mut(), self.window_rect.left, self.window_rect.top,
+                }
+                let restored = unsafe {
+                    SetWindowPos(
+                        hwnd,
+                        null_mut(),
+                        self.window_rect.left,
+                        self.window_rect.top,
                         self.window_rect.right - self.window_rect.left,
                         self.window_rect.bottom - self.window_rect.top,
-                        SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+                        SWP_FRAMECHANGED | SWP_SHOWWINDOW,
+                    )
+                };
+                if restored == 0 {
+                    return Err("SetWindowPos failed while restoring the game window".to_owned());
                 }
                 self.active = false;
             }
+            Ok(())
         }
     }
 
@@ -522,6 +579,15 @@ mod win {
             let save = fs::read(&save_path).map_err(|e| format!("cannot read save RAM: {e}"))?;
             machine.load_battery_ram(&save).map_err(|e| format!("invalid save RAM: {e}"))?;
         }
+        let mut state_path = std::path::PathBuf::from(&path);
+        state_path.set_extension("state");
+        if state_path.exists() {
+            let state = fs::read(&state_path)
+                .map_err(|error| format!("cannot read automatic save state: {error}"))?;
+            machine
+                .load_state(&state)
+                .map_err(|error| format!("cannot restore automatic save state: {error}"))?;
+        }
 
         let class_name: Vec<u16> = "PeaceEmuNesWindow\0".encode_utf16().collect();
         let title: Vec<u16> = format!("PeaceEmu-NES — {}", std::path::Path::new(&path).file_name().unwrap_or_default().to_string_lossy())
@@ -591,15 +657,13 @@ mod win {
         let mut paused = false;
         let mut remote_turbo = false;
         let mut remote_buttons = 0u8;
-        let mut state_path = std::path::PathBuf::from(&path);
-        state_path.set_extension("state");
         let bitmap = make_bitmap();
         let mut fullscreen = FullscreenState::new(hwnd);
         let mut previous_f1 = false;
         let mut previous_f5 = false;
         let mut previous_f8 = false;
         let mut previous_p = false;
-        let mut previous_f11 = false;
+        let mut turbo_speed = 4.0_f32;
         let mut pixels = vec![0u8; 256 * 240 * 4];
         let frame_time = Duration::from_micros(16_639);
         let mut next_frame = Instant::now();
@@ -611,6 +675,17 @@ mod win {
             let mut msg: Msg = unsafe { zeroed() };
             while unsafe { PeekMessageW(&mut msg, null_mut(), 0, 0, PM_REMOVE) } != 0 {
                 if msg.message == WM_QUIT { running = false; break; }
+                let is_f11_press = msg.hwnd == hwnd
+                    && (msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN)
+                    && msg.w_param == VK_F11 as usize
+                    && (msg.l_param as u64 & (1_u64 << 30)) == 0;
+                if is_f11_press {
+                    match fullscreen.toggle(hwnd) {
+                        Ok(()) => report_host_event(&mut host_events, "OK|FULLSCREEN"),
+                        Err(error) => report_host_error(&mut host_events, "FULLSCREEN", error),
+                    }
+                    continue;
+                }
                 unsafe { TranslateMessage(&msg); DispatchMessageW(&msg); }
             }
             if !running { break; }
@@ -634,10 +709,10 @@ mod win {
                         next_frame = Instant::now();
                         report_host_event(&mut host_events, "OK|RESET");
                     }
-                    "FULLSCREEN" => {
-                        fullscreen.toggle(hwnd);
-                        report_host_event(&mut host_events, "OK|FULLSCREEN");
-                    }
+                    "FULLSCREEN" => match fullscreen.toggle(hwnd) {
+                        Ok(()) => report_host_event(&mut host_events, "OK|FULLSCREEN"),
+                        Err(error) => report_host_error(&mut host_events, "FULLSCREEN", error),
+                    },
                     "TURBO_ON" => {
                         remote_turbo = true;
                         report_host_event(&mut host_events, "OK|TURBO_ON");
@@ -652,6 +727,18 @@ mod win {
                             &mut host_events,
                             if remote_turbo { "OK|TURBO_ON" } else { "OK|TURBO_OFF" },
                         );
+                    }
+                    value if value.starts_with("TURBO_SPEED ") => {
+                        match value[12..].parse::<f32>() {
+                            Ok(speed) if speed.is_finite() && (0.5..=4.0).contains(&speed) => {
+                                turbo_speed = speed;
+                                report_host_event(&mut host_events, "OK|TURBO_SPEED");
+                            }
+                            _ => report_host_event(
+                                &mut host_events,
+                                "ERROR|TURBO_SPEED|Expected a speed from 0.5 to 4.0",
+                            ),
+                        }
                     }
                     "SAVE_STATE" => match machine.save_state() {
                         Ok(bytes) => match fs::write(&state_path, bytes) {
@@ -707,7 +794,6 @@ mod win {
             let f5_down = focused && key_down(VK_F5);
             let f8_down = focused && key_down(VK_F8);
             let p_down = focused && key_down(VK_P);
-            let f11_down = focused && key_down(VK_F11);
             if f1_down && !previous_f1 { machine.reset(); next_frame = Instant::now(); }
             if f5_down && !previous_f5 {
                 if let Ok(bytes) = machine.save_state() { let _ = fs::write(&state_path, bytes); }
@@ -716,12 +802,10 @@ mod win {
                 if let Ok(bytes) = fs::read(&state_path) { let _ = machine.load_state(&bytes); }
             }
             if p_down && !previous_p { paused = !paused; }
-            if f11_down && !previous_f11 { fullscreen.toggle(hwnd); }
             previous_f1 = f1_down;
             previous_f5 = f5_down;
             previous_f8 = f8_down;
             previous_p = p_down;
-            previous_f11 = f11_down;
             if paused != paused_before_iteration {
                 report_host_event(
                     &mut host_events,
@@ -737,16 +821,13 @@ mod win {
             machine.set_controller_state(1, player_two);
 
             let turbo = remote_turbo || (focused && key_down(VK_TAB));
+            let playback_speed = if turbo { turbo_speed } else { 1.0 };
             let mut frame_output = None;
             if !paused {
-                let frames_this_iteration = if turbo { 4 } else { 1 };
-                for _ in 0..frames_this_iteration {
-                    match machine.advance_frame() {
-                        Ok(frame) => frame_output = Some(frame),
-                        Err(error) => {
-                            runtime_error = Some(format!("emulation stopped: {error}"));
-                            break;
-                        }
+                match machine.advance_frame() {
+                    Ok(frame) => frame_output = Some(frame),
+                    Err(error) => {
+                        runtime_error = Some(format!("emulation stopped: {error}"));
                     }
                 }
             }
@@ -799,18 +880,24 @@ mod win {
                     }
                 }
             }
-            if turbo {
-                next_frame = Instant::now();
+            let target_frame_time =
+                Duration::from_secs_f64(frame_time.as_secs_f64() / f64::from(playback_speed));
+            next_frame += target_frame_time;
+            let now = Instant::now();
+            if next_frame > now {
+                let sleep = next_frame - now;
+                unsafe { Sleep(((sleep.as_millis() as u32).max(1)).min(16)); }
             } else {
-                next_frame += frame_time;
-                let now = Instant::now();
-                if next_frame > now {
-                    unsafe { Sleep(((next_frame - now).as_millis() as u32).min(16)); }
-                } else {
-                    next_frame = now;
-                }
+                next_frame = now;
             }
         }
+        // The module's state file is an automatic resume point, independent of the
+        // battery-backed RAM save. Closing the game window must not discard progress.
+        let state = machine
+            .save_state()
+            .map_err(|error| format!("cannot create automatic save state: {error}"))?;
+        fs::write(&state_path, state)
+            .map_err(|error| format!("cannot write automatic save state: {error}"))?;
         if machine.has_battery_backed_ram() {
             let save = machine.save_battery_ram().map_err(|e| e.to_string())?;
             fs::write(&save_path, save).map_err(|e| format!("cannot write save RAM: {e}"))?;
