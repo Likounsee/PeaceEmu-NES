@@ -902,7 +902,7 @@ mod win {
             let now = Instant::now();
             if next_frame > now {
                 let sleep = next_frame - now;
-                unsafe { Sleep(((sleep.as_millis() as u32).max(1)).min(16)); }
+                unsafe { Sleep((sleep.as_millis() as u32).clamp(1, 16)); }
             } else {
                 next_frame = now;
             }
