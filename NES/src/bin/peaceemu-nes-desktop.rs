@@ -63,6 +63,9 @@ mod win {
     const SWP_SHOWWINDOW: u32 = 0x0040;
     const VK_TAB: i32 = 0x09;
     const VK_F1: i32 = 0x70;
+    const VK_F5: i32 = 0x74;
+    const VK_F8: i32 = 0x77;
+    const VK_P: i32 = 0x50;
     const VK_F11: i32 = 0x7A;
     const CW_USEDEFAULT: i32 = 0x80000000u32 as i32;
     const SW_SHOW: i32 = 5;
@@ -513,6 +516,9 @@ mod win {
         let bitmap = make_bitmap();
         let mut fullscreen = FullscreenState::new(hwnd);
         let mut previous_f1 = false;
+        let mut previous_f5 = false;
+        let mut previous_f8 = false;
+        let mut previous_p = false;
         let mut previous_f11 = false;
         let mut pixels = vec![0u8; 256 * 240 * 4];
         let frame_time = Duration::from_micros(16_639);
@@ -560,10 +566,23 @@ mod win {
 
             let focused = unsafe { GetForegroundWindow() == hwnd };
             let f1_down = focused && key_down(VK_F1);
+            let f5_down = focused && key_down(VK_F5);
+            let f8_down = focused && key_down(VK_F8);
+            let p_down = focused && key_down(VK_P);
             let f11_down = focused && key_down(VK_F11);
             if f1_down && !previous_f1 { machine.reset(); next_frame = Instant::now(); }
+            if f5_down && !previous_f5 {
+                if let Ok(bytes) = machine.save_state() { let _ = fs::write(&state_path, bytes); }
+            }
+            if f8_down && !previous_f8 {
+                if let Ok(bytes) = fs::read(&state_path) { let _ = machine.load_state(&bytes); }
+            }
+            if p_down && !previous_p { paused = !paused; }
             if f11_down && !previous_f11 { fullscreen.toggle(hwnd); }
             previous_f1 = f1_down;
+            previous_f5 = f5_down;
+            previous_f8 = f8_down;
+            previous_p = p_down;
             previous_f11 = f11_down;
 
             let player_one = remote_buttons | controller_state(focused, &keys)
