@@ -610,13 +610,7 @@ fn main() {
     }
 }
 
-#[cfg(windows)]
-fn main() {
-    if let Err(error) = win::run() {
-        win::report_error(&error);
-        std::process::exit(1);
-    }
-}
+
 
 #[cfg(test)]
 mod frontend_geometry_tests {
