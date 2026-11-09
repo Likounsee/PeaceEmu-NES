@@ -9,12 +9,12 @@ fn aspect_fit(client_width: i32, client_height: i32) -> (i32, i32, i32, i32) {
     if client_width <= 0 || client_height <= 0 {
         return (0, 0, 0, 0);
     }
-    // Keep the NES framebuffer's exact 256:240 aspect ratio and letterbox
-    // the unused area instead of stretching pixels to the client rectangle.
-    let (width, height) = if i64::from(client_width) * 240 <= i64::from(client_height) * 256 {
-        (client_width, client_width * 240 / 256)
+    // NES pixels are not square: the 256x240 framebuffer is displayed at 4:3.
+    // Fit that corrected display ratio into the client area without distorting it.
+    let (width, height) = if i64::from(client_width) * 3 <= i64::from(client_height) * 4 {
+        (client_width, client_width * 3 / 4)
     } else {
-        (client_height * 256 / 240, client_height)
+        (client_height * 4 / 3, client_height)
     };
     (
         (client_width - width) / 2,
@@ -980,16 +980,17 @@ mod frontend_geometry_tests {
     }
 
     #[test]
-    fn aspect_fit_preserves_nes_ratio_in_widescreen_client_area() {
+    fn aspect_fit_uses_corrected_four_three_display_ratio_in_widescreen() {
         let (x, y, width, height) = aspect_fit(1920, 1080);
-        assert_eq!((x, y, width, height), (384, 0, 1152, 1080));
-        assert_eq!(i64::from(width) * 240, i64::from(height) * 256);
+        assert_eq!((x, y, width, height), (240, 0, 1440, 1080));
+        assert_eq!(i64::from(width) * 3, i64::from(height) * 4);
     }
 
     #[test]
     fn aspect_fit_letterboxes_tall_client_area() {
         let (x, y, width, height) = aspect_fit(800, 1000);
-        assert_eq!((x, y, width, height), (0, 125, 800, 750));
+        assert_eq!((x, y, width, height), (0, 200, 800, 600));
+        assert_eq!(i64::from(width) * 3, i64::from(height) * 4);
     }
 
     #[test]
