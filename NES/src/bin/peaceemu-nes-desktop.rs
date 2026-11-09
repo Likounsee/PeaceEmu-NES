@@ -972,7 +972,7 @@ mod win {
             if unsafe { GetClientRect(hwnd, &mut client) } != 0 {
                 let width = client.right;
                 let height = client.bottom;
-                if back_buffer.as_ref().is_none_or(|buffer| buffer.width != width || buffer.height != height) {
+                if back_buffer.as_ref().map_or(true, |buffer| buffer.width != width || buffer.height != height) {
                     back_buffer = BackBuffer::new(hwnd, width, height);
                 }
                 if let Some(buffer) = back_buffer.as_ref() {
