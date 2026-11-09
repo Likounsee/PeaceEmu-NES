@@ -81,7 +81,7 @@ fn main() {
 
 #[cfg(windows)]
 mod win {
-    use super::{aspect_fit, parse_turbo_speed, parse_virtual_keys, scaled_frame_interval};
+    use super::{adaptive_window_size, aspect_fit, parse_turbo_speed, parse_virtual_keys, scaled_frame_interval};
     use peaceemu_nes::session::{NesConfig, NesSession};
     use std::ffi::c_void;
     use std::fs;
@@ -966,7 +966,7 @@ fn main() {
 
 #[cfg(test)]
 mod frontend_geometry_tests {
-    use super::{aspect_fit, parse_turbo_speed, parse_virtual_keys, scaled_frame_interval};
+    use super::{adaptive_window_size, aspect_fit, parse_turbo_speed, parse_virtual_keys, scaled_frame_interval};
 
     #[test]
     fn turbo_speed_accepts_the_supported_range_and_rejects_invalid_values() {
