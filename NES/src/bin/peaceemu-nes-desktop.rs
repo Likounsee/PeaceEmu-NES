@@ -28,7 +28,7 @@ fn aspect_fit(client_width: i32, client_height: i32) -> (i32, i32, i32, i32) {
 #[cfg(any(windows, test))]
 fn adaptive_window_size(screen_width: i32, screen_height: i32) -> (i32, i32) {
     if screen_width <= 0 || screen_height <= 0 {
-        return (256 * 3, 240 * 3);
+        return (256 * 3, 256 * 3 * 3 / 4);
     }
     // Keep a comfortable margin around the game and adapt to small and large displays.
     let max_width = (screen_width * 4 / 5).max(256);
@@ -1038,7 +1038,7 @@ mod frontend_geometry_tests {
 
     #[test]
     fn adaptive_window_size_falls_back_for_invalid_display_metrics() {
-        assert_eq!(adaptive_window_size(0, 0), (768, 720));
+        assert_eq!(adaptive_window_size(0, 0), (768, 576));
     }
 
     #[test]
