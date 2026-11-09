@@ -221,7 +221,6 @@ mod win {
         fn GetDC(hwnd: Hwnd) -> Hdc;
         fn GetSystemMetrics(index: i32) -> i32;
         fn ReleaseDC(hwnd: Hwnd, dc: Hdc) -> i32;
-        fn FillRect(dc: Hdc, rect: *const Rect, brush: Handle) -> i32;
         fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> Bool;
         fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> Bool;
         fn MonitorFromWindow(hwnd: Hwnd, flags: u32) -> Hmonitor;
@@ -238,10 +237,78 @@ mod win {
     #[link(name = "gdi32")]
     extern "system" {
         fn SetStretchBltMode(dc: Hdc, mode: i32) -> i32;
+        fn CreateCompatibleDC(dc: Hdc) -> Hdc;
+        fn CreateCompatibleBitmap(dc: Hdc, width: i32, height: i32) -> Handle;
+        fn SelectObject(dc: Hdc, object: Handle) -> Handle;
+        fn DeleteObject(object: Handle) -> Bool;
+        fn DeleteDC(dc: Hdc) -> Bool;
+        fn PatBlt(dc: Hdc, x: i32, y: i32, width: i32, height: i32, rop: u32) -> Bool;
+        fn BitBlt(dst: Hdc, x: i32, y: i32, width: i32, height: i32,
+            src: Hdc, src_x: i32, src_y: i32, rop: u32) -> Bool;
         fn StretchDIBits(dc: Hdc, x_dest: i32, y_dest: i32, dest_width: i32, dest_height: i32,
             x_src: i32, y_src: i32, src_width: i32, src_height: i32, bits: *const c_void,
             info: *const BitmapInfo, usage: u32, raster_op: u32) -> i32;
     }
+    // Persistent off-screen surface: render a complete frame before presenting it.
+    // Keeping this behind a small backend type makes the emulation framebuffer independent
+    // of the window-system implementation; other platforms can provide their own presenter.
+    struct BackBuffer {
+        dc: Hdc,
+        bitmap: Handle,
+        previous_bitmap: Handle,
+        width: i32,
+        height: i32,
+    }
+
+    impl BackBuffer {
+        fn new(hwnd: Hwnd, width: i32, height: i32) -> Option<Self> {
+            if width <= 0 || height <= 0 { return None; }
+            let window_dc = unsafe { GetDC(hwnd) };
+            if window_dc.is_null() { return None; }
+            let dc = unsafe { CreateCompatibleDC(window_dc) };
+            let bitmap = if dc.is_null() { null_mut() } else {
+                unsafe { CreateCompatibleBitmap(window_dc, width, height) }
+            };
+            let previous_bitmap = if bitmap.is_null() { null_mut() } else {
+                unsafe { SelectObject(dc, bitmap) }
+            };
+            unsafe { ReleaseDC(hwnd, window_dc); }
+            if dc.is_null() || bitmap.is_null() || previous_bitmap.is_null() {
+                if !bitmap.is_null() { unsafe { DeleteObject(bitmap); } }
+                if !dc.is_null() { unsafe { DeleteDC(dc); } }
+                return None;
+            }
+            Some(Self { dc, bitmap, previous_bitmap, width, height })
+        }
+
+        fn present(&self, hwnd: Hwnd, client: &Rect, pixels: &[u8], bitmap: &BitmapInfo) {
+            let (x, y, width, height) = aspect_fit(client.right, client.bottom);
+            if width <= 0 || height <= 0 { return; }
+            unsafe {
+                // BLACKNESS clears only the off-screen surface, never the visible window.
+                PatBlt(self.dc, 0, 0, self.width, self.height, 0x0000_0042);
+                SetStretchBltMode(self.dc, COLORONCOLOR);
+                StretchDIBits(self.dc, x, y, width, height, 0, 0, 256, 240,
+                    pixels.as_ptr().cast(), bitmap, DIB_RGB_COLORS, SRCCOPY);
+                let window_dc = GetDC(hwnd);
+                if !window_dc.is_null() {
+                    BitBlt(window_dc, 0, 0, self.width, self.height, self.dc, 0, 0, SRCCOPY);
+                    ReleaseDC(hwnd, window_dc);
+                }
+            }
+        }
+    }
+
+    impl Drop for BackBuffer {
+        fn drop(&mut self) {
+            unsafe {
+                SelectObject(self.dc, self.previous_bitmap);
+                DeleteObject(self.bitmap);
+                DeleteDC(self.dc);
+            }
+        }
+    }
+
     #[link(name = "xinput9_1_0")]
     extern "system" {
         fn XInputGetState(user_index: u32, state: *mut XInputState) -> u32;
@@ -712,6 +779,7 @@ mod win {
         let mut previous_p = false;
         let mut turbo_speed = 4.0_f32;
         let mut pixels = vec![0u8; 256 * 240 * 4];
+        let mut back_buffer: Option<BackBuffer> = None;
         let frame_time = Duration::from_micros(16_639);
         let mut next_frame = Instant::now();
         let mut last_save = Instant::now();
@@ -902,21 +970,13 @@ mod win {
             }
             let mut client: Rect = unsafe { zeroed() };
             if unsafe { GetClientRect(hwnd, &mut client) } != 0 {
-                let dc = unsafe { GetDC(hwnd) };
-                if !dc.is_null() {
-                    unsafe {
-                        // Clear the entire client area on every frame. The window is
-                        // resized when entering/leaving fullscreen; without this clear,
-                        // pixels from the previous destination rectangle can remain
-                        // visible as a frozen strip along the edge. Use the stock
-                        // BLACK_BRUSH so the letterbox/pillarbox areas are always black.
-                        FillRect(dc, &client, 4usize as Handle);
-                        let (x, y, width, height) = aspect_fit(client.right, client.bottom);
-                        SetStretchBltMode(dc, COLORONCOLOR);
-                        StretchDIBits(dc, x, y, width, height, 0, 0, 256, 240,
-                            pixels.as_ptr().cast(), &bitmap, DIB_RGB_COLORS, SRCCOPY);
-                        ReleaseDC(hwnd, dc);
-                    }
+                let width = client.right;
+                let height = client.bottom;
+                if back_buffer.as_ref().is_none_or(|buffer| buffer.width != width || buffer.height != height) {
+                    back_buffer = BackBuffer::new(hwnd, width, height);
+                }
+                if let Some(buffer) = back_buffer.as_ref() {
+                    buffer.present(hwnd, &client, &pixels, &bitmap);
                 }
             }
             if machine.has_battery_backed_ram() && last_save.elapsed() >= Duration::from_secs(5) {
