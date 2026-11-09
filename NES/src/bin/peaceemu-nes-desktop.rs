@@ -221,6 +221,7 @@ mod win {
         fn GetDC(hwnd: Hwnd) -> Hdc;
         fn GetSystemMetrics(index: i32) -> i32;
         fn ReleaseDC(hwnd: Hwnd, dc: Hdc) -> i32;
+        fn FillRect(dc: Hdc, rect: *const Rect, brush: Handle) -> i32;
         fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> Bool;
         fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> Bool;
         fn MonitorFromWindow(hwnd: Hwnd, flags: u32) -> Hmonitor;
@@ -904,6 +905,12 @@ mod win {
                 let dc = unsafe { GetDC(hwnd) };
                 if !dc.is_null() {
                     unsafe {
+                        // Clear the entire client area on every frame. The window is
+                        // resized when entering/leaving fullscreen; without this clear,
+                        // pixels from the previous destination rectangle can remain
+                        // visible as a frozen strip along the edge. Use the stock
+                        // BLACK_BRUSH so the letterbox/pillarbox areas are always black.
+                        FillRect(dc, &client, 4usize as Handle);
                         let (x, y, width, height) = aspect_fit(client.right, client.bottom);
                         SetStretchBltMode(dc, COLORONCOLOR);
                         StretchDIBits(dc, x, y, width, height, 0, 0, 256, 240,
