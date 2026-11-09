@@ -64,6 +64,23 @@ fn parse_turbo_speed(value: &str) -> Option<f32> {
 }
 
 #[cfg(any(windows, test))]
+fn resample_audio_samples(samples: &[f32], speed: f32) -> Vec<f32> {
+    if samples.is_empty() || !speed.is_finite() || !(0.5..=4.0).contains(&speed) {
+        return Vec::new();
+    }
+    let output_len = (samples.len() as f32 / speed).ceil() as usize;
+    (0..output_len)
+        .map(|index| {
+            let position = index as f32 * speed;
+            let left = (position.floor() as usize).min(samples.len() - 1);
+            let right = (left + 1).min(samples.len() - 1);
+            let fraction = position - left as f32;
+            samples[left] + (samples[right] - samples[left]) * fraction
+        })
+        .collect()
+}
+
+#[cfg(any(windows, test))]
 fn scaled_frame_interval(base: std::time::Duration, speed: f32) -> Option<std::time::Duration> {
     if !speed.is_finite() || !(0.5..=4.0).contains(&speed) {
         return None;
@@ -81,7 +98,7 @@ fn main() {
 
 #[cfg(windows)]
 mod win {
-    use super::{adaptive_window_size, aspect_fit, parse_turbo_speed, parse_virtual_keys, scaled_frame_interval};
+    use super::{adaptive_window_size, aspect_fit, parse_turbo_speed, parse_virtual_keys, resample_audio_samples, scaled_frame_interval};
     use peaceemu_nes::session::{NesConfig, NesSession};
     use std::ffi::c_void;
     use std::fs;
@@ -530,6 +547,23 @@ mod win {
             Ok(Self { handle, previous_input: 0.0, previous_output: 0.0, queued: VecDeque::with_capacity(8) })
         }
 
+        fn clear_queue(&mut self) -> Result<(), String> {
+            let reset = unsafe { waveOutReset(self.handle) };
+            if reset != 0 {
+                return Err(format!("waveOutReset failed ({reset})"));
+            }
+            let header_size = size_of::<WaveHdr>() as u32;
+            while let Some(mut buffer) = self.queued.pop_front() {
+                let result = unsafe {
+                    waveOutUnprepareHeader(self.handle, &mut buffer.header, header_size)
+                };
+                if result != 0 {
+                    return Err(format!("waveOutUnprepareHeader failed after reset ({result})"));
+                }
+            }
+            Ok(())
+        }
+
         fn reap_completed(&mut self) -> Result<(), String> {
             let header_size = size_of::<WaveHdr>() as u32;
             while self.queued.front().is_some_and(|buffer| {
@@ -542,8 +576,12 @@ mod win {
             Ok(())
         }
 
-        fn play(&mut self, samples: &[f32]) -> Result<(), String> {
+        fn play(&mut self, samples: &[f32], playback_speed: f32) -> Result<(), String> {
             self.reap_completed()?;
+            if samples.is_empty() { return Ok(()); }
+            // Resampling changes both pitch and playback duration: turbo audio stays
+            // synchronized with the faster emulation instead of filling the queue.
+            let samples = resample_audio_samples(samples, playback_speed);
             if samples.is_empty() { return Ok(()); }
             // Never wait for a whole audio frame on the emulation thread.
             // Bound queued latency to roughly eight frames (about 133 ms).
@@ -770,6 +808,8 @@ mod win {
         let mut host_events = stdout.lock();
         let mut paused = false;
         let mut remote_turbo = false;
+        let mut mute_audio_during_turbo = false;
+        let mut audio_muted = false;
         let mut remote_buttons = 0u8;
         let bitmap = make_bitmap();
         let mut fullscreen = FullscreenState::new(hwnd);
@@ -842,6 +882,17 @@ mod win {
                             &mut host_events,
                             if remote_turbo { "OK|TURBO_ON" } else { "OK|TURBO_OFF" },
                         );
+                    }
+                    value if value.starts_with("TURBO_MUTE_AUDIO ") => {
+                        match value[17..].trim() {
+                            "1" | "true" => mute_audio_during_turbo = true,
+                            "0" | "false" => mute_audio_during_turbo = false,
+                            _ => {
+                                report_host_event(&mut host_events, "ERROR|TURBO_MUTE_AUDIO|Expected 0 or 1");
+                                continue;
+                            }
+                        }
+                        report_host_event(&mut host_events, "OK|TURBO_MUTE_AUDIO");
                     }
                     value if value.starts_with("TURBO_SPEED ") => {
                         match parse_turbo_speed(&value[12..]) {
@@ -963,7 +1014,14 @@ mod win {
                 Vec::new()
             };
             if let Some(output) = audio.as_mut() {
-                if let Err(error) = output.play(&audio_samples) {
+                let mute_now = turbo && mute_audio_during_turbo;
+                let result = if mute_now {
+                    if audio_muted { Ok(()) } else { output.clear_queue() }
+                } else {
+                    output.play(&audio_samples, playback_speed)
+                };
+                audio_muted = mute_now;
+                if let Err(error) = result {
                     eprintln!("audio disabled after playback error: {error}");
                     audio = None;
                 }
@@ -1034,6 +1092,16 @@ fn main() {
 #[cfg(test)]
 mod frontend_geometry_tests {
     use super::{adaptive_window_size, aspect_fit, parse_turbo_speed, parse_virtual_keys, scaled_frame_interval};
+
+    #[test]
+    fn turbo_audio_resampling_tracks_playback_speed() {
+        let samples = [0.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, -1.0];
+        assert_eq!(resample_audio_samples(&samples, 1.0).len(), 8);
+        assert_eq!(resample_audio_samples(&samples, 2.0).len(), 4);
+        assert_eq!(resample_audio_samples(&samples, 4.0).len(), 2);
+        assert_eq!(resample_audio_samples(&samples, 0.5).len(), 16);
+        assert!(resample_audio_samples(&samples, f32::NAN).is_empty());
+    }
 
     #[test]
     fn turbo_speed_accepts_the_supported_range_and_rejects_invalid_values() {
