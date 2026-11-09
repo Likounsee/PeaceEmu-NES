@@ -1091,8 +1091,9 @@ fn main() {
 
 #[cfg(test)]
 mod frontend_geometry_tests {
-    use super::{adaptive_window_size, aspect_fit, parse_turbo_speed, parse_virtual_keys, scaled_frame_interval};
+    use super::{adaptive_window_size, aspect_fit, parse_turbo_speed, parse_virtual_keys, resample_audio_samples, scaled_frame_interval};
 
+    #[test]
     #[test]
     fn turbo_audio_resampling_tracks_playback_speed() {
         let samples = [0.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, -1.0];
