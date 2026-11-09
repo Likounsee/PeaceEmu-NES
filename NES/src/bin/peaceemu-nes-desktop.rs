@@ -26,6 +26,21 @@ fn aspect_fit(client_width: i32, client_height: i32) -> (i32, i32, i32, i32) {
 
 
 #[cfg(any(windows, test))]
+fn adaptive_window_size(screen_width: i32, screen_height: i32) -> (i32, i32) {
+    if screen_width <= 0 || screen_height <= 0 {
+        return (256 * 3, 240 * 3);
+    }
+    // Keep a comfortable margin around the game and adapt to small and large displays.
+    let max_width = (screen_width * 4 / 5).max(256);
+    let max_height = (screen_height * 4 / 5).max(240);
+    if i64::from(max_width) * 3 <= i64::from(max_height) * 4 {
+        (max_width, max_width * 3 / 4)
+    } else {
+        (max_height * 4 / 3, max_height)
+    }
+}
+
+#[cfg(any(windows, test))]
 fn parse_virtual_keys(value: &str) -> Option<[i32; 8]> {
     let mut result = [0; 8];
     let mut parts = value.split(',');
@@ -112,6 +127,8 @@ mod win {
     const SW_SHOW: i32 = 5;
     const PM_REMOVE: u32 = 1;
     const DIB_RGB_COLORS: u32 = 0;
+    const COLORONCOLOR: i32 = 3;
+    const WM_ERASEBKGND: u32 = 0x0014;
     const SRCCOPY: u32 = 0x00CC0020;
     const WAVE_FORMAT_PCM: u16 = 1;
     const WAVE_MAPPER: u32 = u32::MAX;
@@ -203,6 +220,7 @@ mod win {
         fn DispatchMessageW(msg: *const Msg) -> Lresult;
         fn PostQuitMessage(exit_code: i32);
         fn GetDC(hwnd: Hwnd) -> Hdc;
+        fn GetSystemMetrics(index: i32) -> i32;
         fn ReleaseDC(hwnd: Hwnd, dc: Hdc) -> i32;
         fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> Bool;
         fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> Bool;
@@ -219,6 +237,7 @@ mod win {
     }
     #[link(name = "gdi32")]
     extern "system" {
+        fn SetStretchBltMode(dc: Hdc, mode: i32) -> i32;
         fn StretchDIBits(dc: Hdc, x_dest: i32, y_dest: i32, dest_width: i32, dest_height: i32,
             x_src: i32, y_src: i32, src_width: i32, src_height: i32, bits: *const c_void,
             info: *const BitmapInfo, usage: u32, raster_op: u32) -> i32;
@@ -255,6 +274,10 @@ mod win {
     }
 
     unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lparam) -> Lresult {
+        if message == WM_ERASEBKGND {
+            // The client area is always black; avoid a white erase flash between frames.
+            return 1;
+        }
         if message == WM_DESTROY {
             PostQuitMessage(0);
             return 0;
@@ -542,7 +565,7 @@ mod win {
         let path = args.next().ok_or_else(|| {
             "usage: peaceemu-nes-desktop <game.nes> [--scale 1..6] [--audio-rate 8000..192000] [--keys A,B,SELECT,START,UP,DOWN,LEFT,RIGHT] [--keys2 A,B,SELECT,START,UP,DOWN,LEFT,RIGHT] [--host-executable PeaceEmu.exe]".to_owned()
         })?;
-        let mut scale = 3i32;
+        let mut scale: Option<i32> = None;
         let mut audio_rate = 44_100u32;
         let mut keys = [0x5A, 0x58, 0x10, 0x0D, 0x26, 0x28, 0x25, 0x27];
         let mut keys2 = [0x61, 0x63, 0x60, 0x6E, 0x68, 0x62, 0x64, 0x66];
@@ -551,8 +574,9 @@ mod win {
             let value = args.next().ok_or_else(|| format!("missing value for {}", argument.to_string_lossy()))?;
             match argument.to_string_lossy().as_ref() {
                 "--scale" => {
-                    scale = value.to_string_lossy().parse().map_err(|_| "invalid --scale value".to_owned())?;
-                    if !(1..=6).contains(&scale) { return Err("--scale must be between 1 and 6".into()); }
+                    let parsed = value.to_string_lossy().parse::<i32>().map_err(|_| "invalid --scale value".to_owned())?;
+                    if !(1..=6).contains(&parsed) { return Err("--scale must be between 1 and 6".into()); }
+                    scale = Some(parsed);
                 }
                 "--audio-rate" => {
                     audio_rate = value.to_string_lossy().parse().map_err(|_| "invalid --audio-rate value".to_owned())?;
@@ -622,12 +646,23 @@ mod win {
         let class = WndClassW {
             style: 0, wnd_proc: Some(window_proc), cls_extra: 0, wnd_extra: 0,
             instance, icon: large_icon, cursor: null_mut(),
-            background: 6usize as Handle, menu_name: null(), class_name: class_name.as_ptr(),
+            background: 4usize as Handle, menu_name: null(), class_name: class_name.as_ptr(),
         };
         if unsafe { RegisterClassW(&class) } == 0 {
             return Err("RegisterClassW failed".into());
         }
-        let mut rect = Rect { left: 0, top: 0, right: 256 * scale, bottom: 240 * scale };
+        // Use an explicit --scale only for manual/debug launches. PeaceEmu defaults
+        // to a window sized for the current display instead of a fixed pixel size.
+        let (initial_width, initial_height) = match scale {
+            Some(scale) => (256 * scale, 240 * scale),
+            None => adaptive_window_size(
+                unsafe { GetSystemMetrics(0) },
+                unsafe { GetSystemMetrics(1) },
+            ),
+        };
+        let mut rect = Rect {
+            left: 0, top: 0, right: initial_width, bottom: initial_height,
+        };
         unsafe { AdjustWindowRect(&mut rect, WS_OVERLAPPEDWINDOW, 0); }
         let hwnd = unsafe {
             CreateWindowExW(0, class_name.as_ptr(), title.as_ptr(), WS_OVERLAPPEDWINDOW,
@@ -875,6 +910,7 @@ mod win {
                 if !dc.is_null() {
                     unsafe {
                         let (x, y, width, height) = aspect_fit(client.right, client.bottom);
+                        SetStretchBltMode(dc, COLORONCOLOR);
                         StretchDIBits(dc, x, y, width, height, 0, 0, 256, 240,
                             pixels.as_ptr().cast(), &bitmap, DIB_RGB_COLORS, SRCCOPY);
                         ReleaseDC(hwnd, dc);
@@ -991,6 +1027,18 @@ mod frontend_geometry_tests {
         let (x, y, width, height) = aspect_fit(800, 1000);
         assert_eq!((x, y, width, height), (0, 200, 800, 600));
         assert_eq!(i64::from(width) * 3, i64::from(height) * 4);
+    }
+
+    #[test]
+    fn adaptive_window_size_fits_large_and_small_displays() {
+        assert_eq!(adaptive_window_size(1920, 1080), (1152, 864));
+        assert_eq!(adaptive_window_size(1280, 720), (768, 576));
+        assert_eq!(adaptive_window_size(800, 600), (640, 480));
+    }
+
+    #[test]
+    fn adaptive_window_size_falls_back_for_invalid_display_metrics() {
+        assert_eq!(adaptive_window_size(0, 0), (768, 720));
     }
 
     #[test]
