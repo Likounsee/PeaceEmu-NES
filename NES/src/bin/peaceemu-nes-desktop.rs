@@ -655,17 +655,11 @@ mod win {
     }
 
     pub fn run() -> Result<(), String> {
-        let app_id: Vec<u16> = "Likounsee.PeaceEmu\0".encode_utf16().collect();
-        // SAFETY: app_id is a stable, NUL-terminated UTF-16 identifier for this call.
-        let app_id_result = unsafe { SetCurrentProcessExplicitAppUserModelID(app_id.as_ptr()) };
-        if app_id_result < 0 {
-            eprintln!("Could not set PeaceEmu Windows taskbar identity (HRESULT 0x{:08X}).", app_id_result as u32);
-        }
-
         let mut args = std::env::args_os().skip(1);
         let path = args.next().ok_or_else(|| {
-            "usage: peaceemu-nes-desktop <game.nes> [--scale 1..6] [--audio-rate 8000..192000] [--keys A,B,SELECT,START,UP,DOWN,LEFT,RIGHT] [--keys2 A,B,SELECT,START,UP,DOWN,LEFT,RIGHT] [--host-executable PeaceEmu.exe]".to_owned()
+            "usage: peaceemu-nes-desktop <game.nes> [--scale 1..6] [--audio-rate 8000..192000] [--keys A,B,SELECT,START,UP,DOWN,LEFT,RIGHT] [--keys2 A,B,SELECT,START,UP,DOWN,LEFT,RIGHT] [--host-executable PeaceEmu.exe] [--app-user-model-id ID]".to_owned()
         })?;
+        let mut app_user_model_id = "Likounsee.PeaceEmu".to_owned();
         let mut scale: Option<i32> = None;
         let mut audio_rate = 44_100u32;
         let mut keys = [0x5A, 0x58, 0x10, 0x0D, 0x26, 0x28, 0x25, 0x27];
@@ -702,9 +696,26 @@ mod win {
                 "--host-executable" => {
                     host_executable = Some(std::path::PathBuf::from(value));
                 }
+                "--app-user-model-id" => {
+                    app_user_model_id = value.to_string_lossy().into_owned();
+                }
                 _ => return Err(format!("unknown option: {}", argument.to_string_lossy())),
             }
         }
+        if app_user_model_id.is_empty()
+            || app_user_model_id.encode_utf16().count() > 128
+            || app_user_model_id.contains('\0')
+            || app_user_model_id.chars().any(char::is_control)
+        {
+            return Err("invalid --app-user-model-id value".to_owned());
+        }
+        let app_id: Vec<u16> = app_user_model_id.encode_utf16().chain(Some(0)).collect();
+        // SAFETY: app_id is validated, NUL-terminated UTF-16 and lives through the call.
+        let app_id_result = unsafe { SetCurrentProcessExplicitAppUserModelID(app_id.as_ptr()) };
+        if app_id_result < 0 {
+            eprintln!("Could not set PeaceEmu Windows taskbar identity (HRESULT 0x{:08X}).", app_id_result as u32);
+        }
+
         let image = fs::read(&path).map_err(|e| format!("cannot read ROM: {e}"))?;
         let mut machine = NesSession::load(&image, NesConfig { audio_sample_rate: audio_rate }).map_err(|e| e.to_string())?;
         let mut audio = match AudioOutput::open(audio_rate) {
