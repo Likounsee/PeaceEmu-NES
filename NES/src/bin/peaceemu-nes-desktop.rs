@@ -128,7 +128,6 @@ mod win {
     const PM_REMOVE: u32 = 1;
     const DIB_RGB_COLORS: u32 = 0;
     const COLORONCOLOR: i32 = 3;
-    const WM_ERASEBKGND: u32 = 0x0014;
     const SRCCOPY: u32 = 0x00CC0020;
     const WAVE_FORMAT_PCM: u16 = 1;
     const WAVE_MAPPER: u32 = u32::MAX;
@@ -274,10 +273,6 @@ mod win {
     }
 
     unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lparam) -> Lresult {
-        if message == WM_ERASEBKGND {
-            // The client area is always black; avoid a white erase flash between frames.
-            return 1;
-        }
         if message == WM_DESTROY {
             PostQuitMessage(0);
             return 0;
